@@ -121,6 +121,18 @@ The bastion `/etc/hosts` template renders local node records and Rancher URL rou
 
 `bastion.vsphere_route_connection` can be either a NetworkManager connection profile name or a device name such as `ens224`; the bastion phase resolves device names to the active profile before running `nmcli con mod`.
 
+If VMware customization leaves unclear NetworkManager profile names, optionally rename them during the bastion phase:
+
+```yaml
+bastion:
+  network_connections:
+    local: ens192
+    mgmt: ens224
+  vsphere_route_connection: mgmt
+```
+
+The map keys are target profile names and values are current device names or current profile names. This keeps the base interfaces readable as `local`/`mgmt`, while downstream VLAN interfaces can still be named `vlanXXX`.
+
 ## Proxy
 
 Proxy files follow the production pattern: `HTTP_PROXY`/`HTTPS_PROXY` point at `bastion.service_ip:3128`, and `NO_PROXY` defaults to private CIDRs plus the local VLAN CIDR and Rancher URL. Add site-specific values under `proxy.extra_no_proxy` only when needed. Override `proxy.no_proxy_cidrs` only if the private-CIDR default is wrong for the environment.

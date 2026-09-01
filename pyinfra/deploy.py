@@ -57,6 +57,26 @@ if phase == "bastion" and role == "bastion":
         config=config,
     )
 
+    for target_name, source_name in config["bastion"].get("network_connections", {}).items():
+        server.shell(
+            name=f"Rename NetworkManager connection {source_name} to {target_name}",
+            commands=[
+                "target='{target}'; source='{source}'; "
+                "if nmcli -t -f NAME con show \"$target\" >/dev/null 2>&1; then "
+                "exit 0; "
+                "fi; "
+                "if nmcli -t -f NAME con show \"$source\" >/dev/null 2>&1; then "
+                "connection=\"$source\"; "
+                "else "
+                "connection=$(nmcli -g GENERAL.CONNECTION device show \"$source\"); "
+                "fi; "
+                "nmcli con mod \"$connection\" connection.id \"$target\"".format(
+                    source=source_name,
+                    target=target_name,
+                )
+            ],
+        )
+
     server.shell(
         name="Add vSphere route",
         commands=[
