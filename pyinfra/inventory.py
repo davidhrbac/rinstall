@@ -6,15 +6,22 @@ _sys.path.insert(0, str(_Path(__file__).resolve().parents[1]))
 
 from lib.env_config import load_env as _load_env
 from lib.ssh_config import build_dir_for_env as _build_dir_for_env
+from lib.ssh_config import node_proxy_command as _node_proxy_command
+from lib.ssh_config import node_ssh_target as _node_ssh_target
 from lib.ssh_config import write_ssh_config as _write_ssh_config
 
 
 def _host_entry(node_name, node, config, ssh_config_file):
     ssh = config.get("ssh", {})
-    address = node_name if ssh_config_file else node.get("ssh_ip") or node.get("management_ip") or node["ip"]
+    ssh_target = _node_ssh_target(node)
+    proxy_command = _node_proxy_command(config, node_name, node)
+    if proxy_command:
+        proxy_command = proxy_command.replace("%h", ssh_target).replace("%p", str(ssh.get("port", 22)))
+    address = node_name if ssh_config_file else ssh_target
     data = {
         "name": node_name,
         "role": node["role"],
+        "ssh_hostname": ssh_target,
         "ssh_user": ssh.get("user", "root"),
         "ssh_key": _os.path.expanduser(ssh.get("private_key", "~/.ssh/id_rsa")),
         "env_config": config,
@@ -22,6 +29,8 @@ def _host_entry(node_name, node, config, ssh_config_file):
     }
     if ssh_config_file:
         data["ssh_config_file"] = str(ssh_config_file)
+    if proxy_command:
+        data["ssh_proxy_command"] = proxy_command
     return (address, data)
 
 

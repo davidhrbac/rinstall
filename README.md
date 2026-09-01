@@ -46,7 +46,7 @@ See `.envrc.example` for the expected variable names. `make render-infra-vars` o
 
 The committed scaffold uses Terraform's default local state, so `make infra-init` works without GitLab backend settings. If an environment should use GitLab Terraform state, copy `terraform/infra/backend.tf.example` to the ignored `terraform/infra/backend.tf` and put GitLab HTTP backend settings in `.envrc` or pass them with `TF_BACKEND_CONFIG=<file>`.
 
-If local nodes require a separate SSH jump host, configure it in `env.yaml`. pyinfra inventory will generate `build/<env>/ssh_config` with per-host `ProxyJump` rules. `bastion1` and `prom1` go through the first jump host; Rancher nodes go through the first jump host and then `bastion1`:
+If local nodes require a separate SSH jump host, configure it in `env.yaml`. pyinfra inventory will generate `build/<env>/ssh_config` with per-host proxy rules. `bastion1` and `prom1` go through the first jump host; Rancher nodes go through the first jump host and then `bastion1`:
 
 ```yaml
 ssh:
@@ -57,7 +57,7 @@ ssh:
     - rancher
 ```
 
-The jump host alias should be defined in the operator's `~/.ssh/config`; `make ssh-config` generates `build/<env>/ssh_config`, includes that file, and only adds target-node routing. This keeps real internal hostnames, IPs, and upstream SSH topology out of the repo. The management NIC DHCP address assigned by the jump host is not used as source-of-truth; use `ssh_ip` per node only if the customer-facing static IP is not the address used for SSH.
+The jump host alias should be defined in the operator's `~/.ssh/config`; `make ssh-config` generates `build/<env>/ssh_config`, includes that file, and only adds target-node routing. Generated target entries use `ProxyCommand` so both OpenSSH and pyinfra's SSH connector can consume the same config. This keeps real internal hostnames, IPs, and upstream SSH topology out of the repo. The management NIC DHCP address assigned by the jump host is not used as source-of-truth; use `ssh_ip` per node only if the customer-facing static IP is not the address used for SSH.
 
 For bastion access through a DHCP management NIC, set `nodes.bastion1.ssh_ip` after the management MAC is reserved in DHCP. That affects generated SSH config only; `bastion.service_ip` and local DNS/proxy services still use the customer-facing static IP from `host: 4`.
 
