@@ -2,6 +2,7 @@ output "nodes" {
   value = {
     for name, vm in module.vm : name => {
       id                 = vm.id
+      vsphere_name       = vm.name
       role               = var.nodes[name].role
       static_ip          = local.node_static_ips[name]
       default_ip_address = vm.default_ip_address

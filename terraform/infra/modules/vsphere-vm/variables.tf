@@ -2,6 +2,10 @@ variable "name" {
   type = string
 }
 
+variable "host_name" {
+  type = string
+}
+
 variable "domain" {
   type = string
 }

@@ -27,6 +27,7 @@
 - Inputs normally known before provisioning: customer VLAN, datastore, resource pool, VM folder, Rancher URL, bastion/prom template, and local Rancher/RKE2 VM template.
 - Local cluster VLAN is usually `/28`: `.1` gateway, `.4` `bastion1`, `.5` reserved, `.6` `prom1`, `.11` `rancher1`, `.12` `rancher2`, `.13` `rancher3`.
 - Use VM template 1 for `bastion1` and `prom1`; use VM template 2 for local Rancher/RKE2 VMs and downstream cluster VMs.
+- vSphere VM object names must be unique; Terraform appends a stable random suffix as `<node>-xxxxx-xxxxx`, while guest hostname/DNS/SSH aliases stay as the unsuffixed node key.
 - `bastion1` primary interface is on the customer VLAN and has a static IP; secondary interface is on the management VLAN and gets DHCP.
 - Set static IPs for `bastion1`, `prom1`, and Rancher nodes with Terraform/vSphere clone customization; do not require DHCP or cloud-init for these fixed local customer-VLAN addresses.
 - Keep bastion customer-facing `service_ip` explicit because `dnsmasq` and `squid` should use it, not the dynamic management address.

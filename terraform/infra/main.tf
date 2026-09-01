@@ -31,9 +31,32 @@ data "vsphere_virtual_machine" "template" {
   datacenter_id = data.vsphere_datacenter.this.id
 }
 
+resource "random_string" "vm_suffix_a" {
+  for_each = var.nodes
+
+  length  = 5
+  lower   = true
+  numeric = true
+  special = false
+  upper   = false
+}
+
+resource "random_string" "vm_suffix_b" {
+  for_each = var.nodes
+
+  length  = 5
+  lower   = true
+  numeric = true
+  special = false
+  upper   = false
+}
+
 locals {
   node_static_ips = {
     for name, node in var.nodes : name => try([for nic in node.nics : nic.ip if try(nic.ip, null) != null][0], null)
+  }
+  node_vsphere_names = {
+    for name, node in var.nodes : name => "${name}-${random_string.vm_suffix_a[name].result}-${random_string.vm_suffix_b[name].result}"
   }
 }
 
@@ -41,7 +64,8 @@ module "vm" {
   for_each = var.nodes
   source   = "./modules/vsphere-vm"
 
-  name             = each.key
+  name             = local.node_vsphere_names[each.key]
+  host_name        = each.key
   domain           = var.domain
   folder           = var.folder
   cpu              = each.value.cpu

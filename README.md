@@ -75,6 +75,8 @@ The example defines three Rancher nodes through `local.rancher_nodes`; increase 
 
 `bastion1` has a static IP on its primary/customer NIC and DHCP on the secondary management NIC. `prom1` and Rancher nodes also use static customer VLAN IPs. Terraform sets static IPs with vSphere clone customization, not cloud-init. DNS records are generated into dnsmasq from the same inventory; DHCP does not need to learn fixed Rancher nodes from leases.
 
+vSphere VM object names are made globally unique by Terraform with a stable random suffix: `<node>-xxxxx-xxxxx`. The node key still stays the operational hostname, so guest hostnames, SSH aliases, DNS records, and pyinfra groups remain `bastion1`, `prom1`, `rancher1`, and so on. Terraform outputs include `vsphere_name` for mapping the operational node name to the actual vSphere object name.
+
 Do not repeat the first octets of local IPs in every node. Define the local VLAN once, then use host offsets:
 
 ```yaml
