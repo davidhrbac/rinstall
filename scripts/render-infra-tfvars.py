@@ -37,6 +37,8 @@ def render(env):
         }
         if node.get("gateway") is not None:
             rendered_node["gateway"] = node["gateway"]
+        if node.get("dns_servers") is not None:
+            rendered_node["dns_servers"] = node["dns_servers"]
         nodes[name] = rendered_node
 
     rendered = {

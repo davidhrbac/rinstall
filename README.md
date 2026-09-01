@@ -59,6 +59,8 @@ ssh:
 
 The jump host alias should be defined in the operator's `~/.ssh/config`; `make ssh-config` generates `build/<env>/ssh_config`, includes that file, and only adds target-node routing. This keeps real internal hostnames, IPs, and upstream SSH topology out of the repo. The management NIC DHCP address assigned by the jump host is not used as source-of-truth; use `ssh_ip` per node only if the customer-facing static IP is not the address used for SSH.
 
+For bastion access through a DHCP management NIC, set `nodes.bastion1.ssh_ip` after the management MAC is reserved in DHCP. That affects generated SSH config only; `bastion.service_ip` and local DNS/proxy services still use the customer-facing static IP from `host: 4`.
+
 ## Local Infra Addressing
 
 The local cluster VLAN is normally a `/28`:
@@ -76,6 +78,8 @@ The local cluster VLAN is normally a `/28`:
 The example defines three Rancher nodes through `local.rancher_nodes`; increase `count` for larger local clusters. If you need `rancher1-5`, use a subnet large enough for the selected host offsets; in `/28`, `.15` is broadcast, so `.11-.15` is not valid.
 
 `bastion1` has a static IP on its primary/customer NIC and DHCP on the secondary management NIC. `prom1` and Rancher nodes also use static customer VLAN IPs. Terraform sets static IPs with vSphere clone customization, not cloud-init. DNS records are generated into dnsmasq from the same inventory; DHCP does not need to learn fixed Rancher nodes from leases.
+
+By default, vSphere clone customization uses DNS servers derived from `local.vlan.dns_nodes`. Override `nodes.<node>.dns_servers` when a node needs a different DNS server during customization, for example when `bastion1` must use an upstream DNS server before local dnsmasq is ready.
 
 vSphere VM object names are made globally unique by Terraform with a stable random suffix: `<node>-xxxxx-xxxxx`. The node key still stays the operational hostname, so guest hostnames, SSH aliases, DNS records, and pyinfra groups remain `bastion1`, `prom1`, `rancher1`, and so on. Terraform outputs include `vsphere_name` for mapping the operational node name to the actual vSphere object name.
 

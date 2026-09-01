@@ -59,12 +59,13 @@ variable "local_vlan" {
 
 variable "nodes" {
   type = map(object({
-    role      = string
-    template  = string
-    gateway   = optional(string)
-    cpu       = number
-    memory_mb = number
-    disk_gb   = number
+    role        = string
+    template    = string
+    gateway     = optional(string)
+    dns_servers = optional(list(string))
+    cpu         = number
+    memory_mb   = number
+    disk_gb     = number
     nics = list(object({
       network   = string
       ip        = optional(string)

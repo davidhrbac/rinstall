@@ -75,7 +75,7 @@ module "vm" {
   resource_pool_id = data.vsphere_resource_pool.this.id
   template         = data.vsphere_virtual_machine.template[each.value.template]
   gateway          = try(each.value.gateway, null)
-  dns_servers      = var.local_vlan.dns_servers
+  dns_servers      = coalesce(try(each.value.dns_servers, null), var.local_vlan.dns_servers)
 
   nics = [for nic in each.value.nics : {
     network_id   = data.vsphere_network.this[nic.network].id
