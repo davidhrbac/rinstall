@@ -21,7 +21,7 @@ resource "vsphere_virtual_machine" "this" {
 
   disk {
     label            = "disk0"
-    size             = var.disk_gb
+    size             = max(var.disk_gb, var.template.disks[0].size)
     thin_provisioned = true
   }
 
