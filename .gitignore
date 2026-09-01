@@ -1,0 +1,15 @@
+.terraform/
+*.tfstate
+*.tfstate.*
+build/
+envs/private/
+envs/*-local/
+__pycache__/
+*.py[cod]
+*.retry
+*.log
+.envrc
+.direnv/
+kubeconfig*
+token*.yaml
+*.auto.tfvars

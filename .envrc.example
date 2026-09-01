@@ -1,0 +1,8 @@
+# direnv example for local operator credentials. Do not commit real .envrc files.
+export TF_VAR_vsphere_server="vcenter.example.internal"
+export TF_VAR_vsphere_user="administrator@example.internal"
+export TF_VAR_vsphere_password="change-me"
+
+# Optional GitLab Terraform HTTP backend credentials.
+# export TF_HTTP_USERNAME="terraform"
+# export TF_HTTP_PASSWORD="change-me"

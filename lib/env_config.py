@@ -1,0 +1,224 @@
+from copy import deepcopy
+from ipaddress import ip_network
+from pathlib import Path
+
+import yaml
+
+
+DEFAULT_NO_PROXY_CIDRS = [
+    "127.0.0.0/8",
+    "10.0.0.0/8",
+    "172.16.0.0/12",
+    "192.168.0.0/16",
+]
+
+
+def require(mapping, key, context):
+    if key not in mapping or mapping[key] is None:
+        raise SystemExit(f"missing {context}.{key}")
+    return mapping[key]
+
+
+def address_from_host(network, host, context):
+    try:
+        offset = int(host)
+    except (TypeError, ValueError):
+        raise SystemExit(f"{context} must be an integer host offset") from None
+
+    if offset < 0 or offset >= network.num_addresses:
+        raise SystemExit(f"{context}={offset} is outside {network}")
+
+    address = network.network_address + offset
+    if address == network.network_address:
+        raise SystemExit(f"{context}={offset} resolves to network address {address}")
+    if address == network.broadcast_address:
+        raise SystemExit(f"{context}={offset} resolves to broadcast address {address}")
+
+    return str(address)
+
+
+def validate_name_exists(name, collection, context):
+    if name not in collection:
+        raise SystemExit(f"{context} references unknown name: {name}")
+
+
+def validate_role(name, nodes, role, context):
+    validate_name_exists(name, nodes, context)
+    actual = nodes[name].get("role")
+    if actual != role:
+        raise SystemExit(f"{context} references {name} with role {actual!r}, expected {role!r}")
+
+
+def domain_from_rancher_url(rancher_url):
+    parts = str(rancher_url).split(".", 1)
+    if len(parts) != 2 or not parts[1]:
+        raise SystemExit("env.rancher_url must be a fully qualified hostname when env.domain is omitted")
+    return parts[1]
+
+
+def validate_env_references(env):
+    infra = require(env, "infra", "env")
+    networks = require(infra, "networks", "env.infra")
+    templates = require(infra, "templates", "env.infra")
+    local_vlan = require(require(env, "local", "env"), "vlan", "env.local")
+    nodes = require(env, "nodes", "env")
+
+    for node_name, node in nodes.items():
+        validate_name_exists(
+            require(node, "template", f"env.nodes.{node_name}"),
+            templates,
+            f"env.nodes.{node_name}.template",
+        )
+        for index, nic in enumerate(require(node, "nics", f"env.nodes.{node_name}")):
+            validate_name_exists(
+                require(nic, "network", f"env.nodes.{node_name}.nics[{index}]"),
+                networks,
+                f"env.nodes.{node_name}.nics[{index}].network",
+            )
+
+    bastion = require(env, "bastion", "env")
+    service_node = require(bastion, "service_node", "env.bastion")
+
+    for dns_node in local_vlan.get("dns_nodes", [service_node]):
+        validate_name_exists(dns_node, nodes, "env.local.vlan.dns_nodes")
+
+    validate_role(
+        service_node,
+        nodes,
+        "bastion",
+        "env.bastion.service_node",
+    )
+    validate_role(
+        require(require(env, "rke2", "env"), "primary_node", "env.rke2"),
+        nodes,
+        "rancher",
+        "env.rke2.primary_node",
+    )
+
+    roles = {node.get("role") for node in nodes.values()}
+    for role in env.get("ssh", {}).get("bastion_proxy_roles", []):
+        if role not in roles:
+            raise SystemExit(f"env.ssh.bastion_proxy_roles references unknown role: {role}")
+
+    rancher = require(env, "rancher", "env")
+    edition = rancher.get("edition", "community")
+    if edition not in {"community", "prime"}:
+        raise SystemExit("env.rancher.edition must be 'community' or 'prime'")
+    editions = require(rancher, "editions", "env.rancher")
+    validate_name_exists(edition, editions, "env.rancher.edition")
+    selected = editions[edition]
+    require(selected, "repo_name", f"env.rancher.editions.{edition}")
+    require(selected, "repo_url", f"env.rancher.editions.{edition}")
+    require(selected, "version", f"env.rancher.editions.{edition}")
+
+
+def expand_node_pools(env):
+    nodes = require(env, "nodes", "env")
+    rancher_pool = env.get("local", {}).get("rancher_nodes")
+    if not rancher_pool:
+        return
+
+    prefix = rancher_pool.get("name_prefix", "rancher")
+    count = int(require(rancher_pool, "count", "env.local.rancher_nodes"))
+    start_host = int(require(rancher_pool, "start_host", "env.local.rancher_nodes"))
+    if count < 1:
+        raise SystemExit("env.local.rancher_nodes.count must be >= 1")
+
+    for index in range(1, count + 1):
+        name = f"{prefix}{index}"
+        if name in nodes:
+            raise SystemExit(f"env.local.rancher_nodes would overwrite existing node: {name}")
+        nodes[name] = {
+            "role": "rancher",
+            "template": require(rancher_pool, "template", "env.local.rancher_nodes"),
+            "host": start_host + index - 1,
+            "cpu": require(rancher_pool, "cpu", "env.local.rancher_nodes"),
+            "memory_mb": require(rancher_pool, "memory_mb", "env.local.rancher_nodes"),
+            "disk_gb": require(rancher_pool, "disk_gb", "env.local.rancher_nodes"),
+            "nics": deepcopy(require(rancher_pool, "nics", "env.local.rancher_nodes")),
+        }
+
+    env.setdefault("rke2", {}).setdefault("primary_node", f"{prefix}1")
+
+
+def load_env(path):
+    with Path(path).open() as stream:
+        return expand_env(yaml.safe_load(stream))
+
+
+def expand_env(raw_env):
+    env = deepcopy(raw_env)
+    env.setdefault("domain", domain_from_rancher_url(require(env, "rancher_url", "env")))
+    expand_node_pools(env)
+    validate_env_references(env)
+
+    local_vlan = require(require(env, "local", "env"), "vlan", "env.local")
+    env["local_vlan"] = local_vlan
+    cidr = require(local_vlan, "cidr", "env.local.vlan")
+    network = ip_network(cidr, strict=False)
+
+    local_vlan["prefix"] = network.prefixlen
+    local_vlan["gateway"] = address_from_host(
+        network,
+        require(local_vlan, "gateway_host", "env.local.vlan"),
+        "env.local.vlan.gateway_host",
+    )
+
+    nodes = require(env, "nodes", "env")
+    for name, node in nodes.items():
+        if node.get("ip") is None and node.get("host") is not None:
+            node["ip"] = address_from_host(network, node["host"], f"env.nodes.{name}.host")
+        if node.get("gateway") is None and node.get("ip") is not None:
+            node["gateway"] = local_vlan["gateway"]
+
+        for nic in require(node, "nics", f"env.nodes.{name}"):
+            if nic.get("ip") is None:
+                if nic.get("host") is not None:
+                    nic["ip"] = address_from_host(network, nic["host"], f"env.nodes.{name}.nics[].host")
+                elif nic.get("network") == "customer" and node.get("ip") is not None:
+                    nic["ip"] = node["ip"]
+            if nic.get("prefix") is None and nic.get("ip") is not None:
+                nic["prefix"] = local_vlan["prefix"]
+
+    bastion = require(env, "bastion", "env")
+    bastion.setdefault("squid_http_port", 3128)
+    dns_nodes = local_vlan.setdefault("dns_nodes", [require(bastion, "service_node", "env.bastion")])
+    local_vlan["dns_servers"] = [nodes[name]["ip"] for name in dns_nodes]
+
+    if bastion.get("service_ip") is None:
+        bastion["service_ip"] = nodes[require(bastion, "service_node", "env.bastion")]["ip"]
+
+    rke2 = require(env, "rke2", "env")
+    rke2.setdefault("token_file", "/etc/rancher/rke2/token")
+    rke2.setdefault("selinux", True)
+    rke2.setdefault("tls_sans", [require(env, "rancher_url", "env")])
+    primary_name = require(rke2, "primary_node", "env.rke2")
+    primary_ip = nodes[primary_name]["ip"]
+    for name, node in nodes.items():
+        if node.get("role") == "rancher" and node.get("rke2_server") is None and name != primary_name:
+            node["rke2_server"] = f"https://{primary_ip}:9345"
+
+    proxy = env.setdefault("proxy", {})
+    no_proxy = list(proxy.get("no_proxy_cidrs", DEFAULT_NO_PROXY_CIDRS))
+    no_proxy.extend([local_vlan["cidr"], require(env, "rancher_url", "env")])
+    no_proxy.extend(proxy.get("extra_no_proxy", []))
+    proxy["no_proxy"] = no_proxy
+
+    prompt = env.setdefault("prompt", {})
+    prompt.setdefault("host_suffix", env.get("domain", "local"))
+    colors = prompt.setdefault("colors", {})
+    colors.setdefault("user", 183)
+    colors.setdefault("at", 135)
+    colors.setdefault("host", 129)
+    colors.setdefault("path", 141)
+
+    rancher = require(env, "rancher", "env")
+    rancher.setdefault("edition", "community")
+    rancher.setdefault("agent_tls_mode", "system-store")
+    rancher.setdefault("cert_manager_version", "v1.15.3")
+    selected_edition = rancher["editions"][rancher["edition"]]
+    rancher["chart_repo_name"] = selected_edition["repo_name"]
+    rancher["chart_repo_url"] = selected_edition["repo_url"]
+    rancher["rancher_chart_version"] = selected_edition["version"]
+
+    return env

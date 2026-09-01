@@ -1,0 +1,7 @@
+interface=*
+dhcp-authoritative
+dhcp-option=3,{{ config.local_vlan.gateway }}
+dhcp-option=6,{{ config.bastion.service_ip }}
+
+# DHCP pool is intentionally left commented until the customer range is confirmed.
+# dhcp-range={{ config.bastion.service_ip }},CHANGE_ME_START,CHANGE_ME_END,{{ config.local_vlan.prefix }},12h
