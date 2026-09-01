@@ -61,6 +61,8 @@ The jump host alias should be defined in the operator's `~/.ssh/config`; `make s
 
 For bastion access through a DHCP management NIC, set `nodes.bastion1.ssh_ip` after the management MAC is reserved in DHCP. That affects generated SSH config only; `bastion.service_ip` and local DNS/proxy services still use the customer-facing static IP from `host: 4`.
 
+The pyinfra inventory is phase-aware. `PHASE=bastion`, `PHASE=rancher-install`, and `PHASE=rancher-bootstrap` connect only to bastion; RKE2 install phases connect only to the relevant Rancher nodes. This allows bastion DNS/hosts/proxy setup to run before the rest of the local cluster is reachable through bastion.
+
 ## Local Infra Addressing
 
 The local cluster VLAN is normally a `/28`:
