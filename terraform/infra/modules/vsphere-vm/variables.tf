@@ -36,10 +36,10 @@ variable "resource_pool_id" {
 
 variable "template" {
   type = object({
-    id                      = string
-    guest_id                = string
-    scsi_type               = string
-    firmware                = string
+    id        = string
+    guest_id  = string
+    scsi_type = string
+    firmware  = string
     #disk_size               = number
     network_interface_types = list(string)
   })
