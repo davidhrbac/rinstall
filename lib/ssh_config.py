@@ -86,7 +86,7 @@ def render_ssh_config(config):
 
         lines.extend(
             [
-                f"Host {node_name}",
+                f"Host {node_name} {node_ssh_target(node)}",
                 f"  HostName {node_ssh_target(node)}",
                 f"  User {ssh_user}",
                 f"  IdentityFile {ssh_key}",

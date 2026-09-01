@@ -11,6 +11,7 @@ __pycache__/
 *.log
 .envrc
 .direnv/
+.venv/
 kubeconfig*
 token*.yaml
 *.auto.tfvars
