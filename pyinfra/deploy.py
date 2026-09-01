@@ -60,7 +60,13 @@ if phase == "bastion" and role == "bastion":
     server.shell(
         name="Add vSphere route",
         commands=[
-            "nmcli con mod {connection} +ipv4.routes '{route}'".format(
+            "connection='{connection}'; route='{route}'; "
+            "if ! nmcli -t -f NAME con show \"$connection\" >/dev/null 2>&1; then "
+            "connection=$(nmcli -g GENERAL.CONNECTION device show \"$connection\"); "
+            "fi; "
+            "if ! nmcli -g ipv4.routes con show \"$connection\" | grep -F -- \"$route\" >/dev/null; then "
+            "nmcli con mod \"$connection\" +ipv4.routes \"$route\"; "
+            "fi".format(
                 connection=config["bastion"]["vsphere_route_connection"],
                 route=config["bastion"]["vsphere_route"],
             )

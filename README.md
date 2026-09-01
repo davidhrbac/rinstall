@@ -119,6 +119,8 @@ Named references are validated too: node templates must exist, NIC networks must
 
 The bastion `/etc/hosts` template renders local node records and Rancher URL round-robin records for every node with `role: rancher`. Downstream ingress RR records live on downstream subnets and are intentionally out of scope for this local management-cluster scaffold.
 
+`bastion.vsphere_route_connection` can be either a NetworkManager connection profile name or a device name such as `ens224`; the bastion phase resolves device names to the active profile before running `nmcli con mod`.
+
 ## Proxy
 
 Proxy files follow the production pattern: `HTTP_PROXY`/`HTTPS_PROXY` point at `bastion.service_ip:3128`, and `NO_PROXY` defaults to private CIDRs plus the local VLAN CIDR and Rancher URL. Add site-specific values under `proxy.extra_no_proxy` only when needed. Override `proxy.no_proxy_cidrs` only if the private-CIDR default is wrong for the environment.

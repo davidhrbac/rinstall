@@ -1,10 +1,10 @@
 127.0.0.1   localhost localhost.localdomain localhost4 localhost4.localdomain4
 ::1         localhost localhost.localdomain localhost6 localhost6.localdomain6
 
-{% for name, node in config.nodes.items() if name != "bastion1" %}
+{% for name, node in config.nodes.items() -%}
 {{ node.ip }} {{ name }} {{ name }}.{{ config.rancher_url }}
 {% endfor %}
 
-{% for name, node in rancher_nodes.items() %}
+{% for name, node in rancher_nodes.items() -%}
 {{ node.ip }} {{ config.rancher_url }}
 {% endfor %}

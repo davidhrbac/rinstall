@@ -35,7 +35,7 @@
 - Set static IPs for `bastion1`, `prom1`, and Rancher nodes with Terraform/vSphere clone customization; do not require DHCP or cloud-init for these fixed local customer-VLAN addresses.
 - Keep bastion customer-facing `service_ip` explicit because `dnsmasq` and `squid` should use it, not the dynamic management address.
 - `bastion1` runs `dnsmasq` for DHCP/DNS and `squid` so Rancher/local nodes can reach vSphere.
-- Add the vSphere route on bastion from `bastion.vsphere_route` using `bastion.vsphere_route_connection`; keep real route values in private env config, not committed examples.
+- Add the vSphere route on bastion from `bastion.vsphere_route` using `bastion.vsphere_route_connection`; this may be a NetworkManager connection profile name or device name. Keep real route values in private env config, not committed examples.
 - DHCP reservations are needed for fixed local nodes only if choosing DHCP over Terraform static customization; account for the MAC-address chicken/egg when designing provisioning.
 - After `bastion1`, `prom1`, and Rancher nodes exist, run `make node-prep` before RKE2.
 - `make node-prep` sets local node hostnames to `<node>.<rancher_url>` with `hostnamectl` and renders `/etc/profile.d/prompt.sh`; prompt colors and suffix come from `env.yaml` `prompt`.
