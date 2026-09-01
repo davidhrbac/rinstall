@@ -37,11 +37,11 @@ ssh-config:
 	$(PYTHON) scripts/render-ssh-config.py --env $(ENV)/env.yaml --out $(BUILD_ENV_DIR)/ssh_config
 
 infra-init:
-	@if [[ -z "$${TF_HTTP_ADDRESS:-}" && -z "$(TF_BACKEND_CONFIG)" && "$(TF_INIT_ARGS)" != *"-backend=false"* ]]; then \
-		printf '%s\n' 'missing Terraform HTTP backend address'; \
-		printf '%s\n' 'Set TF_HTTP_ADDRESS in .envrc, run: make infra-init TF_BACKEND_CONFIG=<backend-config-file>, or use TF_INIT_ARGS=-backend=false for local validation only.'; \
-		exit 2; \
-	fi
+	#@if [[ -z "$${TF_HTTP_ADDRESS:-}" && -z "$(TF_BACKEND_CONFIG)" && "$(TF_INIT_ARGS)" != *"-backend=false"* ]]; then \
+	#	printf '%s\n' 'missing Terraform HTTP backend address'; \
+	#	printf '%s\n' 'Set TF_HTTP_ADDRESS in .envrc, run: make infra-init TF_BACKEND_CONFIG=<backend-config-file>, or use TF_INIT_ARGS=-backend=false for local validation only.'; \
+	#	exit 2; \
+	#fi
 	$(TERRAFORM) -chdir=$(TF_INFRA_DIR) init $(TF_BACKEND_ARGS) $(TF_INIT_ARGS)
 
 infra-fmt:

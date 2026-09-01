@@ -40,7 +40,7 @@ variable "template" {
     guest_id                = string
     scsi_type               = string
     firmware                = string
-    disk_size               = number
+    #disk_size               = number
     network_interface_types = list(string)
   })
 }

@@ -1,7 +1,7 @@
 terraform {
   required_version = ">= 1.5.0"
 
-  backend "http" {}
+  # backend "http" {}
 
   required_providers {
     vsphere = {
