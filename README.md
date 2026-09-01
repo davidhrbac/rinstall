@@ -44,7 +44,7 @@ export TF_VAR_vsphere_password="change-me"
 
 See `.envrc.example` for the expected variable names. `make render-infra-vars` omits `vsphere_server` and `vsphere_user` when they are not set in `env.yaml`, so Terraform will read `TF_VAR_vsphere_server` and `TF_VAR_vsphere_user` from the operator environment.
 
-`make infra-init` also needs the Terraform HTTP backend address before it can initialize. Put GitLab state settings in `.envrc` too, or pass a backend config file with `TF_BACKEND_CONFIG=<file>`. For local syntax validation only, use `make infra-init TF_INIT_ARGS=-backend=false`.
+The committed scaffold uses Terraform's default local state, so `make infra-init` works without GitLab backend settings. If an environment should use GitLab Terraform state, copy `terraform/infra/backend.tf.example` to the ignored `terraform/infra/backend.tf` and put GitLab HTTP backend settings in `.envrc` or pass them with `TF_BACKEND_CONFIG=<file>`.
 
 If local nodes require a separate SSH jump host, configure it in `env.yaml`. pyinfra inventory will generate `build/<env>/ssh_config` with per-host `ProxyJump` rules. `bastion1` and `prom1` go through the first jump host; Rancher nodes go through the first jump host and then `bastion1`:
 
@@ -170,9 +170,9 @@ Use `envs/example` only for sanitized examples. Put real customer/internal envir
 
 ## Terraform State
 
-The infra layer is intended to use Terraform's `http` backend against GitLab Terraform state, but backend config is an operator-managed file/CLI concern, not part of `env.yaml`.
+The committed infra layer defaults to local Terraform state so the scaffold can be initialized and planned without GitLab backend setup.
 
-Run `make infra-init` only after preparing the appropriate GitLab backend config for the environment, for example with `TF_HTTP_ADDRESS`/`TF_HTTP_LOCK_ADDRESS` environment variables or `make infra-init TF_BACKEND_CONFIG=<backend-config-file>`. Do not put GitLab tokens in `env.yaml`; provide backend credentials via Terraform-supported environment variables, for example `TF_HTTP_USERNAME` and `TF_HTTP_PASSWORD`.
+For environments that need GitLab Terraform state, create an ignored `terraform/infra/backend.tf` from `terraform/infra/backend.tf.example`, then run `make infra-init` with `TF_HTTP_ADDRESS`/`TF_HTTP_LOCK_ADDRESS` environment variables or `TF_BACKEND_CONFIG=<backend-config-file>`. Do not put GitLab tokens in `env.yaml`; provide backend credentials via Terraform-supported environment variables, for example `TF_HTTP_USERNAME` and `TF_HTTP_PASSWORD`.
 
 
 ## Secrets

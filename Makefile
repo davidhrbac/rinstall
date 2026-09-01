@@ -18,7 +18,6 @@ help:
 	@printf '%s\n' '  render-infra-vars   render build/<env>/infra.tfvars.json from env.yaml'
 	@printf '%s\n' '  ssh-config          render build/<env>/ssh_config from env.yaml'
 	@printf '%s\n' '  infra-init          terraform init for infra layer'
-	@printf '%s\n' '                      requires TF_HTTP_ADDRESS or TF_BACKEND_CONFIG=<file>'
 	@printf '%s\n' '  infra-fmt           check Terraform formatting'
 	@printf '%s\n' '  infra-validate      validate Terraform infra root'
 	@printf '%s\n' '  infra-plan          plan vSphere infra using ENV=<env dir>'
@@ -37,11 +36,6 @@ ssh-config:
 	$(PYTHON) scripts/render-ssh-config.py --env $(ENV)/env.yaml --out $(BUILD_ENV_DIR)/ssh_config
 
 infra-init:
-	#@if [[ -z "$${TF_HTTP_ADDRESS:-}" && -z "$(TF_BACKEND_CONFIG)" && "$(TF_INIT_ARGS)" != *"-backend=false"* ]]; then \
-	#	printf '%s\n' 'missing Terraform HTTP backend address'; \
-	#	printf '%s\n' 'Set TF_HTTP_ADDRESS in .envrc, run: make infra-init TF_BACKEND_CONFIG=<backend-config-file>, or use TF_INIT_ARGS=-backend=false for local validation only.'; \
-	#	exit 2; \
-	#fi
 	$(TERRAFORM) -chdir=$(TF_INFRA_DIR) init $(TF_BACKEND_ARGS) $(TF_INIT_ARGS)
 
 infra-fmt:
