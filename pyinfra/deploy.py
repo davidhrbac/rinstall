@@ -110,9 +110,9 @@ if phase == "bastion" and role == "bastion":
     )
 
 if phase == "node-prep":
-    server.shell(
+    server.hostname(
         name="Set local node hostname",
-        commands=["hostnamectl set-hostname '{hostname}'".format(hostname=f"{name}.{config['rancher_url']}")],
+        hostname=f"{name}.{config['rancher_url']}",
     )
 
     files.template(
