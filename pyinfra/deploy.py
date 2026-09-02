@@ -173,6 +173,13 @@ if phase == "node-prep" and role == "rancher":
     )
 
     files.template(
+        name="Render RKE2 shell environment",
+        src="pyinfra/templates/rke2.sh.j2",
+        dest="/etc/profile.d/rke2.sh",
+        mode="0644",
+    )
+
+    files.template(
         name="Render RKE2 service proxy environment",
         src="pyinfra/templates/rke2-server.env.j2",
         dest="/etc/default/rke2-server",
