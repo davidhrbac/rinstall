@@ -58,7 +58,7 @@ if phase == "bastion" and role == "bastion":
         config=config,
     )
 
-    for target_name, source_name in config["bastion"].get("network_connections", {}).items():
+    for source_name, target_name in config["bastion"].get("network_connection_names", {}).items():
         server.shell(
             name=f"Rename NetworkManager connection {source_name} to {target_name}",
             commands=[

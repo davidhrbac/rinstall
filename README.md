@@ -126,13 +126,13 @@ If VMware customization leaves unclear NetworkManager profile names, optionally 
 
 ```yaml
 bastion:
-  network_connections:
-    local: ens192
-    mgmt: ens224
+  network_connection_names:
+    ens192: local
+    ens224: mgmt
   vsphere_route_connection: mgmt
 ```
 
-The map keys are target profile names and values are current device names or current profile names. This keeps the base interfaces readable as `local`/`mgmt`, while downstream VLAN interfaces can still be named `vlanXXX`.
+The map keys are current device names or current profile names, and values are target profile names. This keeps the base interfaces readable as `local`/`mgmt`, while downstream VLAN interfaces can still be named `vlanXXX`.
 
 ## Proxy
 
