@@ -31,6 +31,17 @@ def local_kubeconfig_path():
     return Path.cwd() / build_env_dir() / "rke2.yaml"
 
 
+def disable_rke2_repos():
+    server.shell(
+        name="Disable RKE2 package repositories",
+        commands=[
+            "if command -v dnf >/dev/null 2>&1 && dnf -q repolist enabled | grep -q '^rancher-rke2-'; then "
+            "dnf config-manager --set-disable 'rancher-rke2-*' >/dev/null; "
+            "fi"
+        ],
+    )
+
+
 def configure_asdf():
     files.template(
         name="Render root asdf shell environment",
@@ -270,6 +281,8 @@ if phase == "rke2-install-primary" and role == "rancher" and name == config["rke
         commands=["/tmp/install-rke2.sh"],
     )
 
+    disable_rke2_repos()
+
 if phase == "rke2-kubeconfig" and role == "rancher" and name == config["rke2"]["primary_node"]:
     files.get(
         name="Fetch RKE2 kubeconfig from primary",
@@ -291,6 +304,8 @@ if phase == "rke2-install-join" and role == "rancher" and name != config["rke2"]
         name="Install or start RKE2 join servers",
         commands=["/tmp/install-rke2.sh"],
     )
+
+    disable_rke2_repos()
 
 if phase == "rancher-install" and role == "bastion":
     dnf.packages(
