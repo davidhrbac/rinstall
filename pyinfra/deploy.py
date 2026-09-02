@@ -152,7 +152,8 @@ if phase == "node-prep" and role == "rancher":
             mode="0600",
             user="root",
             group="root",
-        )        
+        )
+
     files.template(
         name="Render RKE2 config",
         src="pyinfra/templates/rke2-config.yaml.j2",

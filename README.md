@@ -46,7 +46,7 @@ See `.envrc.example` for the expected variable names. `make render-infra-vars` o
 
 The committed scaffold uses Terraform's default local state, so `make infra-init` works without GitLab backend settings. If an environment should use GitLab Terraform state, copy `terraform/infra/backend.tf.example` to the ignored `terraform/infra/backend.tf` and put GitLab HTTP backend settings in `.envrc` or pass them with `TF_BACKEND_CONFIG=<file>`.
 
-If local nodes require a separate SSH jump host, configure it in `env.yaml`. pyinfra inventory will generate `build/<env>/ssh_config` with per-host proxy rules. `bastion1` and `prom1` go through the first jump host; Rancher nodes go through the first jump host and then `bastion1`:
+If local nodes require a separate SSH jump host, configure it in `env.yaml`. pyinfra inventory will generate `build/<env>/ssh_config` with per-host proxy rules. `bastion1` goes through the first jump host; local-only nodes can go through the first jump host and then `bastion1`:
 
 ```yaml
 ssh:
@@ -54,6 +54,7 @@ ssh:
   private_key: ~/.ssh/id_rsa
   jump_host: existing-ssh-config-alias
   bastion_proxy_roles:
+    - prometheus
     - rancher
 ```
 
@@ -61,7 +62,7 @@ The jump host alias should be defined in the operator's `~/.ssh/config`; `make s
 
 For bastion access through a DHCP management NIC, set `nodes.bastion1.ssh_ip` after the management MAC is reserved in DHCP. That affects generated SSH config only; `bastion.service_ip` and local DNS/proxy services still use the customer-facing static IP from `host: 4`.
 
-The pyinfra inventory is phase-aware. `PHASE=bastion`, `PHASE=rancher-install`, and `PHASE=rancher-bootstrap` connect only to bastion; RKE2 install phases connect only to the relevant Rancher nodes. The inventory uses the resolved `ssh_ip`/node IP as the connection target and keeps the operational node name in pyinfra host data. This allows bastion DNS/hosts/proxy setup to run before the rest of the local cluster is reachable through bastion.
+The pyinfra inventory is phase-aware. `PHASE=bastion`, `PHASE=rancher-install`, and `PHASE=rancher-bootstrap` connect only to bastion; RKE2 install phases connect only to the relevant Rancher nodes. The inventory uses the resolved `ssh_ip`/node IP as the connection target and keeps the operational node name in pyinfra host data. This allows bastion DNS/hosts/proxy setup to run before the rest of the local cluster is reachable through bastion. If `prom1` and Rancher nodes live only on the local/customer VLAN, include both `prometheus` and `rancher` in `ssh.bastion_proxy_roles`.
 
 ## Local Infra Addressing
 
