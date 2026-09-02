@@ -11,7 +11,7 @@ TF_BACKEND_CONFIG ?=
 TF_BACKEND_ARGS := $(addprefix -backend-config=,$(TF_BACKEND_CONFIG))
 TF_INIT_ARGS ?=
 
-.PHONY: help render-infra-vars ssh-config infra-init infra-fmt infra-validate infra-plan infra-apply infra-output bastion-configure node-prep rke2-install rancher-install rancher-bootstrap verify
+.PHONY: help render-infra-vars ssh-config infra-init infra-fmt infra-validate infra-plan infra-apply infra-output bastion-configure node-prep rke2-install rke2-kubeconfig rancher-install rancher-bootstrap verify
 
 help:
 	@printf '%s\n' 'Targets:'
@@ -26,6 +26,7 @@ help:
 	@printf '%s\n' '  bastion-configure   configure dnsmasq/squid/routes on bastion1 with pyinfra'
 	@printf '%s\n' '  node-prep           set hostnames/prompts on local nodes and prep Rancher nodes'
 	@printf '%s\n' '  rke2-install        install RKE2 primary first, then join nodes'
+	@printf '%s\n' '  rke2-kubeconfig     fetch RKE2 kubeconfig and rewrite endpoint for bastion use'
 	@printf '%s\n' '  rancher-install     install cert-manager and Rancher from bastion1 with pyinfra'
 	@printf '%s\n' '  rancher-bootstrap   set Rancher runtime settings with pyinfra'
 
@@ -64,14 +65,18 @@ rke2-install:
 	ENV_CONFIG=$(ENV)/env.yaml PHASE=rke2-install-primary $(PYINFRA) pyinfra/inventory.py pyinfra/deploy.py
 	ENV_CONFIG=$(ENV)/env.yaml PHASE=rke2-install-join $(PYINFRA) pyinfra/inventory.py pyinfra/deploy.py
 
-rancher-install:
+rke2-kubeconfig:
+	ENV_CONFIG=$(ENV)/env.yaml PHASE=rke2-kubeconfig $(PYINFRA) pyinfra/inventory.py pyinfra/deploy.py
+	$(PYTHON) scripts/prepare-rke2-kubeconfig.py --env $(ENV)/env.yaml
+
+rancher-install: rke2-kubeconfig
 	ENV_CONFIG=$(ENV)/env.yaml PHASE=rancher-install $(PYINFRA) pyinfra/inventory.py pyinfra/deploy.py
 
-rancher-bootstrap:
+rancher-bootstrap: rke2-kubeconfig
 	ENV_CONFIG=$(ENV)/env.yaml PHASE=rancher-bootstrap $(PYINFRA) pyinfra/inventory.py pyinfra/deploy.py
 
 verify:
-	$(PYTHON) -m py_compile lib/env_config.py lib/ssh_config.py pyinfra/inventory.py pyinfra/deploy.py scripts/render-infra-tfvars.py scripts/render-ssh-config.py
+	$(PYTHON) -m py_compile lib/env_config.py lib/ssh_config.py pyinfra/inventory.py pyinfra/deploy.py scripts/render-infra-tfvars.py scripts/render-ssh-config.py scripts/prepare-rke2-kubeconfig.py
 	bash -n scripts/install-rke2.sh scripts/install-rancher.sh scripts/bootstrap-rancher.sh
 	$(PYTHON) scripts/render-infra-tfvars.py --env $(ENV)/env.yaml --out $(INFRA_TFVARS)
 	$(PYTHON) scripts/render-ssh-config.py --env $(ENV)/env.yaml --out $(BUILD_ENV_DIR)/ssh_config

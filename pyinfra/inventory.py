@@ -33,7 +33,7 @@ def _phase_hosts(phase, config):
     primary = config["rke2"]["primary_node"]
     if phase in {"bastion", "rancher-install", "rancher-bootstrap"}:
         return {name: node for name, node in nodes.items() if node["role"] == "bastion"}
-    if phase == "rke2-install-primary":
+    if phase in {"rke2-install-primary", "rke2-kubeconfig"}:
         return {primary: nodes[primary]}
     if phase == "rke2-install-join":
         return {name: node for name, node in nodes.items() if node["role"] == "rancher" and name != primary}

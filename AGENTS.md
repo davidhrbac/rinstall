@@ -17,7 +17,7 @@
 - Bastion `/etc/hosts` is rendered from `env.yaml`: local node records and Rancher URL round-robin to every node with `role: rancher`.
 - Do not add downstream ingress RR records, such as `.40-.62` test aliases, to the local management-cluster DNS model; those belong to downstream subnet automation later.
 - Proxy templates should keep `NO_PROXY` compact: private CIDRs, `local.vlan.cidr`, Rancher URL, plus only explicit `proxy.extra_no_proxy` values.
-- Use `make infra-plan ENV=envs/example`, `make infra-apply ENV=envs/example`, then `make bastion-configure`, `make node-prep`, `make rke2-install`, `make rancher-install`, and `make rancher-bootstrap` in that order.
+- Use `make infra-plan ENV=envs/example`, `make infra-apply ENV=envs/example`, then `make bastion-configure`, `make node-prep`, `make rke2-install`, `make rke2-kubeconfig`, `make rancher-install`, and `make rancher-bootstrap` in that order.
 - Use `make verify` for syntax/format checks; it does not contact vSphere or Rancher.
 - Do not commit real `*.auto.tfvars`, kubeconfigs, Rancher tokens, or RKE2 token files; `rke2.token` in committed examples must be dummy/test-only.
 - Avoid `webfetch` when possible; prefer local/repo sources or CLI tools.
@@ -46,6 +46,7 @@
 - RKE2 config uses `token-file`, `selinux: true`, `tls-san` defaulted from `rancher_url`; only non-primary Rancher nodes get `server: https://<rancher1-ip>:9345`.
 - `make rke2-install` runs two pyinfra phases: install/enable `rke2-server --now` on `rke2.primary_node` first, then on all other Rancher join nodes.
 - After RKE2 is ready, install `asdf` and `helm` on `bastion1`, configure Helm repos, install cert-manager, then install Rancher.
+- `make rke2-kubeconfig` fetches primary node `/etc/rancher/rke2/rke2.yaml`, rewrites the API endpoint to the primary node IP, writes `build/<env>/rke2.yaml`, and Rancher install/bootstrap upload it to `bastion1:/root/rke2.yaml`.
 - Rancher edition is selected by `rancher.edition` (`community` or `prime`); Helm repo/version live under `rancher.editions.<edition>` as `repo_name`, `repo_url`, and `version`, then are resolved by `lib/env_config.py` for install.
 
 ## Rancher DNS/TLS

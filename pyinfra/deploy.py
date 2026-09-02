@@ -1,8 +1,11 @@
 import os
+from pathlib import Path
 
 from pyinfra import host
 from pyinfra.operations import dnf, files, server, systemd
 from io import StringIO
+
+from lib.ssh_config import build_dir_for_env
 
 
 phase = os.environ.get("PHASE", "bastion")
@@ -18,6 +21,14 @@ def rancher_nodes():
         for node_name, node_data in config["nodes"].items()
         if node_data["role"] == "rancher"
     }
+
+
+def build_env_dir():
+    return build_dir_for_env(os.environ.get("ENV_CONFIG", "envs/example/env.yaml"))
+
+
+def local_kubeconfig_path():
+    return Path.cwd() / build_env_dir() / "rke2.yaml"
 
 
 if phase == "bastion" and role == "bastion":
@@ -200,6 +211,15 @@ if phase == "rke2-install-primary" and role == "rancher" and name == config["rke
         commands=["/tmp/install-rke2.sh"],
     )
 
+if phase == "rke2-kubeconfig" and role == "rancher" and name == config["rke2"]["primary_node"]:
+    files.get(
+        name="Fetch RKE2 kubeconfig from primary",
+        src="/etc/rancher/rke2/rke2.yaml",
+        dest=str(Path.cwd() / build_env_dir() / "rke2.yaml.raw"),
+        create_local_dir=True,
+        force=True,
+    )
+
 if phase == "rke2-install-join" and role == "rancher" and name != config["rke2"]["primary_node"]:
     files.put(
         name="Upload RKE2 install script on join nodes",
@@ -214,6 +234,14 @@ if phase == "rke2-install-join" and role == "rancher" and name != config["rke2"]
     )
 
 if phase == "rancher-install" and role == "bastion":
+    files.put(
+        name="Upload RKE2 kubeconfig to bastion",
+        src=str(local_kubeconfig_path()),
+        dest="/root/rke2.yaml",
+        mode="0600",
+        add_deploy_dir=False,
+    )
+
     files.put(
         name="Upload Rancher install script",
         src="scripts/install-rancher.sh",
@@ -235,6 +263,14 @@ if phase == "rancher-install" and role == "bastion":
     )
 
 if phase == "rancher-bootstrap" and role == "bastion":
+    files.put(
+        name="Upload RKE2 kubeconfig to bastion",
+        src=str(local_kubeconfig_path()),
+        dest="/root/rke2.yaml",
+        mode="0600",
+        add_deploy_dir=False,
+    )
+
     files.put(
         name="Upload Rancher bootstrap script",
         src="scripts/bootstrap-rancher.sh",
