@@ -22,20 +22,55 @@ if ! command -v helm >/dev/null 2>&1; then
   exit 1
 fi
 
-helm repo add jetstack https://charts.jetstack.io
-helm repo add "$RANCHER_REPO_NAME" "$RANCHER_REPO_URL"
+release_chart_version() {
+  local namespace=$1
+  local release=$2
+
+  helm get metadata "$release" --namespace "$namespace" --output json 2>/dev/null \
+    | sed -n 's/.*"version":"\([^"]*\)".*/\1/p'
+}
+
+version_gt() {
+  local left=$1
+  local right=$2
+
+  [[ "$left" != "$right" ]] && [[ "$(printf '%s\n%s\n' "$right" "$left" | sort -V | sed -n '1p')" == "$right" ]]
+}
+
+rancher_hostname_matches() {
+  helm get values rancher --namespace cattle-system --output yaml 2>/dev/null \
+    | grep -Fx "hostname: $RANCHER_HOSTNAME" >/dev/null
+}
+
+helm repo add jetstack https://charts.jetstack.io --force-update
+helm repo add "$RANCHER_REPO_NAME" "$RANCHER_REPO_URL" --force-update
 helm repo update
 
-helm upgrade --install cert-manager jetstack/cert-manager \
-  --namespace cert-manager \
-  --create-namespace \
-  --version "$CERT_MANAGER_VERSION" \
-  --set crds.enabled=true \
-  --wait
+cert_manager_current_version=$(release_chart_version cert-manager cert-manager || true)
+if [[ -n "$cert_manager_current_version" ]] && ! version_gt "$CERT_MANAGER_VERSION" "$cert_manager_current_version"; then
+  printf 'cert-manager release already at chart version %s, requested %s, skipping\n' "$cert_manager_current_version" "$CERT_MANAGER_VERSION"
+else
+  helm upgrade --install cert-manager jetstack/cert-manager \
+    --namespace cert-manager \
+    --create-namespace \
+    --version "$CERT_MANAGER_VERSION" \
+    --set crds.enabled=true \
+    --wait
+fi
 
-helm upgrade --install rancher "$RANCHER_REPO_NAME/rancher" \
-  --namespace cattle-system \
-  --create-namespace \
-  --version "$RANCHER_VERSION" \
-  --set hostname="$RANCHER_HOSTNAME" \
-  --wait
+rancher_current_version=$(release_chart_version cattle-system rancher || true)
+if [[ -n "$rancher_current_version" ]] && version_gt "$rancher_current_version" "$RANCHER_VERSION"; then
+  printf 'rancher release is already at chart version %s, requested %s; refusing downgrade\n' "$rancher_current_version" "$RANCHER_VERSION" >&2
+  exit 1
+fi
+
+if [[ "$rancher_current_version" == "$RANCHER_VERSION" ]] && rancher_hostname_matches; then
+  printf 'rancher release already at chart version %s with hostname %s, skipping\n' "$RANCHER_VERSION" "$RANCHER_HOSTNAME"
+else
+  helm upgrade --install rancher "$RANCHER_REPO_NAME/rancher" \
+    --namespace cattle-system \
+    --create-namespace \
+    --version "$RANCHER_VERSION" \
+    --set hostname="$RANCHER_HOSTNAME" \
+    --wait
+fi
