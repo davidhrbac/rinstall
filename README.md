@@ -23,14 +23,10 @@ make infra-init ENV=envs/example
 make render-infra-vars ENV=envs/example
 make ssh-config ENV=envs/example
 make infra-plan ENV=envs/example
-make infra-apply ENV=envs/example
-make infra-output ENV=envs/example
-make bastion-configure ENV=envs/example
-make node-prep ENV=envs/example
-make rke2-install ENV=envs/example
-make rancher-install ENV=envs/example
-make rancher-bootstrap ENV=envs/example
+make provision-all ENV=envs/example
 ```
+
+`make provision-all` runs `infra-apply`, writes Terraform outputs, configures bastion, prepares nodes, installs RKE2, installs Rancher, and runs Rancher bootstrap. Use `make infra-plan` first as the review checkpoint before applying changes.
 
 `make rancher-install` and `make rancher-bootstrap` automatically fetch `/etc/rancher/rke2/rke2.yaml` from the primary Rancher node, rewrite its Kubernetes API endpoint to the primary node IP, and upload the prepared kubeconfig to `bastion1:/root/rke2.yaml`. The helper target `make rke2-kubeconfig` is available for debugging that step directly.
 
@@ -43,12 +39,17 @@ Terraform commands use local workstation credentials/environment and talk to vSp
 Destroy Terraform-managed vSphere VMs from the operator workstation with the same env and backend/state settings used for creation:
 
 ```bash
-make render-infra-vars ENV=envs/example
+make destroy-commands ENV=envs/example
+```
+
+The helper prints the explicit Terraform commands to run, for example:
+
+```bash
 terraform -chdir=terraform/infra plan -destroy -var-file=../../build/example/infra.tfvars.json
 terraform -chdir=terraform/infra destroy -var-file=../../build/example/infra.tfvars.json
 ```
 
-Always confirm `ENV`, Terraform workspace/backend, and the destroy plan before approving. There is intentionally no `make infra-destroy` shortcut, because destroy is destructive and should stay explicit. Terraform destroy only removes resources tracked by the Terraform infra state; it does not clean Rancher API resources, downstream clusters, external DNS/LB records, DHCP reservations, or local generated files under `build/`.
+Always confirm `ENV`, Terraform workspace/backend, and the destroy plan before approving. There is intentionally no `make infra-destroy` or `make destroy-all` shortcut, because destroy is destructive and should stay explicit. Terraform destroy only removes resources tracked by the Terraform infra state; it does not clean Rancher API resources, downstream clusters, external DNS/LB records, DHCP reservations, or local generated files under `build/`.
 
 Keep vCenter connection details out of `env.yaml` unless there is a specific reason to pin them there. Terraform accepts them through environment variables, which can be loaded by `direnv` from an ignored `.envrc`:
 
@@ -111,6 +112,8 @@ nodes:
 ```
 
 The loader expands that NIC to `ip`/`prefix` for Terraform and uses the same IP as the generated SSH target for `bastion1`, without repeating it as `ssh_ip`.
+
+vSphere clone customization applies static NIC addressing during VM clone/provisioning. Adding or changing `nics[].cidr` on an already-created VM may update Terraform/vSphere customization metadata but does not reliably reconfigure the guest OS network. For existing VMs, either recreate the VM or adjust the NetworkManager profile in the guest manually/through pyinfra, then keep `env.yaml` aligned for the next redeploy.
 
 By default, vSphere clone customization uses DNS servers derived from `local.vlan.dns_nodes`. Override `nodes.<node>.dns_servers` when a node needs a different DNS server during customization, for example when `bastion1` must use an upstream DNS server before local dnsmasq is ready.
 
