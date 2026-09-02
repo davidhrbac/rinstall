@@ -41,7 +41,7 @@
 - After `bastion1`, `prom1`, and Rancher nodes exist, run `make node-prep` before RKE2.
 - `make node-prep` sets local node hostnames to `<node>.<rancher_url>` with `hostnamectl` and renders `/etc/profile.d/prompt.sh`; prompt colors and suffix come from `env.yaml` `prompt`.
 - `make node-prep` copies `files/rke2-canal.conf` to `/etc/NetworkManager/conf.d/`, renders `/etc/default/rke2-server`, `/etc/profile.d/proxy.sh`, and `/etc/rancher/rke2/config.yaml`.
-- `make node-prep` renders `/etc/profile.d/rke2.sh` on Rancher nodes so root shells get RKE2 `PATH` and `KUBECONFIG`.
+- `make node-prep` renders `/etc/profile.d/rke2.sh` on Rancher nodes so root shells get RKE2 `PATH`, `KUBECONFIG`, `CRI_CONFIG_FILE`, `k` alias, and kubectl/crictl Bash completion.
 - If `rke2.token` is present in `env.yaml`, `make node-prep` writes it to `rke2.token_file`; use only dummy tokens in committed examples and prefer secret-source population for production.
 - RKE2 config uses `token-file`, `selinux: true`, `tls-san` defaulted from `rancher_url`; only non-primary Rancher nodes get `server: https://<rancher1-ip>:9345`.
 - `make rke2-install` runs two pyinfra phases: install/enable `rke2-server --now` on `rke2.primary_node` first, then on all other Rancher join nodes.

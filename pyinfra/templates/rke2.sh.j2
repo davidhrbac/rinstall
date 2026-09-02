@@ -1,4 +1,15 @@
 if [ "$(id -u)" -eq 0 ]; then
   export PATH=$PATH:/var/lib/rancher/rke2/bin
   export KUBECONFIG=/etc/rancher/rke2/rke2.yaml
+  export CRI_CONFIG_FILE=/var/lib/rancher/rke2/agent/etc/crictl.yaml
+  alias k=kubectl
+
+  if [ -n "${BASH_VERSION:-}" ] && command -v kubectl >/dev/null 2>&1; then
+    eval "$(kubectl completion bash 2>/dev/null)"
+    complete -o default -F __start_kubectl k 2>/dev/null || true
+  fi
+
+  if [ -n "${BASH_VERSION:-}" ] && command -v crictl >/dev/null 2>&1; then
+    eval "$(crictl completion bash 2>/dev/null)"
+  fi
 fi
