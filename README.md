@@ -36,6 +36,18 @@ make rancher-bootstrap ENV=envs/example
 
 Terraform commands use local workstation credentials/environment and talk to vSphere/GitLab from there. pyinfra and Helm/Rancher installation steps can also run from the workstation; SSH routing is handled by generated OpenSSH config.
 
+## Destroying Infra
+
+Destroy Terraform-managed vSphere VMs from the operator workstation with the same env and backend/state settings used for creation:
+
+```bash
+make render-infra-vars ENV=envs/example
+terraform -chdir=terraform/infra plan -destroy -var-file=../../build/example/infra.tfvars.json
+terraform -chdir=terraform/infra destroy -var-file=../../build/example/infra.tfvars.json
+```
+
+Always confirm `ENV`, Terraform workspace/backend, and the destroy plan before approving. There is intentionally no `make infra-destroy` shortcut, because destroy is destructive and should stay explicit. Terraform destroy only removes resources tracked by the Terraform infra state; it does not clean Rancher API resources, downstream clusters, external DNS/LB records, DHCP reservations, or local generated files under `build/`.
+
 Keep vCenter connection details out of `env.yaml` unless there is a specific reason to pin them there. Terraform accepts them through environment variables, which can be loaded by `direnv` from an ignored `.envrc`:
 
 ```bash
