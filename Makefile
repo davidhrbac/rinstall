@@ -11,11 +11,12 @@ TF_BACKEND_CONFIG ?=
 TF_BACKEND_ARGS := $(addprefix -backend-config=,$(TF_BACKEND_CONFIG))
 TF_INIT_ARGS ?=
 
-.PHONY: help render-infra-vars ssh-config infra-init infra-fmt infra-validate infra-plan infra-apply infra-output destroy-commands bastion-configure node-prep rke2-install rke2-kubeconfig rancher-install rancher-bootstrap provision-all verify
+.PHONY: help render-infra-vars ssh-config infra-init infra-fmt infra-validate infra-plan infra-apply infra-output destroy-commands bastion-configure node-prep rke2-install rke2-kubeconfig rancher-install rancher-install-run rancher-bootstrap rancher-bootstrap-run provision-all provision-all-yes verify
 
 help:
 	@printf '%s\n' 'Targets:'
-	@printf '%s\n' '  provision-all       apply infra and run all provisioning phases'
+	@printf '%s\n' '  provision-all       confirm, apply infra, run all phases, and print duration summary'
+	@printf '%s\n' '  provision-all-yes   run provision-all without prompt'
 	@printf '%s\n' ''
 	@printf '\033[3m%s\033[0m\n' '  render-infra-vars   render build/<env>/infra.tfvars.json from env.yaml'
 	@printf '\033[3m%s\033[0m\n' '  ssh-config          render build/<env>/ssh_config from env.yaml'
@@ -79,13 +80,78 @@ rke2-kubeconfig:
 	ENV_CONFIG=$(ENV)/env.yaml PHASE=rke2-kubeconfig $(PYINFRA) pyinfra/inventory.py pyinfra/deploy.py
 	$(PYTHON) scripts/prepare-rke2-kubeconfig.py --env $(ENV)/env.yaml
 
-rancher-install: rke2-kubeconfig
+rancher-install: rke2-kubeconfig rancher-install-run
+
+rancher-install-run:
 	ENV_CONFIG=$(ENV)/env.yaml PHASE=rancher-install $(PYINFRA) pyinfra/inventory.py pyinfra/deploy.py
 
-rancher-bootstrap: rke2-kubeconfig
+rancher-bootstrap: rke2-kubeconfig rancher-bootstrap-run
+
+rancher-bootstrap-run:
 	ENV_CONFIG=$(ENV)/env.yaml PHASE=rancher-bootstrap $(PYINFRA) pyinfra/inventory.py pyinfra/deploy.py
 
-provision-all: infra-apply infra-output bastion-configure node-prep rke2-install rancher-install rancher-bootstrap
+provision-all:
+	@set -euo pipefail; \
+	format_duration() { \
+	  local seconds=$$1; \
+	  local hours=$$((seconds / 3600)); \
+	  local minutes=$$(((seconds % 3600) / 60)); \
+	  local remaining=$$((seconds % 60)); \
+	  if ((hours > 0)); then \
+	    printf '%dh %02dm %02ds' "$$hours" "$$minutes" "$$remaining"; \
+	  elif ((minutes > 0)); then \
+	    printf '%dm %02ds' "$$minutes" "$$remaining"; \
+	  else \
+	    printf '%ds' "$$remaining"; \
+	  fi; \
+	}; \
+	run_phase() { \
+	  local label=$$1; \
+	  local target=$$2; \
+	  local phase_start=$$SECONDS; \
+	  printf '\n==> %s\n' "$$label"; \
+	  if $(MAKE) "$$target" ENV="$(ENV)" PYTHON="$(PYTHON)" PYINFRA="$(PYINFRA)" TERRAFORM="$(TERRAFORM)" TF_BACKEND_CONFIG="$(TF_BACKEND_CONFIG)" TF_INIT_ARGS="$(TF_INIT_ARGS)"; then \
+	    local duration=$$((SECONDS - phase_start)); \
+	    completed_labels+=("$$label"); \
+	    completed_durations+=("$$duration"); \
+	  else \
+	    local duration=$$((SECONDS - phase_start)); \
+	    failed_phase=$$label; \
+	    failed_duration=$$duration; \
+	    return 1; \
+	  fi; \
+	}; \
+	if [[ "$(DEPLOY_YES)" != "1" ]]; then \
+	  printf 'This will deploy the full Rancher environment for ENV=%s.\n' "$(ENV)"; \
+	  printf 'It will run Terraform apply, bastion config, node prep, RKE2 install, and Rancher install.\n'; \
+	  printf 'Run make infra-plan first if you have not reviewed the Terraform plan.\n'; \
+	  printf 'Continue? [y/N] '; \
+	  read -r reply; \
+	  case "$$reply" in y|Y|yes|YES) ;; *) printf 'Aborted.\n'; exit 0 ;; esac; \
+	fi; \
+	completed_labels=(); \
+	completed_durations=(); \
+	failed_phase=''; \
+	failed_duration=0; \
+	total_start=$$SECONDS; \
+	status=0; \
+	run_phase 'Terraform apply' infra-apply || status=1; \
+	if ((status == 0)); then run_phase 'Bastion configure' bastion-configure || status=1; fi; \
+	if ((status == 0)); then run_phase 'Node prep' node-prep || status=1; fi; \
+	if ((status == 0)); then run_phase 'RKE2 install' rke2-install || status=1; fi; \
+	if ((status == 0)); then run_phase 'Rancher install' rancher-install || status=1; fi; \
+	total_duration=$$((SECONDS - total_start)); \
+	printf '\nDeployment summary for ENV=%s\n' "$(ENV)"; \
+	if ((status == 0)); then printf 'Status: succeeded\n'; else printf 'Status: failed\n'; fi; \
+	for index in "$${!completed_labels[@]}"; do \
+	  printf '  %-20s %s\n' "$${completed_labels[$$index]}" "$$(format_duration "$${completed_durations[$$index]}")"; \
+	done; \
+	if ((status != 0)); then printf '  %-20s %s (failed)\n' "$$failed_phase" "$$(format_duration "$$failed_duration")"; fi; \
+	printf '  %-20s %s\n' 'Total' "$$(format_duration "$$total_duration")"; \
+	exit "$$status"
+
+provision-all-yes:
+	$(MAKE) provision-all DEPLOY_YES=1 ENV="$(ENV)" PYTHON="$(PYTHON)" PYINFRA="$(PYINFRA)" TERRAFORM="$(TERRAFORM)" TF_BACKEND_CONFIG="$(TF_BACKEND_CONFIG)" TF_INIT_ARGS="$(TF_INIT_ARGS)"
 
 verify:
 	$(PYTHON) -m py_compile lib/env_config.py lib/ssh_config.py pyinfra/inventory.py pyinfra/deploy.py scripts/render-infra-tfvars.py scripts/render-ssh-config.py scripts/prepare-rke2-kubeconfig.py

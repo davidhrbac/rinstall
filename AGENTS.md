@@ -19,7 +19,7 @@
 - Bastion `/etc/hosts` is rendered from `env.yaml`: local node records and Rancher URL round-robin to every node with `role: rancher`.
 - Do not add downstream ingress RR records, such as `.40-.62` test aliases, to the local management-cluster DNS model; those belong to downstream subnet automation later.
 - Proxy templates should keep `NO_PROXY` compact: private CIDRs, `local.vlan.cidr`, Rancher URL, plus only explicit `proxy.extra_no_proxy` values.
-- Use `make infra-plan ENV=envs/example` as the review checkpoint, then `make provision-all ENV=envs/example` to apply infra and run bastion/node/RKE2/Rancher phases; Rancher install/bootstrap prepare the RKE2 kubeconfig automatically.
+- Use `make infra-plan ENV=envs/example` as the review checkpoint, then `make provision-all ENV=envs/example` to confirm, apply infra, run bastion/node/RKE2/Rancher install phases, and print timing summary. Use `make provision-all-yes ENV=envs/example` only when the apply has already been reviewed and noninteractive execution is intended.
 - Use `make verify` for syntax/format checks; it does not contact vSphere or Rancher.
 - Do not commit real `*.auto.tfvars`, kubeconfigs, Rancher tokens, or RKE2 token files; `rke2.token` in committed examples must be dummy/test-only.
 - Avoid `webfetch` when possible; prefer local/repo sources or CLI tools.
