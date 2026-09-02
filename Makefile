@@ -10,6 +10,8 @@ TERRAFORM ?= terraform
 TF_BACKEND_CONFIG ?=
 TF_BACKEND_ARGS := $(addprefix -backend-config=,$(TF_BACKEND_CONFIG))
 TF_INIT_ARGS ?=
+TF_APPLY_ARGS ?=
+PYINFRA_ARGS ?=
 
 .PHONY: help render-infra-vars ssh-config infra-init infra-fmt infra-validate infra-plan infra-apply infra-output destroy-commands bastion-configure node-prep rke2-install rke2-kubeconfig rancher-install rancher-install-run rancher-bootstrap rancher-bootstrap-run provision-all provision-all-yes verify
 
@@ -54,7 +56,7 @@ infra-plan: render-infra-vars
 	$(TERRAFORM) -chdir=$(TF_INFRA_DIR) plan -var-file=../../$(INFRA_TFVARS)
 
 infra-apply: render-infra-vars
-	$(TERRAFORM) -chdir=$(TF_INFRA_DIR) apply -var-file=../../$(INFRA_TFVARS)
+	$(TERRAFORM) -chdir=$(TF_INFRA_DIR) apply $(TF_APPLY_ARGS) -var-file=../../$(INFRA_TFVARS)
 
 infra-output:
 	mkdir -p $(BUILD_ENV_DIR)
@@ -67,28 +69,28 @@ destroy-commands:
 	@printf '%s\n' '$(TERRAFORM) -chdir=$(TF_INFRA_DIR) destroy -var-file=../../$(INFRA_TFVARS)'
 
 bastion-configure:
-	ENV_CONFIG=$(ENV)/env.yaml PHASE=bastion $(PYINFRA) pyinfra/inventory.py pyinfra/deploy.py
+	ENV_CONFIG=$(ENV)/env.yaml PHASE=bastion $(PYINFRA) $(PYINFRA_ARGS) pyinfra/inventory.py pyinfra/deploy.py
 
 node-prep:
-	ENV_CONFIG=$(ENV)/env.yaml PHASE=node-prep $(PYINFRA) pyinfra/inventory.py pyinfra/deploy.py
+	ENV_CONFIG=$(ENV)/env.yaml PHASE=node-prep $(PYINFRA) $(PYINFRA_ARGS) pyinfra/inventory.py pyinfra/deploy.py
 
 rke2-install:
-	ENV_CONFIG=$(ENV)/env.yaml PHASE=rke2-install-primary $(PYINFRA) pyinfra/inventory.py pyinfra/deploy.py
-	ENV_CONFIG=$(ENV)/env.yaml PHASE=rke2-install-join $(PYINFRA) pyinfra/inventory.py pyinfra/deploy.py
+	ENV_CONFIG=$(ENV)/env.yaml PHASE=rke2-install-primary $(PYINFRA) $(PYINFRA_ARGS) pyinfra/inventory.py pyinfra/deploy.py
+	ENV_CONFIG=$(ENV)/env.yaml PHASE=rke2-install-join $(PYINFRA) $(PYINFRA_ARGS) pyinfra/inventory.py pyinfra/deploy.py
 
 rke2-kubeconfig:
-	ENV_CONFIG=$(ENV)/env.yaml PHASE=rke2-kubeconfig $(PYINFRA) pyinfra/inventory.py pyinfra/deploy.py
+	ENV_CONFIG=$(ENV)/env.yaml PHASE=rke2-kubeconfig $(PYINFRA) $(PYINFRA_ARGS) pyinfra/inventory.py pyinfra/deploy.py
 	$(PYTHON) scripts/prepare-rke2-kubeconfig.py --env $(ENV)/env.yaml
 
 rancher-install: rke2-kubeconfig rancher-install-run
 
 rancher-install-run:
-	ENV_CONFIG=$(ENV)/env.yaml PHASE=rancher-install $(PYINFRA) pyinfra/inventory.py pyinfra/deploy.py
+	ENV_CONFIG=$(ENV)/env.yaml PHASE=rancher-install $(PYINFRA) $(PYINFRA_ARGS) pyinfra/inventory.py pyinfra/deploy.py
 
 rancher-bootstrap: rke2-kubeconfig rancher-bootstrap-run
 
 rancher-bootstrap-run:
-	ENV_CONFIG=$(ENV)/env.yaml PHASE=rancher-bootstrap $(PYINFRA) pyinfra/inventory.py pyinfra/deploy.py
+	ENV_CONFIG=$(ENV)/env.yaml PHASE=rancher-bootstrap $(PYINFRA) $(PYINFRA_ARGS) pyinfra/inventory.py pyinfra/deploy.py
 
 provision-all:
 	@set -euo pipefail; \
@@ -110,7 +112,7 @@ provision-all:
 	  local target=$$2; \
 	  local phase_start=$$SECONDS; \
 	  printf '\n==> %s\n' "$$label"; \
-	  if $(MAKE) "$$target" ENV="$(ENV)" PYTHON="$(PYTHON)" PYINFRA="$(PYINFRA)" TERRAFORM="$(TERRAFORM)" TF_BACKEND_CONFIG="$(TF_BACKEND_CONFIG)" TF_INIT_ARGS="$(TF_INIT_ARGS)"; then \
+	  if $(MAKE) "$$target" ENV="$(ENV)" PYTHON="$(PYTHON)" PYINFRA="$(PYINFRA)" PYINFRA_ARGS="$(PYINFRA_ARGS)" TERRAFORM="$(TERRAFORM)" TF_BACKEND_CONFIG="$(TF_BACKEND_CONFIG)" TF_INIT_ARGS="$(TF_INIT_ARGS)" TF_APPLY_ARGS="$(TF_APPLY_ARGS)"; then \
 	    local duration=$$((SECONDS - phase_start)); \
 	    completed_labels+=("$$label"); \
 	    completed_durations+=("$$duration"); \
@@ -151,7 +153,7 @@ provision-all:
 	exit "$$status"
 
 provision-all-yes:
-	$(MAKE) provision-all DEPLOY_YES=1 ENV="$(ENV)" PYTHON="$(PYTHON)" PYINFRA="$(PYINFRA)" TERRAFORM="$(TERRAFORM)" TF_BACKEND_CONFIG="$(TF_BACKEND_CONFIG)" TF_INIT_ARGS="$(TF_INIT_ARGS)"
+	$(MAKE) provision-all DEPLOY_YES=1 ENV="$(ENV)" PYTHON="$(PYTHON)" PYINFRA="$(PYINFRA)" PYINFRA_ARGS="--yes" TERRAFORM="$(TERRAFORM)" TF_BACKEND_CONFIG="$(TF_BACKEND_CONFIG)" TF_INIT_ARGS="$(TF_INIT_ARGS)" TF_APPLY_ARGS="-auto-approve"
 
 verify:
 	$(PYTHON) -m py_compile lib/env_config.py lib/ssh_config.py pyinfra/inventory.py pyinfra/deploy.py scripts/render-infra-tfvars.py scripts/render-ssh-config.py scripts/prepare-rke2-kubeconfig.py
