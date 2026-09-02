@@ -1,6 +1,6 @@
 token-file: {{ config.rke2.token_file }}
 selinux: {{ 'true' if config.rke2.selinux | default(true) else 'false' }}
-{% if node.rke2_server %}server: {{ node.rke2_server }}
+{% if node.rke2_server is defined %}server: {{ node.rke2_server }}
 {% endif -%}
 tls-san:
 {% for san in config.rke2.tls_sans %}

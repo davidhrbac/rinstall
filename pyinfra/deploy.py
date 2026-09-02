@@ -2,6 +2,7 @@ import os
 
 from pyinfra import host
 from pyinfra.operations import dnf, files, server, systemd
+from io import StringIO
 
 
 phase = os.environ.get("PHASE", "bastion")
@@ -144,16 +145,14 @@ if phase == "node-prep" and role == "rancher":
     )
 
     if config["rke2"].get("token"):
-        files.file(
-            name="Write RKE2 token from env config",
-            path=config["rke2"]["token_file"],
-            present=True,
+        files.put(
+            name="Write RKE2 token",
+            dest=config["rke2"]["token_file"],
+            src=StringIO(config["rke2"]["token"]),
             mode="0600",
             user="root",
             group="root",
-            content=config["rke2"]["token"],
-        )
-
+        )        
     files.template(
         name="Render RKE2 config",
         src="pyinfra/templates/rke2-config.yaml.j2",

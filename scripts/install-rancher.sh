@@ -6,7 +6,7 @@ CERT_MANAGER_VERSION=${CERT_MANAGER_VERSION:-v1.15.3}
 RANCHER_VERSION=${RANCHER_VERSION:-2.9.2}
 RANCHER_REPO_NAME=${RANCHER_REPO_NAME:-rancher-stable}
 RANCHER_REPO_URL=${RANCHER_REPO_URL:-https://releases.rancher.com/server-charts/stable}
-KUBECONFIG=${KUBECONFIG:-/etc/rancher/rke2/rke2.yaml}
+KUBECONFIG=${KUBECONFIG:-/root/rke2.yaml}
 export KUBECONFIG
 
 if [[ ! -s "$KUBECONFIG" ]]; then

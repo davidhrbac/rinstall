@@ -3,7 +3,7 @@ set -euo pipefail
 
 RANCHER_URL=${RANCHER_URL:?set RANCHER_URL}
 AGENT_TLS_MODE=${AGENT_TLS_MODE:-system-store}
-KUBECONFIG=${KUBECONFIG:-/etc/rancher/rke2/rke2.yaml}
+KUBECONFIG=${KUBECONFIG:-/root/rke2.yaml}
 export KUBECONFIG
 
 kubectl -n cattle-system rollout status deploy/rancher --timeout=10m
