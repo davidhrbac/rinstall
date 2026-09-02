@@ -47,8 +47,10 @@ helm repo add "$RANCHER_REPO_NAME" "$RANCHER_REPO_URL" --force-update
 helm repo update
 
 cert_manager_current_version=$(release_chart_version cert-manager cert-manager || true)
-if [[ -n "$cert_manager_current_version" ]] && ! version_gt "$CERT_MANAGER_VERSION" "$cert_manager_current_version"; then
+if [[ "$cert_manager_current_version" == "$CERT_MANAGER_VERSION" ]]; then
   printf 'cert-manager release already at chart version %s, requested %s, skipping\n' "$cert_manager_current_version" "$CERT_MANAGER_VERSION"
+elif [[ -n "$cert_manager_current_version" ]] && version_gt "$cert_manager_current_version" "$CERT_MANAGER_VERSION"; then
+  printf 'cert-manager release is already at newer chart version %s, requested %s, skipping downgrade\n' "$cert_manager_current_version" "$CERT_MANAGER_VERSION"
 else
   helm upgrade --install cert-manager jetstack/cert-manager \
     --namespace cert-manager \
@@ -60,7 +62,7 @@ fi
 
 rancher_current_version=$(release_chart_version cattle-system rancher || true)
 if [[ -n "$rancher_current_version" ]] && version_gt "$rancher_current_version" "$RANCHER_VERSION"; then
-  printf 'rancher release is already at chart version %s, requested %s; refusing downgrade\n' "$rancher_current_version" "$RANCHER_VERSION" >&2
+  printf 'rancher release is already at newer chart version %s, requested %s; configuration inconsistency, refusing downgrade\n' "$rancher_current_version" "$RANCHER_VERSION" >&2
   exit 1
 fi
 

@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 
 from pyinfra import host
+from pyinfra.facts.server import Command
 from pyinfra.operations import dnf, files, server, systemd
 from io import StringIO
 
@@ -35,10 +36,9 @@ def disable_rke2_repos():
     server.shell(
         name="Disable RKE2 package repositories",
         commands=[
-            "if command -v dnf >/dev/null 2>&1 && dnf -q repolist enabled | grep -q '^rancher-rke2-'; then "
-            "dnf config-manager --set-disable 'rancher-rke2-*' >/dev/null; "
-            "fi"
+            "dnf config-manager --set-disable 'rancher-rke2-*' >/dev/null",
         ],
+        _if=lambda: bool(host.get_fact(Command, "command -v dnf >/dev/null 2>&1 && dnf -q repolist enabled | grep '^rancher-rke2-'")),
     )
 
 
