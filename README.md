@@ -216,6 +216,8 @@ rancher:
 For Rancher Prime, set `edition: prime` in the private env and fill the Prime chart repository/version approved for that customer. The env loader resolves the selected edition into the values expected by the install script.
 `agent_tls_mode` defaults to `system-store`, and `cert_manager_version` defaults to `v1.15.3`.
 
+Set `rancher.bootstrap_password` only in private env configs when you want to control the one-time initial admin password. The install script uses it only when the Rancher Helm release does not exist yet; repeat runs and upgrades never pass `bootstrapPassword` again. Change the password after first login.
+
 ## Source Of Truth
 
 Edit only `envs/<env>/env.yaml` for environment data. `make infra-plan` and `make infra-apply` render `build/<env>/infra.tfvars.json` from that YAML before invoking Terraform. Do not edit generated files under `build/`.

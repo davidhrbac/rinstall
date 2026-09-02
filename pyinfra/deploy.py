@@ -1,4 +1,5 @@
 import os
+import shlex
 from pathlib import Path
 
 from pyinfra import host
@@ -30,6 +31,10 @@ def build_env_dir():
 
 def local_kubeconfig_path():
     return Path.cwd() / build_env_dir() / "rke2.yaml"
+
+
+def shell_env(values):
+    return " ".join(f"{key}={shlex.quote(str(value))}" for key, value in values.items())
 
 
 def disable_rke2_repos():
@@ -334,13 +339,17 @@ if phase == "rancher-install" and role == "bastion":
     server.shell(
         name="Install cert-manager and Rancher",
         commands=[
-            "RANCHER_HOSTNAME='{hostname}' CERT_MANAGER_VERSION='{cert_manager_version}' RANCHER_VERSION='{rancher_version}' RANCHER_REPO_NAME='{repo_name}' RANCHER_REPO_URL='{repo_url}' /tmp/install-rancher.sh".format(
-                hostname=config["rancher_url"],
-                cert_manager_version=config["rancher"].get("cert_manager_version", "v1.15.3"),
-                rancher_version=config["rancher"].get("rancher_chart_version", "2.9.2"),
-                repo_name=config["rancher"]["chart_repo_name"],
-                repo_url=config["rancher"]["chart_repo_url"],
+            shell_env(
+                {
+                    "RANCHER_HOSTNAME": config["rancher_url"],
+                    "CERT_MANAGER_VERSION": config["rancher"].get("cert_manager_version", "v1.15.3"),
+                    "RANCHER_VERSION": config["rancher"].get("rancher_chart_version", "2.9.2"),
+                    "RANCHER_REPO_NAME": config["rancher"]["chart_repo_name"],
+                    "RANCHER_REPO_URL": config["rancher"]["chart_repo_url"],
+                    "RANCHER_BOOTSTRAP_PASSWORD": config["rancher"].get("bootstrap_password", ""),
+                }
             )
+            + " /tmp/install-rancher.sh"
         ],
     )
 

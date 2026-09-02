@@ -51,6 +51,7 @@
 - After RKE2 is ready, install `asdf` as a binary on `bastion1`, install Helm and kubectl through asdf for install/diagnostics, configure Helm repos, install cert-manager, then install Rancher.
 - Rancher install/bootstrap fetch primary node `/etc/rancher/rke2/rke2.yaml`, rewrite the API endpoint to the primary node IP, write `build/<env>/rke2.yaml`, and upload it to `bastion1:/root/rke2.yaml`; `make rke2-kubeconfig` is a helper/debug target for that step.
 - Rancher edition is selected by `rancher.edition` (`community` or `prime`); Helm repo/version live under `rancher.editions.<edition>` as `repo_name`, `repo_url`, and `version`, then are resolved by `lib/env_config.py` for install.
+- Optional `rancher.bootstrap_password` is a one-time initial admin password; keep real values in private env configs only. Install passes it to Helm only when the Rancher release does not exist yet, never on repeat upgrades.
 
 ## Rancher DNS/TLS
 

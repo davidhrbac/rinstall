@@ -6,6 +6,7 @@ CERT_MANAGER_VERSION=${CERT_MANAGER_VERSION:-v1.15.3}
 RANCHER_VERSION=${RANCHER_VERSION:-2.9.2}
 RANCHER_REPO_NAME=${RANCHER_REPO_NAME:-rancher-stable}
 RANCHER_REPO_URL=${RANCHER_REPO_URL:-https://releases.rancher.com/server-charts/stable}
+RANCHER_BOOTSTRAP_PASSWORD=${RANCHER_BOOTSTRAP_PASSWORD:-}
 KUBECONFIG=${KUBECONFIG:-/root/rke2.yaml}
 ASDF_DATA_DIR=${ASDF_DATA_DIR:-/root/.asdf}
 export KUBECONFIG
@@ -69,10 +70,17 @@ fi
 if [[ "$rancher_current_version" == "$RANCHER_VERSION" ]] && rancher_hostname_matches; then
   printf 'rancher release already at chart version %s with hostname %s, skipping\n' "$RANCHER_VERSION" "$RANCHER_HOSTNAME"
 else
-  helm upgrade --install rancher "$RANCHER_REPO_NAME/rancher" \
-    --namespace cattle-system \
-    --create-namespace \
-    --version "$RANCHER_VERSION" \
-    --set hostname="$RANCHER_HOSTNAME" \
+  rancher_args=(
+    --namespace cattle-system
+    --create-namespace
+    --version "$RANCHER_VERSION"
+    --set hostname="$RANCHER_HOSTNAME"
     --wait
+  )
+
+  if [[ -z "$rancher_current_version" && -n "$RANCHER_BOOTSTRAP_PASSWORD" ]]; then
+    rancher_args+=(--set bootstrapPassword="$RANCHER_BOOTSTRAP_PASSWORD")
+  fi
+
+  helm upgrade --install rancher "$RANCHER_REPO_NAME/rancher" "${rancher_args[@]}"
 fi
