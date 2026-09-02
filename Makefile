@@ -26,7 +26,7 @@ help:
 	@printf '%s\n' '  bastion-configure   configure dnsmasq/squid/routes on bastion1 with pyinfra'
 	@printf '%s\n' '  node-prep           set hostnames/prompts on local nodes and prep Rancher nodes'
 	@printf '%s\n' '  rke2-install        install RKE2 primary first, then join nodes'
-	@printf '%s\n' '  rke2-kubeconfig     fetch RKE2 kubeconfig and rewrite endpoint for bastion use'
+	@printf '%s\n' '  rke2-kubeconfig     helper: fetch RKE2 kubeconfig and rewrite endpoint for bastion use'
 	@printf '%s\n' '  rancher-install     install cert-manager and Rancher from bastion1 with pyinfra'
 	@printf '%s\n' '  rancher-bootstrap   set Rancher runtime settings with pyinfra'
 

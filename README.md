@@ -28,12 +28,11 @@ make infra-output ENV=envs/example
 make bastion-configure ENV=envs/example
 make node-prep ENV=envs/example
 make rke2-install ENV=envs/example
-make rke2-kubeconfig ENV=envs/example
 make rancher-install ENV=envs/example
 make rancher-bootstrap ENV=envs/example
 ```
 
-`make rke2-kubeconfig` fetches `/etc/rancher/rke2/rke2.yaml` from the primary Rancher node, rewrites its Kubernetes API endpoint to the primary node IP, and stores it under `build/<env>/rke2.yaml`. `make rancher-install` and `make rancher-bootstrap` depend on this target and upload the prepared kubeconfig to `bastion1:/root/rke2.yaml` before running Helm or bootstrap commands.
+`make rancher-install` and `make rancher-bootstrap` automatically fetch `/etc/rancher/rke2/rke2.yaml` from the primary Rancher node, rewrite its Kubernetes API endpoint to the primary node IP, and upload the prepared kubeconfig to `bastion1:/root/rke2.yaml`. The helper target `make rke2-kubeconfig` is available for debugging that step directly.
 
 Terraform commands use local workstation credentials/environment and talk to vSphere/GitLab from there. pyinfra and Helm/Rancher installation steps can also run from the workstation; SSH routing is handled by generated OpenSSH config.
 
