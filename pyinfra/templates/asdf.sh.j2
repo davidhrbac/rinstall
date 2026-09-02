@@ -1,0 +1,4 @@
+if [ "$(id -u)" -eq 0 ]; then
+  export ASDF_DATA_DIR=/root/.asdf
+  export PATH="${ASDF_DATA_DIR}/shims:${PATH}"
+fi

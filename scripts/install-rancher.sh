@@ -7,23 +7,20 @@ RANCHER_VERSION=${RANCHER_VERSION:-2.9.2}
 RANCHER_REPO_NAME=${RANCHER_REPO_NAME:-rancher-stable}
 RANCHER_REPO_URL=${RANCHER_REPO_URL:-https://releases.rancher.com/server-charts/stable}
 KUBECONFIG=${KUBECONFIG:-/root/rke2.yaml}
+ASDF_DATA_DIR=${ASDF_DATA_DIR:-/root/.asdf}
 export KUBECONFIG
+export ASDF_DATA_DIR
+export PATH="${ASDF_DATA_DIR}/shims:${PATH}"
 
 if [[ ! -s "$KUBECONFIG" ]]; then
   printf 'KUBECONFIG not found or empty: %s\n' "$KUBECONFIG" >&2
   exit 1
 fi
 
-if [[ ! -d "$HOME/.asdf" ]]; then
-  git clone https://github.com/asdf-vm/asdf.git "$HOME/.asdf" --branch v0.14.1
+if ! command -v helm >/dev/null 2>&1; then
+  printf 'helm not found; run rancher-install through pyinfra so bastion tooling is configured first\n' >&2
+  exit 1
 fi
-
-# shellcheck source=/dev/null
-. "$HOME/.asdf/asdf.sh"
-
-asdf plugin add helm https://github.com/Antiarchitect/asdf-helm.git || true
-asdf install helm latest
-asdf global helm latest
 
 helm repo add jetstack https://charts.jetstack.io
 helm repo add "$RANCHER_REPO_NAME" "$RANCHER_REPO_URL"

@@ -31,6 +31,65 @@ def local_kubeconfig_path():
     return Path.cwd() / build_env_dir() / "rke2.yaml"
 
 
+def configure_asdf():
+    files.template(
+        name="Render root asdf shell environment",
+        src="pyinfra/templates/asdf.sh.j2",
+        dest="/etc/profile.d/asdf.sh",
+        mode="0644",
+    )
+
+    server.shell(
+        name="Install asdf binary",
+        commands=[
+            "version='v0.20.0'; "
+            "case \"$(uname -m)\" in x86_64) arch=amd64 ;; aarch64|arm64) arch=arm64 ;; *) exit 1 ;; esac; "
+            "if ! command -v asdf >/dev/null 2>&1; then "
+            "tmpdir=$(mktemp -d); "
+            "curl -fsSL \"https://github.com/asdf-vm/asdf/releases/download/${version}/asdf-${version}-linux-${arch}.tar.gz\" -o \"${tmpdir}/asdf.tar.gz\"; "
+            "tar -xzf \"${tmpdir}/asdf.tar.gz\" -C \"$tmpdir\"; "
+            "install -m 0755 \"${tmpdir}/asdf\" /usr/local/bin/asdf; "
+            "rm -rf \"$tmpdir\"; "
+            "fi; "
+            "mkdir -p /root/.asdf"
+        ],
+    )
+
+    server.shell(
+        name="Install asdf diagnostic tools",
+        commands=[
+            "export ASDF_DATA_DIR=/root/.asdf; export PATH=\"${ASDF_DATA_DIR}/shims:${PATH}\"; "
+            "asdf plugin list | grep -Fx helm >/dev/null || asdf plugin add helm https://github.com/Antiarchitect/asdf-helm.git; "
+            "asdf plugin list | grep -Fx kubectl >/dev/null || asdf plugin add kubectl https://github.com/asdf-community/asdf-kubectl.git; "
+            "helm_version=$(asdf latest helm); kubectl_version=$(asdf latest kubectl); "
+            "asdf install helm \"$helm_version\"; asdf set -u helm \"$helm_version\"; "
+            "asdf install kubectl \"$kubectl_version\"; asdf set -u kubectl \"$kubectl_version\"; "
+            "asdf reshim helm; asdf reshim kubectl"
+        ],
+    )
+
+    files.line(
+        name="Set root asdf data dir",
+        path="/root/.bashrc",
+        line="export ASDF_DATA_DIR=/root/.asdf",
+        present=True,
+    )
+
+    files.line(
+        name="Add asdf shims to root PATH",
+        path="/root/.bashrc",
+        line='export PATH="${ASDF_DATA_DIR:-$HOME/.asdf}/shims:$PATH"',
+        present=True,
+    )
+
+    files.line(
+        name="Enable kubectl completion for root",
+        path="/root/.bashrc",
+        line="command -v kubectl >/dev/null 2>&1 && source <(kubectl completion bash)",
+        present=True,
+    )
+
+
 if phase == "bastion" and role == "bastion":
     dnf.packages(
         name="Install bastion services",
@@ -234,6 +293,14 @@ if phase == "rke2-install-join" and role == "rancher" and name != config["rke2"]
     )
 
 if phase == "rancher-install" and role == "bastion":
+    dnf.packages(
+        name="Install Rancher install dependencies",
+        packages=["git", "curl", "tar"],
+        present=True,
+    )
+
+    configure_asdf()
+
     files.put(
         name="Upload RKE2 kubeconfig to bastion",
         src=str(local_kubeconfig_path()),
