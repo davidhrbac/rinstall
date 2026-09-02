@@ -7,6 +7,8 @@ RANCHER_VERSION=${RANCHER_VERSION:-2.9.2}
 RANCHER_REPO_NAME=${RANCHER_REPO_NAME:-rancher-stable}
 RANCHER_REPO_URL=${RANCHER_REPO_URL:-https://releases.rancher.com/server-charts/stable}
 RANCHER_BOOTSTRAP_PASSWORD=${RANCHER_BOOTSTRAP_PASSWORD:-}
+RANCHER_PROXY=${RANCHER_PROXY:-}
+RANCHER_NO_PROXY=${RANCHER_NO_PROXY:-}
 KUBECONFIG=${KUBECONFIG:-/root/rke2.yaml}
 ASDF_DATA_DIR=${ASDF_DATA_DIR:-/root/.asdf}
 export KUBECONFIG
@@ -38,9 +40,23 @@ version_gt() {
   [[ "$left" != "$right" ]] && [[ "$(printf '%s\n%s\n' "$right" "$left" | sort -V | sed -n '1p')" == "$right" ]]
 }
 
-rancher_hostname_matches() {
-  helm get values rancher --namespace cattle-system --output yaml 2>/dev/null \
-    | grep -Fx "hostname: $RANCHER_HOSTNAME" >/dev/null
+rancher_values_match() {
+  local values
+
+  values=$(helm get values rancher --namespace cattle-system --output yaml 2>/dev/null) || return 1
+  grep -Fx "hostname: $RANCHER_HOSTNAME" <<<"$values" >/dev/null || return 1
+
+  if [[ -n "$RANCHER_PROXY" ]]; then
+    grep -Fx "proxy: $RANCHER_PROXY" <<<"$values" >/dev/null || return 1
+  elif grep -E '^proxy:' <<<"$values" >/dev/null; then
+    return 1
+  fi
+
+  if [[ -n "$RANCHER_NO_PROXY" ]]; then
+    grep -Fx "noProxy: $RANCHER_NO_PROXY" <<<"$values" >/dev/null || return 1
+  elif grep -E '^noProxy:' <<<"$values" >/dev/null; then
+    return 1
+  fi
 }
 
 helm repo add jetstack https://charts.jetstack.io --force-update
@@ -65,8 +81,8 @@ if [[ -n "$rancher_current_version" ]] && version_gt "$rancher_current_version" 
   exit 1
 fi
 
-if [[ "$rancher_current_version" == "$RANCHER_VERSION" ]] && rancher_hostname_matches; then
-  printf 'rancher release already at chart version %s with hostname %s, skipping\n' "$RANCHER_VERSION" "$RANCHER_HOSTNAME"
+if [[ "$rancher_current_version" == "$RANCHER_VERSION" ]] && rancher_values_match; then
+  printf 'rancher release already at chart version %s with requested values, skipping\n' "$RANCHER_VERSION"
 else
   rancher_args=(
     --namespace cattle-system
@@ -78,6 +94,14 @@ else
 
   if [[ -z "$rancher_current_version" && -n "$RANCHER_BOOTSTRAP_PASSWORD" ]]; then
     rancher_args+=(--set bootstrapPassword="$RANCHER_BOOTSTRAP_PASSWORD")
+  fi
+
+  if [[ -n "$RANCHER_PROXY" ]]; then
+    rancher_args+=(--set-string proxy="$RANCHER_PROXY")
+  fi
+
+  if [[ -n "$RANCHER_NO_PROXY" ]]; then
+    rancher_args+=(--set-string noProxy="${RANCHER_NO_PROXY//,/\\,}")
   fi
 
   helm upgrade --install rancher "$RANCHER_REPO_NAME/rancher" "${rancher_args[@]}"

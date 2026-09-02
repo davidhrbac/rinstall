@@ -12,6 +12,12 @@ DEFAULT_NO_PROXY_CIDRS = [
     "192.168.0.0/16",
 ]
 
+DEFAULT_NO_PROXY_NAMES = [
+    "cattle-system.svc",
+    ".svc",
+    ".cluster.local",
+]
+
 
 def require(mapping, key, context):
     if key not in mapping or mapping[key] is None:
@@ -209,6 +215,7 @@ def expand_env(raw_env):
 
     proxy = env.setdefault("proxy", {})
     no_proxy = list(proxy.get("no_proxy_cidrs", DEFAULT_NO_PROXY_CIDRS))
+    no_proxy.extend(DEFAULT_NO_PROXY_NAMES)
     no_proxy.extend([local_vlan["cidr"], require(env, "rancher_url", "env")])
     no_proxy.extend(proxy.get("extra_no_proxy", []))
     proxy["no_proxy"] = no_proxy

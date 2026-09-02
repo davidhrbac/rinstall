@@ -347,6 +347,8 @@ if phase == "rancher-install" and role == "bastion":
                     "RANCHER_REPO_NAME": config["rancher"]["chart_repo_name"],
                     "RANCHER_REPO_URL": config["rancher"]["chart_repo_url"],
                     "RANCHER_BOOTSTRAP_PASSWORD": config["rancher"].get("bootstrap_password", ""),
+                    "RANCHER_PROXY": f"http://{config['bastion']['service_ip']}:{config['bastion']['squid_http_port']}",
+                    "RANCHER_NO_PROXY": ",".join(config["proxy"]["no_proxy"]),
                 }
             )
             + " /tmp/install-rancher.sh"

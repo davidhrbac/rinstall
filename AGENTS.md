@@ -18,7 +18,7 @@
 - Identical local Rancher VMs should be defined with `local.rancher_nodes` (`name_prefix`, `count`, `start_host`, sizing, NIC template); `lib/env_config.py` expands them into concrete `role: rancher` nodes.
 - Bastion `/etc/hosts` is rendered from `env.yaml`: local node records and Rancher URL round-robin to every node with `role: rancher`.
 - Do not add downstream ingress RR records, such as `.40-.62` test aliases, to the local management-cluster DNS model; those belong to downstream subnet automation later.
-- Proxy templates should keep `NO_PROXY` compact: private CIDRs, `local.vlan.cidr`, Rancher URL, plus only explicit `proxy.extra_no_proxy` values.
+- Proxy templates should keep `NO_PROXY` compact: private CIDRs, Kubernetes service DNS suffixes, `local.vlan.cidr`, Rancher URL, plus only explicit `proxy.extra_no_proxy` values.
 - Use `make infra-plan ENV=envs/example` as the review checkpoint, then `make provision-all ENV=envs/example` to confirm, apply infra, run bastion/node/RKE2/Rancher install phases, and print timing summary. Use `make provision-all-yes ENV=envs/example` only when the apply has already been reviewed and noninteractive execution is intended; it passes `-auto-approve` to Terraform apply and `--yes` to pyinfra.
 - Use `make verify` for syntax/format checks; it does not contact vSphere or Rancher.
 - Do not commit real `*.auto.tfvars`, kubeconfigs, Rancher tokens, or RKE2 token files; `rke2.token` in committed examples must be dummy/test-only.
@@ -51,6 +51,7 @@
 - After RKE2 is ready, install `asdf` as a binary on `bastion1`, install Helm and kubectl through asdf for install/diagnostics, configure Helm repos, install cert-manager, then install Rancher.
 - Rancher install/bootstrap fetch primary node `/etc/rancher/rke2/rke2.yaml`, rewrite the API endpoint to the primary node IP, write `build/<env>/rke2.yaml`, and upload it to `bastion1:/root/rke2.yaml`; `make rke2-kubeconfig` is a helper/debug target for that step.
 - Rancher edition is selected by `rancher.edition` (`community` or `prime`); Helm repo/version live under `rancher.editions.<edition>` as `repo_name`, `repo_url`, and `version`, then are resolved by `lib/env_config.py` for install.
+- Rancher Helm install receives `proxy` from bastion Squid and `noProxy` from generated `proxy.no_proxy`; this is separate from OS/RKE2 proxy profile rendering.
 - Optional `rancher.bootstrap_password` is a one-time initial admin password; keep real values in private env configs only. Install passes it to Helm only when the Rancher release does not exist yet, never on repeat upgrades.
 
 ## Rancher DNS/TLS
