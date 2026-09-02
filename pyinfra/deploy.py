@@ -38,7 +38,7 @@ def disable_rke2_repos():
         commands=[
             "dnf config-manager --set-disable 'rancher-rke2-*' >/dev/null",
         ],
-        _if=lambda: bool(host.get_fact(Command, "command -v dnf >/dev/null 2>&1 && dnf -q repolist enabled | grep '^rancher-rke2-'")),
+        _if=lambda: bool(host.get_fact(Command, "command -v dnf >/dev/null 2>&1 && dnf -q repolist enabled | grep '^rancher-rke2-' || true")),
     )
 
 
