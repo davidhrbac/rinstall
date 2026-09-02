@@ -34,6 +34,8 @@ make rancher-bootstrap ENV=envs/example
 
 `make rancher-install` and `make rancher-bootstrap` automatically fetch `/etc/rancher/rke2/rke2.yaml` from the primary Rancher node, rewrite its Kubernetes API endpoint to the primary node IP, and upload the prepared kubeconfig to `bastion1:/root/rke2.yaml`. The helper target `make rke2-kubeconfig` is available for debugging that step directly.
 
+Prefer static addressing on the bastion management NIC. Set it as `cidr` on the management NIC and the env loader derives `nodes.bastion1.ssh_ip` from that address for generated SSH config.
+
 Terraform commands use local workstation credentials/environment and talk to vSphere/GitLab from there. pyinfra and Helm/Rancher installation steps can also run from the workstation; SSH routing is handled by generated OpenSSH config.
 
 ## Destroying Infra
@@ -72,9 +74,9 @@ ssh:
     - rancher
 ```
 
-The jump host alias should be defined in the operator's `~/.ssh/config`; `make ssh-config` generates `build/<env>/ssh_config`, includes that file, and only adds target-node routing. Generated target entries use `ProxyCommand` so both OpenSSH and pyinfra's SSH connector can consume the same config. This keeps real internal hostnames, IPs, and upstream SSH topology out of the repo. The management NIC DHCP address assigned by the jump host is not used as source-of-truth; use `ssh_ip` per node only if the customer-facing static IP is not the address used for SSH.
+The jump host alias should be defined in the operator's `~/.ssh/config`; `make ssh-config` generates `build/<env>/ssh_config`, includes that file, and only adds target-node routing. Generated target entries use `ProxyCommand` so both OpenSSH and pyinfra's SSH connector can consume the same config. This keeps real internal hostnames, IPs, and upstream SSH topology out of the repo. Use `ssh_ip` per node only if the desired SSH target cannot be derived from a static management NIC.
 
-For bastion access through a DHCP management NIC, set `nodes.bastion1.ssh_ip` after the management MAC is reserved in DHCP. That affects generated SSH config only; `bastion.service_ip` and local DNS/proxy services still use the customer-facing static IP from `host: 4`.
+For bastion access through the management NIC, prefer static NIC addressing with `cidr`. The loader derives `nodes.bastion1.ssh_ip` from the management NIC IP; `bastion.service_ip` and local DNS/proxy services still use the customer-facing static IP from `host: 4`.
 
 The pyinfra inventory is phase-aware. `PHASE=bastion`, `PHASE=rancher-install`, and `PHASE=rancher-bootstrap` connect only to bastion; RKE2 install phases connect only to the relevant Rancher nodes. The inventory uses the resolved `ssh_ip`/node IP as the connection target and keeps the operational node name in pyinfra host data. This allows bastion DNS/hosts/proxy setup to run before the rest of the local cluster is reachable through bastion. If `prom1` and Rancher nodes live only on the local/customer VLAN, include both `prometheus` and `rancher` in `ssh.bastion_proxy_roles`.
 
@@ -94,7 +96,21 @@ The local cluster VLAN is normally a `/28`:
 
 The example defines three Rancher nodes through `local.rancher_nodes`; increase `count` for larger local clusters. If you need `rancher1-5`, use a subnet large enough for the selected host offsets; in `/28`, `.15` is broadcast, so `.11-.15` is not valid.
 
-`bastion1` has a static IP on its primary/customer NIC and DHCP on the secondary management NIC. `prom1` and Rancher nodes also use static customer VLAN IPs. Terraform sets static IPs with vSphere clone customization, not cloud-init. DNS records are generated into dnsmasq from the same inventory; DHCP does not need to learn fixed Rancher nodes from leases.
+`bastion1` has a static IP on its primary/customer NIC and should use a static IP on the secondary management NIC for SSH. `prom1` and Rancher nodes also use static customer VLAN IPs. Terraform sets static IPs with vSphere clone customization, not cloud-init. DNS records are generated into dnsmasq from the same inventory; DHCP does not need to learn fixed Rancher nodes from leases.
+
+For static management addresses outside the local VLAN, use `cidr` directly on the NIC:
+
+```yaml
+nodes:
+  bastion1:
+    host: 4
+    nics:
+      - network: customer
+      - network: management
+        cidr: 192.0.2.10/24
+```
+
+The loader expands that NIC to `ip`/`prefix` for Terraform and uses the same IP as the generated SSH target for `bastion1`, without repeating it as `ssh_ip`.
 
 By default, vSphere clone customization uses DNS servers derived from `local.vlan.dns_nodes`. Override `nodes.<node>.dns_servers` when a node needs a different DNS server during customization, for example when `bastion1` must use an upstream DNS server before local dnsmasq is ready.
 

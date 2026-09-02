@@ -1,5 +1,5 @@
 from copy import deepcopy
-from ipaddress import ip_network
+from ipaddress import ip_interface, ip_network
 from pathlib import Path
 
 import yaml
@@ -172,6 +172,13 @@ def expand_env(raw_env):
             node["gateway"] = local_vlan["gateway"]
 
         for nic in require(node, "nics", f"env.nodes.{name}"):
+            if nic.get("cidr") is not None:
+                try:
+                    interface = ip_interface(nic["cidr"])
+                except ValueError as error:
+                    raise SystemExit(f"env.nodes.{name}.nics[].cidr is invalid: {error}") from None
+                nic["ip"] = str(interface.ip)
+                nic["prefix"] = interface.network.prefixlen
             if nic.get("ip") is None:
                 if nic.get("host") is not None:
                     nic["ip"] = address_from_host(network, nic["host"], f"env.nodes.{name}.nics[].host")
@@ -179,6 +186,8 @@ def expand_env(raw_env):
                     nic["ip"] = node["ip"]
             if nic.get("prefix") is None and nic.get("ip") is not None:
                 nic["prefix"] = local_vlan["prefix"]
+            if nic.get("network") == "management" and nic.get("ip") is not None and node.get("ssh_ip") is None:
+                node["ssh_ip"] = nic["ip"]
 
     bastion = require(env, "bastion", "env")
     bastion.setdefault("squid_http_port", 3128)
