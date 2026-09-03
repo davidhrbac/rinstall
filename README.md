@@ -53,6 +53,8 @@ terraform -chdir=terraform/infra destroy -var-file=../../build/example/infra.tfv
 
 Always confirm `ENV`, Terraform workspace/backend, and the destroy plan before approving. There is intentionally no `make infra-destroy` or `make destroy-all` shortcut, because destroy is destructive and should stay explicit. Terraform destroy only removes resources tracked by the Terraform infra state; it does not clean Rancher API resources, downstream clusters, external DNS/LB records, DHCP reservations, or local generated files under `build/`.
 
+`make destroy-commands` prints a header with the selected env, build directory, Terraform directory, tfvars path, optional backend/init settings, and then the explicit review/destroy commands.
+
 Keep vCenter connection details out of `env.yaml` unless there is a specific reason to pin them there. Terraform accepts them through environment variables, which can be loaded by `direnv` from an ignored `.envrc`:
 
 ```bash

@@ -1,4 +1,5 @@
 SHELL := /bin/bash
+MAKEFLAGS += --no-print-directory
 
 ENV ?= envs/example
 TF_INFRA_DIR := terraform/infra
@@ -64,9 +65,25 @@ infra-output:
 
 destroy-commands:
 	@$(PYTHON) scripts/render-infra-tfvars.py --env $(ENV)/env.yaml --out $(INFRA_TFVARS)
-	@printf '%s\n' 'Review the destroy plan before running destroy:'
+	@printf '%s\n' '============================================================'
+	@printf '%s\n' 'Rancher Environment Terraform Destroy Commands'
+	@printf '%s\n' '============================================================'
+	@printf 'ENV:              %s\n' '$(ENV)'
+	@printf 'Build dir:        %s\n' '$(BUILD_ENV_DIR)'
+	@printf 'Terraform dir:    %s\n' '$(TF_INFRA_DIR)'
+	@printf 'Tfvars:           %s\n' '$(INFRA_TFVARS)'
+	@if [[ -n '$(TF_BACKEND_CONFIG)' ]]; then printf 'Backend config:   %s\n' '$(TF_BACKEND_CONFIG)'; fi
+	@if [[ -n '$(TF_INIT_ARGS)' ]]; then printf 'Init args:        %s\n' '$(TF_INIT_ARGS)'; fi
+	@printf '%s\n' '============================================================'
+	@printf '%s\n' 'Review the destroy plan before running destroy.'
+	@printf '%s\n' 'Confirm ENV, Terraform workspace/backend/state, and every planned deletion.'
+	@printf '%s\n' ''
+	@printf '%s\n' '1. Review plan:'
 	@printf '%s\n' '$(TERRAFORM) -chdir=$(TF_INFRA_DIR) plan -destroy -var-file=../../$(INFRA_TFVARS)'
+	@printf '%s\n' ''
+	@printf '%s\n' '2. Destroy only after review:'
 	@printf '%s\n' '$(TERRAFORM) -chdir=$(TF_INFRA_DIR) destroy -var-file=../../$(INFRA_TFVARS)'
+	@printf '%s\n' '============================================================'
 
 bastion-configure:
 	ENV_CONFIG=$(ENV)/env.yaml PHASE=bastion $(PYINFRA) $(PYINFRA_ARGS) pyinfra/inventory.py pyinfra/deploy.py
@@ -111,7 +128,9 @@ provision-all:
 	  local label=$$1; \
 	  local target=$$2; \
 	  local phase_start=$$SECONDS; \
-	  printf '\n==> %s\n' "$$label"; \
+	  printf '\n============================================================\n'; \
+	  printf '==> %s\n' "$$label"; \
+	  printf '============================================================\n'; \
 	  if $(MAKE) "$$target" ENV="$(ENV)" PYTHON="$(PYTHON)" PYINFRA="$(PYINFRA)" PYINFRA_ARGS="$(PYINFRA_ARGS)" TERRAFORM="$(TERRAFORM)" TF_BACKEND_CONFIG="$(TF_BACKEND_CONFIG)" TF_INIT_ARGS="$(TF_INIT_ARGS)" TF_APPLY_ARGS="$(TF_APPLY_ARGS)"; then \
 	    local duration=$$((SECONDS - phase_start)); \
 	    completed_labels+=("$$label"); \
@@ -123,9 +142,27 @@ provision-all:
 	    return 1; \
 	  fi; \
 	}; \
+	mode='interactive'; \
+	if [[ "$(DEPLOY_YES)" == "1" ]]; then mode='noninteractive'; fi; \
+	printf '============================================================\n'; \
+	printf 'Rancher Environment Provisioning\n'; \
+	printf '============================================================\n'; \
+	printf 'ENV:              %s\n' "$(ENV)"; \
+	printf 'Build dir:        %s\n' "$(BUILD_ENV_DIR)"; \
+	printf 'Terraform dir:    %s\n' "$(TF_INFRA_DIR)"; \
+	printf 'Mode:             %s\n' "$$mode"; \
+	if [[ "$(DEPLOY_YES)" == "1" ]]; then \
+	  printf 'Terraform apply:  %s\n' '$(TF_APPLY_ARGS)'; \
+	  printf 'pyinfra:          %s\n' '$(PYINFRA_ARGS)'; \
+	fi; \
+	printf 'Phases:\n'; \
+	printf '  1. Terraform apply\n'; \
+	printf '  2. Bastion configure\n'; \
+	printf '  3. Node prep\n'; \
+	printf '  4. RKE2 install\n'; \
+	printf '  5. Rancher install\n'; \
+	printf '============================================================\n'; \
 	if [[ "$(DEPLOY_YES)" != "1" ]]; then \
-	  printf 'This will deploy the full Rancher environment for ENV=%s.\n' "$(ENV)"; \
-	  printf 'It will run Terraform apply, bastion config, node prep, RKE2 install, and Rancher install.\n'; \
 	  printf 'Run make infra-plan first if you have not reviewed the Terraform plan.\n'; \
 	  printf 'Continue? [y/N] '; \
 	  read -r reply; \
