@@ -27,6 +27,7 @@
 - Proxy templates should keep `NO_PROXY` compact: private CIDRs, Kubernetes service DNS suffixes, `local.vlan.cidr`, Rancher URL, plus only explicit `proxy.extra_no_proxy` values.
 - Use `make infra-plan ENV=envs/example` as the review checkpoint, then `make provision-all ENV=envs/example` to confirm, apply infra, run bastion/node/RKE2/Rancher install phases, and print timing summary. Use `make provision-all-yes ENV=envs/example` only when the apply has already been reviewed and noninteractive execution is intended; it passes `-auto-approve` to Terraform apply and `--yes` to pyinfra.
 - `provision-all` writes full phase output to a private `build/<environment.id>/provision-<timestamp>-<pid>.log` through a pseudo-terminal, preserving colors in both the terminal and log.
+- Provision headers/logs record engine and environment Git revisions plus clean/dirty worktree state. While `ENV` is inside this repo both refer to the engine repo; retain both fields for future standalone environment repos.
 - Set `PYINFRA_PROGRESS=off` by default for readable terminal transcripts and logs; it disables only pyinfra's redraw spinner, not its colors or operation output.
 - Provision/destroy command headers may print `TF_VAR_vsphere_server` and `TF_VAR_vsphere_user` for operator confirmation; never print `TF_VAR_vsphere_password`.
 - Use `make verify` for syntax/format checks; it does not contact vSphere or Rancher.

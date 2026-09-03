@@ -18,11 +18,16 @@ def main():
     if load_env(args.env)["rancher"].get("bootstrap_password"):
         return
 
-    print("If this was the first Rancher installation, retrieve the generated bootstrap password with:")
+    print("============================================================")
+    print("Rancher Bootstrap Password")
+    print("============================================================")
+    print("If this was the first Rancher installation, retrieve the generated password with:")
     print(
         "kubectl get secret --namespace cattle-system bootstrap-secret "
         "-o go-template='{{.data.bootstrapPassword|base64decode}}{{\"\\n\"}}'"
     )
+    print("Change the Rancher admin password after first login.")
+    print("============================================================")
 
 
 if __name__ == "__main__":

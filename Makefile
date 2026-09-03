@@ -126,7 +126,7 @@ rancher-install-run:
 	ENV_CONFIG=$(ENV)/env.yaml PHASE=rancher-install PYINFRA_PROGRESS=$(PYINFRA_PROGRESS) $(PYINFRA) $(PYINFRA_ARGS) pyinfra/inventory.py pyinfra/deploy.py
 
 rancher-bootstrap-password-command:
-	$(PYTHON) scripts/print-rancher-bootstrap-password-command.py --env $(ENV)/env.yaml
+	@$(PYTHON) scripts/print-rancher-bootstrap-password-command.py --env $(ENV)/env.yaml
 
 rancher-bootstrap: rke2-kubeconfig rancher-bootstrap-run
 
@@ -147,6 +147,12 @@ provision-all:
 	  else \
 	    printf '%ds' "$$remaining"; \
 	  fi; \
+	}; \
+	git_revision() { git -C "$$1" rev-parse --short HEAD 2>/dev/null || printf '%s' '(unavailable)'; }; \
+	git_worktree() { \
+	  if ! git -C "$$1" rev-parse --is-inside-work-tree >/dev/null 2>&1; then printf '%s' '(unavailable)'; \
+	  elif [[ -n "$$(git -C "$$1" status --porcelain --untracked-files=normal)" ]]; then printf '%s' 'dirty'; \
+	  else printf '%s' 'clean'; fi; \
 	}; \
 	run_phase() { \
 	  local label=$$1; \
@@ -172,6 +178,12 @@ provision-all:
 	}; \
 	mode='interactive'; \
 	if [[ "$(DEPLOY_YES)" == "1" ]]; then mode='noninteractive'; fi; \
+	engine_repo=$$(git rev-parse --show-toplevel 2>/dev/null || pwd); \
+	environment_repo=$$(git -C "$(ENV)" rev-parse --show-toplevel 2>/dev/null || printf '%s' '$(ENV)'); \
+	engine_revision=$$(git_revision "$$engine_repo"); \
+	engine_worktree=$$(git_worktree "$$engine_repo"); \
+	environment_revision=$$(git_revision "$$environment_repo"); \
+	environment_worktree=$$(git_worktree "$$environment_repo"); \
 	umask 077; \
 	mkdir -p "$(BUILD_ENV_DIR)"; \
 	run_log="$(BUILD_ENV_DIR)/provision-$$(date +%Y%m%d-%H%M%S)-$$$$.log"; \
@@ -190,6 +202,10 @@ provision-all:
 	log 'Build dir:        %s\n' "$(BUILD_ENV_DIR)"; \
 	log 'Log file:         %s\n' "$$run_log"; \
 	log 'Terraform dir:    %s\n' "$(TF_INFRA_DIR)"; \
+	log 'Engine revision:  %s\n' "$$engine_revision"; \
+	log 'Engine worktree:  %s\n' "$$engine_worktree"; \
+	log 'Environment revision:  %s\n' "$$environment_revision"; \
+	log 'Environment worktree:  %s\n' "$$environment_worktree"; \
 	if [[ -n "$${TF_VAR_vsphere_server:-}" ]]; then log 'vSphere server:   %s\n' "$$TF_VAR_vsphere_server"; else log 'vSphere server:   %s\n' '(from tfvars or unset)'; fi; \
 	if [[ -n "$${TF_VAR_vsphere_user:-}" ]]; then log 'vSphere user:     %s\n' "$$TF_VAR_vsphere_user"; else log 'vSphere user:     %s\n' '(from tfvars or unset)'; fi; \
 	log 'Mode:             %s\n' "$$mode"; \
