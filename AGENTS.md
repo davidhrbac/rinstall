@@ -65,6 +65,7 @@
 - Rancher edition is selected by `rancher.edition` (`community` or `prime`); Helm repo/version live under `rancher.editions.<edition>` as `repo_name`, `repo_url`, and `version`, then are resolved by `lib/env_config.py` for install.
 - Rancher Helm install receives `proxy` from bastion Squid and `noProxy` from generated `proxy.no_proxy`; this is separate from OS/RKE2 proxy profile rendering.
 - Optional `rancher.bootstrap_password` is a one-time initial admin password; keep real values in private env configs only. Install passes it to Helm only when the Rancher release does not exist yet, never on repeat upgrades. If omitted, every successful Rancher install prints a command that retrieves the generated password from `cattle-system/bootstrap-secret` if the release was newly installed.
+- Cert-manager and Rancher use Day-0 Helm semantics: install only if absent, no-op only when the declared version matches, and fail on version mismatch. Rancher also fails when hostname/proxy/noProxy values differ; this repo never upgrades, downgrades, or reconfigures existing releases.
 
 ## Future Bastion Service Networks
 
