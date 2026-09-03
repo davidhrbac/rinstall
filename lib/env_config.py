@@ -220,6 +220,12 @@ def expand_env(raw_env):
     bastion = require(env, "bastion", "env")
     bastion.setdefault("squid_http_port", 3128)
     bastion_name = require(bastion, "service_node", "env.bastion")
+    bastion.setdefault(
+        "management_interface",
+        require(bastion, "vsphere_route_connection", "env.bastion"),
+    )
+    if not isinstance(bastion["management_interface"], str) or not bastion["management_interface"]:
+        raise SystemExit("env.bastion.management_interface must be a network device name")
     bastion["dnsmasq_upstream_servers"] = require(
         bastion, "dnsmasq_upstream_servers", "env.bastion"
     )

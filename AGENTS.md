@@ -46,6 +46,7 @@
 - `bastion1` runs `dnsmasq` for DHCP/DNS and `squid` so Rancher/local nodes can reach vSphere.
 - Optionally use `bastion.network_connection_names` to rename NetworkManager profiles on bastion, for example `ens192: local` and `ens224: mgmt`; downstream VLAN profiles can stay named `vlanXXX`.
 - Add the vSphere route on bastion from `bastion.vsphere_route` using `bastion.vsphere_route_connection`; this may be a NetworkManager connection profile name or device name. Keep real route values in private env config, not committed examples.
+- `bastion.management_interface` is the known guest management device, defaulted from `vsphere_route_connection` when that is a device. dnsmasq renders `bind-dynamic` and `no-dhcp-interface=<management_interface>` so management remains DNS-only.
 - DHCP reservations are needed for fixed local nodes only if choosing DHCP over Terraform static customization; account for the MAC-address chicken/egg when designing provisioning.
 - After `bastion1`, `prom1`, and Rancher nodes exist, run `make node-prep` before RKE2.
 - `make node-prep` sets local node hostnames to `<node>.<rancher_url>` with `hostnamectl` and renders `/etc/profile.d/prompt.sh`; prompt colors come from `env.yaml` `prompt` and its suffix is `environment.id`.
@@ -69,7 +70,7 @@
 - Terraform must append the corresponding bastion vNIC and output the logical network-to-MAC mapping for pyinfra. Keep existing primary NIC ordering fixed and reject unsafe reorder/removal plans.
 - pyinfra must discover the guest device by its Terraform-provided MAC, then render a stable NetworkManager profile, gateway address, and dnsmasq DHCP configuration. Never persist MACs, guest interface names, VM UUIDs, or vSphere MoRefs in `env.yaml`.
 - Render NetworkManager and dnsmasq configuration declaratively as complete managed files, not append/patch operations.
-- DHCP ranges and `dhcp-authoritative` must be scoped to explicit service interfaces; never use `interface=*` or serve DHCP on the management interface. Omit DHCP option 6 so dnsmasq advertises its own address in the matching VLAN.
+- DHCP ranges must be scoped to explicit service interfaces; never use `interface=*` or serve DHCP on the management interface. Enable `dhcp-authoritative` only when dnsmasq serves DHCP exclusively on explicit service interfaces. Omit DHCP option 6 so dnsmasq advertises its own address in the matching VLAN.
 - Removing a configured service network must require an explicit safety acknowledgement because it can disconnect existing downstream clusters.
 - Per-environment repos should consume this engine as a pinned dependency rather than a fork. Git submodule versus a versioned CLI, and the location of generated runtime artifacts outside the engine, remain open design decisions.
 

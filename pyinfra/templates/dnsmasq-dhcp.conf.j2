@@ -1,6 +1,10 @@
+bind-dynamic
+no-dhcp-interface={{ config.bastion.management_interface }}
+
 # DHCP is intentionally left unconfigured until the service-network schema is
-# agreed. DHCP ranges and dhcp-authoritative must be scoped to an explicit
-# service interface, never interface=* or the management interface.
+# agreed. DHCP ranges must be scoped to an explicit service interface, never
+# interface=* or the management interface. Enable dhcp-authoritative only when
+# dnsmasq serves DHCP exclusively on explicit service interfaces.
 # dnsmasq advertises its own address on that interface as DNS when option 6 is
 # omitted.
 # dhcp-range=SERVICE_INTERFACE,START_IP,END_IP,LEASE_TIME
