@@ -14,8 +14,10 @@ TF_BACKEND_ARGS := $(addprefix -backend-config=,$(TF_BACKEND_CONFIG))
 TF_INIT_ARGS ?=
 TF_APPLY_ARGS ?=
 PYINFRA_ARGS ?=
+ADMIN_SSH_HOST ?=
+ADMIN_SSH_CONFIG := $(BUILD_ENV_DIR)/$(ENV_ID).conf
 
-.PHONY: help render-infra-vars ssh-config admin-ssh-config infra-init infra-fmt infra-validate infra-plan infra-apply infra-output destroy-commands bastion-configure node-prep rke2-install rke2-kubeconfig rancher-install rancher-install-run rancher-bootstrap rancher-bootstrap-run provision-all provision-all-yes verify
+.PHONY: help render-infra-vars ssh-config admin-ssh-config install-admin-ssh-config infra-init infra-fmt infra-validate infra-plan infra-apply infra-output destroy-commands bastion-configure node-prep rke2-install rke2-kubeconfig rancher-install rancher-install-run rancher-bootstrap rancher-bootstrap-run provision-all provision-all-yes verify
 
 help:
 	@printf '%s\n' 'Targets:'
@@ -25,6 +27,7 @@ help:
 	@printf '\033[3m%s\033[0m\n' '  render-infra-vars   render build/<environment.id>/infra.tfvars.json from env.yaml'
 	@printf '\033[3m%s\033[0m\n' '  ssh-config          render build/<environment.id>/ssh_config from env.yaml'
 	@printf '\033[3m%s\033[0m\n' '  admin-ssh-config    render admin jump-host SSH fragment from env.yaml'
+	@printf '\033[3m%s\033[0m\n' '  install-admin-ssh-config  upload the admin SSH fragment to the configured jump host'
 	@printf '%s\n' '  infra-init          terraform init for infra layer'
 	@printf '%s\n' '  infra-fmt           check Terraform formatting'
 	@printf '%s\n' '  infra-validate      validate Terraform infra root'
@@ -47,7 +50,17 @@ ssh-config:
 	$(PYTHON) scripts/render-ssh-config.py --env $(ENV)/env.yaml --out $(BUILD_ENV_DIR)/ssh_config
 
 admin-ssh-config:
-	$(PYTHON) scripts/render-admin-ssh-config.py --env $(ENV)/env.yaml --out $(BUILD_ENV_DIR)/admin_ssh_config
+	$(PYTHON) scripts/render-admin-ssh-config.py --env $(ENV)/env.yaml --out $(ADMIN_SSH_CONFIG)
+
+install-admin-ssh-config: admin-ssh-config
+	@set -euo pipefail; \
+	admin_ssh_host="$(ADMIN_SSH_HOST)"; \
+	if [[ -z "$$admin_ssh_host" ]]; then admin_ssh_host="$$($(PYTHON) scripts/admin-jump-host.py --env $(ENV)/env.yaml)"; fi; \
+	ssh "$$admin_ssh_host" 'install -d -m 700 /root/.ssh/config.d'; \
+	scp "$(ADMIN_SSH_CONFIG)" "$$admin_ssh_host:/root/.ssh/config.d/$(ENV_ID).conf"; \
+	ssh "$$admin_ssh_host" 'chmod 600 /root/.ssh/config.d/$(ENV_ID).conf'; \
+	printf 'Installed %s on %s:/root/.ssh/config.d/%s.conf\n' "$(ADMIN_SSH_CONFIG)" "$$admin_ssh_host" "$(ENV_ID)"; \
+	printf '%s\n' 'Ensure /root/.ssh/config includes ~/.ssh/config.d/*.conf; this target does not modify it.'
 
 infra-init:
 	$(TERRAFORM) -chdir=$(TF_INFRA_DIR) init $(TF_BACKEND_ARGS) $(TF_INIT_ARGS)
@@ -202,9 +215,9 @@ provision-all-yes:
 	$(MAKE) provision-all DEPLOY_YES=1 ENV="$(ENV)" PYTHON="$(PYTHON)" PYINFRA="$(PYINFRA)" PYINFRA_ARGS="--yes" TERRAFORM="$(TERRAFORM)" TF_BACKEND_CONFIG="$(TF_BACKEND_CONFIG)" TF_INIT_ARGS="$(TF_INIT_ARGS)" TF_APPLY_ARGS="-auto-approve"
 
 verify:
-	$(PYTHON) -m py_compile lib/env_config.py lib/ssh_config.py pyinfra/inventory.py pyinfra/deploy.py scripts/environment-id.py scripts/render-admin-ssh-config.py scripts/render-infra-tfvars.py scripts/render-ssh-config.py scripts/prepare-rke2-kubeconfig.py
+	$(PYTHON) -m py_compile lib/env_config.py lib/ssh_config.py pyinfra/inventory.py pyinfra/deploy.py scripts/admin-jump-host.py scripts/environment-id.py scripts/render-admin-ssh-config.py scripts/render-infra-tfvars.py scripts/render-ssh-config.py scripts/prepare-rke2-kubeconfig.py
 	bash -n scripts/install-rke2.sh scripts/install-rancher.sh scripts/bootstrap-rancher.sh
 	$(PYTHON) scripts/render-infra-tfvars.py --env $(ENV)/env.yaml --out $(INFRA_TFVARS)
 	$(PYTHON) scripts/render-ssh-config.py --env $(ENV)/env.yaml --out $(BUILD_ENV_DIR)/ssh_config
-	$(PYTHON) scripts/render-admin-ssh-config.py --env $(ENV)/env.yaml --out $(BUILD_ENV_DIR)/admin_ssh_config
+	$(PYTHON) scripts/render-admin-ssh-config.py --env $(ENV)/env.yaml --out $(ADMIN_SSH_CONFIG)
 	$(TERRAFORM) -chdir=$(TF_INFRA_DIR) fmt -check -recursive -diff

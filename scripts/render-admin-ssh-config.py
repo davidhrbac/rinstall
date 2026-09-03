@@ -17,7 +17,7 @@ def main():
 
     env_path = Path(args.env)
     config = load_env(env_path)
-    out = Path(args.out) if args.out else build_dir_for_env(env_path) / "admin_ssh_config"
+    out = Path(args.out) if args.out else build_dir_for_env(env_path) / f"{config['environment']['id']}.conf"
     write_admin_ssh_config(config, out)
     print(out)
 

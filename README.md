@@ -81,7 +81,13 @@ ssh:
 
 The jump host alias should be defined in the operator's `~/.ssh/config`; `make ssh-config` generates `build/<environment.id>/ssh_config`, includes that file, and only adds target-node routing. Generated target entries use `ProxyCommand` so both OpenSSH and pyinfra's SSH connector can consume the same config. This keeps real internal hostnames, IPs, and upstream SSH topology out of the repo. Use `ssh_ip` per node only if the desired SSH target cannot be derived from a static management NIC.
 
-For administrator access from an existing admin jump host, run `make admin-ssh-config ENV=envs/private/<env>`. It renders `build/<environment.id>/admin_ssh_config` with aliases such as `bastion1.<environment.id>` and `prom1.<environment.id>`. Configure that host once to include `~/.ssh/config.d/*.conf`, then copy the fragment to `/root/.ssh/config.d/<environment.id>.conf`. The deployment never modifies `/root/.ssh/config` or uploads this fragment automatically.
+For administrator access from an existing admin jump host, run `make admin-ssh-config ENV=envs/private/<env>`. It renders `build/<environment.id>/<environment.id>.conf` with aliases such as `bastion1.<environment.id>` and `prom1.<environment.id>`. Configure that host once to include `~/.ssh/config.d/*.conf`, then upload the fragment explicitly:
+
+```bash
+make install-admin-ssh-config ENV=envs/private/<env>
+```
+
+The upload target uses `ssh.jump_host` unless `ADMIN_SSH_HOST=<SSH alias>` overrides it. It creates `/root/.ssh/config.d` and uploads the per-environment fragment with mode `0600`; it never modifies `/root/.ssh/config` or adds its `Include` directive.
 
 For bastion access through the management NIC, prefer static NIC addressing with `cidr`. The loader derives `nodes.bastion1.ssh_ip` from the management NIC IP; `bastion.service_ip` and local DNS/proxy services still use the customer-facing static IP from `host: 4`.
 

@@ -8,6 +8,7 @@
 - Keep real customer/internal hostnames, IPs, and SSH topology names out of committed examples; use `envs/private/` or another untracked env path for real values.
 - Prefer `ssh.jump_host: <existing SSH config alias>` in private env configs; keep upstream SSH details in the operator's `~/.ssh/config`, not in this repo.
 - Use `make ssh-config ENV=<env>` to generate `build/<environment.id>/ssh_config` without running pyinfra.
+- Use `make admin-ssh-config ENV=<env>` to generate `build/<environment.id>/<environment.id>.conf` for an admin jump host. `make install-admin-ssh-config ENV=<env>` may upload that fragment to `/root/.ssh/config.d/` through `ssh.jump_host`, but must never modify `/root/.ssh/config` or add its `Include` directive.
 - Prefer static addressing on `bastion1` management NIC using `nics[].cidr`; `lib/env_config.py` derives `nodes.bastion1.ssh_ip` from that management NIC IP for generated SSH config.
 - Static `nics[].cidr` values are vSphere clone customization inputs; changing them after VM creation may not reconfigure guest networking. Recreate the VM or adjust NetworkManager in-guest, then test on fresh redeploy.
 - If `ssh.jump_host` is set, generated SSH config includes `~/.ssh/config`; target host entries use `ProxyCommand` for pyinfra compatibility. `bastion1` proxies through `<jump_host>`, and local-only nodes proxy through `<jump_host>` then bastion when their roles are listed in `bastion_proxy_roles`, typically `prometheus` and `rancher`.
