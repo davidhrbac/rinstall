@@ -1,9 +1,11 @@
 import os
 from pathlib import Path
 
+from lib.env_config import load_env
+
 
 def build_dir_for_env(env_config_path):
-    return Path("build") / Path(env_config_path).parent.name
+    return Path("build") / load_env(env_config_path)["environment"]["id"]
 
 
 def node_ssh_target(node):
@@ -42,6 +44,7 @@ def render_ssh_config(config):
     ssh_key = os.path.expanduser(ssh.get("private_key", "~/.ssh/id_rsa"))
     jump_host = ssh.get("jump_host")
     jump_alias = None
+    environment_id = config["environment"]["id"]
     lines = ["Include ~/.ssh/config", ""]
 
     if jump_host:
@@ -86,7 +89,7 @@ def render_ssh_config(config):
 
         lines.extend(
             [
-                f"Host {node_name} {node_ssh_target(node)}",
+                f"Host {node_name} {node_name}.{environment_id} {node_ssh_target(node)}",
                 f"  HostName {node_ssh_target(node)}",
                 f"  User {ssh_user}",
                 f"  IdentityFile {ssh_key}",
@@ -99,8 +102,41 @@ def render_ssh_config(config):
     return "\n".join(lines) + "\n"
 
 
+def render_admin_ssh_config(config):
+    ssh = config.get("ssh", {})
+    ssh_user = ssh.get("user", "root")
+    ssh_key = os.path.expanduser(ssh.get("private_key", "~/.ssh/id_rsa"))
+    environment_id = config["environment"]["id"]
+    bastion_name = config["bastion"]["service_node"]
+    bastion_alias = f"{bastion_name}.{environment_id}"
+    lines = []
+
+    for node_name, node in config["nodes"].items():
+        is_bastion = node_name == bastion_name
+        target = node_ssh_target(node) if is_bastion else node["ip"]
+        lines.extend(
+            [
+                f"Host {node_name}.{environment_id}",
+                f"  HostName {target}",
+                f"  User {ssh_user}",
+                f"  IdentityFile {ssh_key}",
+                *([] if is_bastion else [f"  ProxyJump {bastion_alias}" ]),
+                "",
+            ]
+        )
+
+    return "\n".join(lines)
+
+
 def write_ssh_config(config, path):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(render_ssh_config(config))
+    return path
+
+
+def write_admin_ssh_config(config, path):
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(render_admin_ssh_config(config))
     return path

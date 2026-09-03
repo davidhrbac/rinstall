@@ -67,7 +67,7 @@ See `.envrc.example` for the expected variable names. `make render-infra-vars` o
 
 The committed scaffold uses Terraform's default local state, so `make infra-init` works without GitLab backend settings. If an environment should use GitLab Terraform state, copy `terraform/infra/backend.tf.example` to the ignored `terraform/infra/backend.tf` and put GitLab HTTP backend settings in `.envrc` or pass them with `TF_BACKEND_CONFIG=<file>`.
 
-If local nodes require a separate SSH jump host, configure it in `env.yaml`. pyinfra inventory will generate `build/<env>/ssh_config` with per-host proxy rules. `bastion1` goes through the first jump host; local-only nodes can go through the first jump host and then `bastion1`:
+If local nodes require a separate SSH jump host, configure it in `env.yaml`. pyinfra inventory will generate `build/<environment.id>/ssh_config` with per-host proxy rules. `bastion1` goes through the first jump host; local-only nodes can go through the first jump host and then `bastion1`:
 
 ```yaml
 ssh:
@@ -79,7 +79,9 @@ ssh:
     - rancher
 ```
 
-The jump host alias should be defined in the operator's `~/.ssh/config`; `make ssh-config` generates `build/<env>/ssh_config`, includes that file, and only adds target-node routing. Generated target entries use `ProxyCommand` so both OpenSSH and pyinfra's SSH connector can consume the same config. This keeps real internal hostnames, IPs, and upstream SSH topology out of the repo. Use `ssh_ip` per node only if the desired SSH target cannot be derived from a static management NIC.
+The jump host alias should be defined in the operator's `~/.ssh/config`; `make ssh-config` generates `build/<environment.id>/ssh_config`, includes that file, and only adds target-node routing. Generated target entries use `ProxyCommand` so both OpenSSH and pyinfra's SSH connector can consume the same config. This keeps real internal hostnames, IPs, and upstream SSH topology out of the repo. Use `ssh_ip` per node only if the desired SSH target cannot be derived from a static management NIC.
+
+For administrator access from an existing admin jump host, run `make admin-ssh-config ENV=envs/private/<env>`. It renders `build/<environment.id>/admin_ssh_config` with aliases such as `bastion1.<environment.id>` and `prom1.<environment.id>`. Configure that host once to include `~/.ssh/config.d/*.conf`, then copy the fragment to `/root/.ssh/config.d/<environment.id>.conf`. The deployment never modifies `/root/.ssh/config` or uploads this fragment automatically.
 
 For bastion access through the management NIC, prefer static NIC addressing with `cidr`. The loader derives `nodes.bastion1.ssh_ip` from the management NIC IP; `bastion.service_ip` and local DNS/proxy services still use the customer-facing static IP from `host: 4`.
 
@@ -179,11 +181,16 @@ Proxy files follow the production pattern: `HTTP_PROXY`/`HTTPS_PROXY` point at `
 
 `make node-prep` sets local node hostnames to `<node>.<rancher_url>`, including `bastion1`, `prom1`, and all Rancher nodes.
 
-It also renders `/etc/profile.d/prompt.sh`. Prompt colors have defaults; set only the environment-specific display suffix unless a customer needs different colors:
+It also renders `/etc/profile.d/prompt.sh`. The prompt suffix is always `environment.id`; prompt colors have defaults and are the only prompt-specific settings:
 
 ```yaml
+schema_version: 1
+environment:
+  id: test.elo
+
 prompt:
-  host_suffix: dev.example
+  colors:
+    host: 129
 ```
 
 ## RKE2 Prep
@@ -224,7 +231,7 @@ Set `rancher.bootstrap_password` only in private env configs when you want to co
 
 ## Source Of Truth
 
-Edit only `envs/<env>/env.yaml` for environment data. `make infra-plan` and `make infra-apply` render `build/<env>/infra.tfvars.json` from that YAML before invoking Terraform. Do not edit generated files under `build/`.
+Edit only `envs/<env>/env.yaml` for environment data. Every config requires `schema_version: 1` and an immutable `environment.id`. The ID is the canonical suffix for shell prompts and administrator SSH aliases, and it names generated artifacts under `build/<environment.id>/`. `make infra-plan` and `make infra-apply` render `build/<environment.id>/infra.tfvars.json` from that YAML before invoking Terraform. Do not edit generated files under `build/`.
 
 Use `envs/example` only for sanitized examples. Put real customer/internal environments under `envs/private/` or another untracked path if hostnames, IPs, or topology names should not be visible in the repo.
 

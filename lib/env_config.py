@@ -1,6 +1,7 @@
 from copy import deepcopy
 from ipaddress import ip_interface, ip_network
 from pathlib import Path
+import re
 
 import yaml
 
@@ -18,11 +19,31 @@ DEFAULT_NO_PROXY_NAMES = [
     ".cluster.local",
 ]
 
+SUPPORTED_SCHEMA_VERSION = 1
+ENVIRONMENT_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9.-]*$")
+
 
 def require(mapping, key, context):
     if key not in mapping or mapping[key] is None:
         raise SystemExit(f"missing {context}.{key}")
     return mapping[key]
+
+
+def validate_environment_identity(env):
+    schema_version = require(env, "schema_version", "env")
+    if schema_version != SUPPORTED_SCHEMA_VERSION:
+        raise SystemExit(
+            f"env.schema_version must be {SUPPORTED_SCHEMA_VERSION}, got {schema_version!r}"
+        )
+
+    environment = require(env, "environment", "env")
+    environment_id = require(environment, "id", "env.environment")
+    if not isinstance(environment_id, str) or not ENVIRONMENT_ID_PATTERN.fullmatch(environment_id):
+        raise SystemExit(
+            "env.environment.id must contain only lowercase letters, digits, dots, and hyphens"
+        )
+
+    return environment_id
 
 
 def address_from_host(network, host, context):
@@ -154,6 +175,7 @@ def load_env(path):
 
 def expand_env(raw_env):
     env = deepcopy(raw_env)
+    environment_id = validate_environment_identity(env)
     env.setdefault("domain", domain_from_rancher_url(require(env, "rancher_url", "env")))
     expand_node_pools(env)
     validate_env_references(env)
@@ -221,8 +243,11 @@ def expand_env(raw_env):
     no_proxy.extend(proxy.get("extra_no_proxy", []))
     proxy["no_proxy"] = no_proxy
 
-    prompt = env.setdefault("prompt", {})
-    prompt.setdefault("host_suffix", env.get("domain", "local"))
+    prompt = env.get("prompt") or {}
+    env["prompt"] = prompt
+    if prompt.get("host_suffix") not in (None, environment_id):
+        raise SystemExit("env.prompt.host_suffix must match env.environment.id")
+    prompt["host_suffix"] = environment_id
     colors = prompt.setdefault("colors", {})
     colors.setdefault("user", 183)
     colors.setdefault("at", 135)

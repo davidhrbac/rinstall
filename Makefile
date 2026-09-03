@@ -2,33 +2,35 @@ SHELL := /bin/bash
 MAKEFLAGS += --no-print-directory
 
 ENV ?= envs/example
-TF_INFRA_DIR := terraform/infra
-BUILD_ENV_DIR := build/$(notdir $(ENV))
-INFRA_TFVARS := $(BUILD_ENV_DIR)/infra.tfvars.json
 PYTHON ?= python3
 PYINFRA ?= pyinfra
 TERRAFORM ?= terraform
+ENV_ID := $(shell $(PYTHON) scripts/environment-id.py --env $(ENV)/env.yaml)
+TF_INFRA_DIR := terraform/infra
+BUILD_ENV_DIR := build/$(ENV_ID)
+INFRA_TFVARS := $(BUILD_ENV_DIR)/infra.tfvars.json
 TF_BACKEND_CONFIG ?=
 TF_BACKEND_ARGS := $(addprefix -backend-config=,$(TF_BACKEND_CONFIG))
 TF_INIT_ARGS ?=
 TF_APPLY_ARGS ?=
 PYINFRA_ARGS ?=
 
-.PHONY: help render-infra-vars ssh-config infra-init infra-fmt infra-validate infra-plan infra-apply infra-output destroy-commands bastion-configure node-prep rke2-install rke2-kubeconfig rancher-install rancher-install-run rancher-bootstrap rancher-bootstrap-run provision-all provision-all-yes verify
+.PHONY: help render-infra-vars ssh-config admin-ssh-config infra-init infra-fmt infra-validate infra-plan infra-apply infra-output destroy-commands bastion-configure node-prep rke2-install rke2-kubeconfig rancher-install rancher-install-run rancher-bootstrap rancher-bootstrap-run provision-all provision-all-yes verify
 
 help:
 	@printf '%s\n' 'Targets:'
 	@printf '%s\n' '  provision-all       confirm, apply infra, run all phases, and print duration summary'
 	@printf '%s\n' '  provision-all-yes   run provision-all without prompt'
 	@printf '%s\n' ''
-	@printf '\033[3m%s\033[0m\n' '  render-infra-vars   render build/<env>/infra.tfvars.json from env.yaml'
-	@printf '\033[3m%s\033[0m\n' '  ssh-config          render build/<env>/ssh_config from env.yaml'
+	@printf '\033[3m%s\033[0m\n' '  render-infra-vars   render build/<environment.id>/infra.tfvars.json from env.yaml'
+	@printf '\033[3m%s\033[0m\n' '  ssh-config          render build/<environment.id>/ssh_config from env.yaml'
+	@printf '\033[3m%s\033[0m\n' '  admin-ssh-config    render admin jump-host SSH fragment from env.yaml'
 	@printf '%s\n' '  infra-init          terraform init for infra layer'
 	@printf '%s\n' '  infra-fmt           check Terraform formatting'
 	@printf '%s\n' '  infra-validate      validate Terraform infra root'
 	@printf '%s\n' '  infra-plan          plan vSphere infra using ENV=<env dir>'
 	@printf '%s\n' '  infra-apply         apply vSphere infra using ENV=<env dir>'
-	@printf '\033[3m%s\033[0m\n' '  infra-output        write Terraform outputs to build/<env>/infra-output.json'
+	@printf '\033[3m%s\033[0m\n' '  infra-output        write Terraform outputs to build/<environment.id>/infra-output.json'
 	@printf '%s\n' '  bastion-configure   configure dnsmasq/squid/routes on bastion1 with pyinfra'
 	@printf '%s\n' '  node-prep           set hostnames/prompts on local nodes and prep Rancher nodes'
 	@printf '%s\n' '  rke2-install        install RKE2 primary first, then join nodes'
@@ -43,6 +45,9 @@ render-infra-vars:
 
 ssh-config:
 	$(PYTHON) scripts/render-ssh-config.py --env $(ENV)/env.yaml --out $(BUILD_ENV_DIR)/ssh_config
+
+admin-ssh-config:
+	$(PYTHON) scripts/render-admin-ssh-config.py --env $(ENV)/env.yaml --out $(BUILD_ENV_DIR)/admin_ssh_config
 
 infra-init:
 	$(TERRAFORM) -chdir=$(TF_INFRA_DIR) init $(TF_BACKEND_ARGS) $(TF_INIT_ARGS)
@@ -197,8 +202,9 @@ provision-all-yes:
 	$(MAKE) provision-all DEPLOY_YES=1 ENV="$(ENV)" PYTHON="$(PYTHON)" PYINFRA="$(PYINFRA)" PYINFRA_ARGS="--yes" TERRAFORM="$(TERRAFORM)" TF_BACKEND_CONFIG="$(TF_BACKEND_CONFIG)" TF_INIT_ARGS="$(TF_INIT_ARGS)" TF_APPLY_ARGS="-auto-approve"
 
 verify:
-	$(PYTHON) -m py_compile lib/env_config.py lib/ssh_config.py pyinfra/inventory.py pyinfra/deploy.py scripts/render-infra-tfvars.py scripts/render-ssh-config.py scripts/prepare-rke2-kubeconfig.py
+	$(PYTHON) -m py_compile lib/env_config.py lib/ssh_config.py pyinfra/inventory.py pyinfra/deploy.py scripts/environment-id.py scripts/render-admin-ssh-config.py scripts/render-infra-tfvars.py scripts/render-ssh-config.py scripts/prepare-rke2-kubeconfig.py
 	bash -n scripts/install-rke2.sh scripts/install-rancher.sh scripts/bootstrap-rancher.sh
 	$(PYTHON) scripts/render-infra-tfvars.py --env $(ENV)/env.yaml --out $(INFRA_TFVARS)
 	$(PYTHON) scripts/render-ssh-config.py --env $(ENV)/env.yaml --out $(BUILD_ENV_DIR)/ssh_config
+	$(PYTHON) scripts/render-admin-ssh-config.py --env $(ENV)/env.yaml --out $(BUILD_ENV_DIR)/admin_ssh_config
 	$(TERRAFORM) -chdir=$(TF_INFRA_DIR) fmt -check -recursive -diff

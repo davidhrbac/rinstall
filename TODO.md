@@ -6,10 +6,6 @@
   - Keep this repository limited to Day-0/DR bootstrap: vSphere, bastion, RKE2, and initial Rancher installation.
   - State explicitly that Rancher API resources, Fleet, downstream cluster lifecycle, and Rancher/Kubernetes upgrades belong to a separate Rancher environment project.
 
-- Add immutable environment identity and schema versioning.
-  - Add required `environment.id` for generated artifact/runtime isolation.
-  - Add `schema_version` and validate supported versions before resolving the environment.
-
 - Review vSphere TLS verification defaults.
   - Prefer `allow_unverified_ssl: false`; retain an insecure override only where explicitly required.
 
@@ -33,9 +29,6 @@
   - Terraform must append the matching vNIC to bastion and expose logical network-to-MAC output for pyinfra.
   - pyinfra must resolve the guest interface by MAC, configure NetworkManager/dnsmasq declaratively, and never depend on `ens*` names or NIC ordering.
   - Removing a configured network must require an explicit safety acknowledgement because it can disconnect downstream clusters.
-
-- Make generated artifact paths safe across multiple environment instances.
-  - Use `environment.id` rather than only `$(notdir $(ENV))` to prevent build, SSH config, and kubeconfig path collisions.
 
 - Split environment loading into parse, validate, and resolve stages when the config model grows.
 
