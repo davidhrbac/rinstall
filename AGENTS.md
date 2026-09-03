@@ -48,7 +48,7 @@
 - `bastion1` runs `dnsmasq` for DHCP/DNS and `squid` so Rancher/local nodes can reach vSphere.
 - Optionally use `bastion.network_connection_names` to rename NetworkManager profiles on bastion, for example `ens192: local` and `ens224: mgmt`; downstream VLAN profiles can stay named `vlanXXX`.
 - Add the vSphere route on bastion from `bastion.vsphere_route` using `bastion.vsphere_route_connection`; this may be a NetworkManager connection profile name or device name. Keep real route values in private env config, not committed examples.
-- `bastion.management_interface` is the known guest management device, defaulted from `vsphere_route_connection` when that is a device. dnsmasq renders `bind-dynamic` and `no-dhcp-interface=<management_interface>` so management remains DNS-only.
+- dnsmasq derives the known management device from `bastion.vsphere_route_connection`: use the direct device name or resolve the source device through `bastion.network_connection_names` when the route connection is a renamed NetworkManager profile. It renders `bind-dynamic` and `no-dhcp-interface=<management_device>` so management remains DNS-only.
 - DHCP reservations are needed for fixed local nodes only if choosing DHCP over Terraform static customization; account for the MAC-address chicken/egg when designing provisioning.
 - After `bastion1`, `prom1`, and Rancher nodes exist, run `make node-prep` before RKE2.
 - `make node-prep` sets local node hostnames to `<node>.<rancher_url>` with `hostnamectl` and renders `/etc/profile.d/prompt.sh`; prompt colors come from `env.yaml` `prompt` and its suffix is `environment.id`.

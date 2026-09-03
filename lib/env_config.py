@@ -220,12 +220,18 @@ def expand_env(raw_env):
     bastion = require(env, "bastion", "env")
     bastion.setdefault("squid_http_port", 3128)
     bastion_name = require(bastion, "service_node", "env.bastion")
-    bastion.setdefault(
-        "management_interface",
-        require(bastion, "vsphere_route_connection", "env.bastion"),
-    )
-    if not isinstance(bastion["management_interface"], str) or not bastion["management_interface"]:
-        raise SystemExit("env.bastion.management_interface must be a network device name")
+    route_connection = require(bastion, "vsphere_route_connection", "env.bastion")
+    management_interfaces = [
+        source
+        for source, target in bastion.get("network_connection_names", {}).items()
+        if target == route_connection
+    ]
+    if len(management_interfaces) > 1:
+        raise SystemExit(
+            "env.bastion.network_connection_names maps multiple devices to "
+            "env.bastion.vsphere_route_connection"
+        )
+    bastion["management_interface"] = management_interfaces[0] if management_interfaces else route_connection
     bastion["dnsmasq_upstream_servers"] = require(
         bastion, "dnsmasq_upstream_servers", "env.bastion"
     )
