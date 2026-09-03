@@ -204,6 +204,7 @@ def expand_env(raw_env):
         bastion["service_ip"] = nodes[require(bastion, "service_node", "env.bastion")]["ip"]
 
     rke2 = require(env, "rke2", "env")
+    require(rke2, "version", "env.rke2")
     rke2.setdefault("token_file", "/etc/rancher/rke2/token")
     rke2.setdefault("selinux", True)
     rke2.setdefault("tls_sans", [require(env, "rancher_url", "env")])

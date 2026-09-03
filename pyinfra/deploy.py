@@ -283,7 +283,7 @@ if phase == "rke2-install-primary" and role == "rancher" and name == config["rke
 
     server.shell(
         name="Install or start RKE2 primary server",
-        commands=["/tmp/install-rke2.sh"],
+        commands=[shell_env({"RKE2_VERSION": config["rke2"]["version"]}) + " /tmp/install-rke2.sh"],
     )
 
     disable_rke2_repos()
@@ -307,7 +307,7 @@ if phase == "rke2-install-join" and role == "rancher" and name != config["rke2"]
 
     server.shell(
         name="Install or start RKE2 join servers",
-        commands=["/tmp/install-rke2.sh"],
+        commands=[shell_env({"RKE2_VERSION": config["rke2"]["version"]}) + " /tmp/install-rke2.sh"],
     )
 
     disable_rke2_repos()

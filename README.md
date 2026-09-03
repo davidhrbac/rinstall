@@ -239,4 +239,4 @@ For environments that need GitLab Terraform state, create an ignored `terraform/
 
 Do not commit credentials in generated var files, backend config files with secrets, generated node files, kubeconfigs, Rancher tokens, or `.envrc`. Prefer environment variables, Bitwarden, or one-shot bootstrap scripts for secrets that should not land in Terraform state.
 
-For scaffold/test environments, `rke2.token` may be placed directly in `env.yaml`; `make node-prep` writes it to `rke2.token_file` on Rancher nodes. For production, prefer omitting `rke2.token` and populating `rke2.token_file` from the approved secret source. RKE2 `tls-san` defaults to `rancher_url` to avoid hostname typos.
+For scaffold/test environments, `rke2.token` may be placed directly in `env.yaml`; `make node-prep` writes it to `rke2.token_file` on Rancher nodes. For production, prefer omitting `rke2.token` and populating `rke2.token_file` from the approved secret source. `rke2.version` is required and pins the release installed by `get.rke2.io`; a rerun fails if an installed RKE2 version differs from the requested pin. RKE2 `tls-san` defaults to `rancher_url` to avoid hostname typos.

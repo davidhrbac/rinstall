@@ -52,6 +52,7 @@
 - `make node-prep` renders `/etc/profile.d/rke2.sh` on Rancher nodes so root shells get RKE2 `PATH`, `KUBECONFIG`, `CRI_CONFIG_FILE`, `k` alias, and kubectl/crictl Bash completion.
 - If `rke2.token` is present in `env.yaml`, `make node-prep` writes it to `rke2.token_file`; use only dummy tokens in committed examples and prefer secret-source population for production.
 - RKE2 config uses `token-file`, `selinux: true`, `tls-san` defaulted from `rancher_url`; only non-primary Rancher nodes get `server: https://<rancher1-ip>:9345`.
+- `rke2.version` is required and passed to `get.rke2.io` as `INSTALL_RKE2_VERSION`. Existing nodes must already match the pin; this repo does not use reruns to upgrade or downgrade RKE2.
 - `make rke2-install` runs two pyinfra phases: install/enable `rke2-server --now` on `rke2.primary_node` first, then on all other Rancher join nodes.
 - RKE2 install disables Rancher RKE2 package repositories after installation because RKE2 is not upgraded through OS package updates.
 - After RKE2 is ready, install `asdf` as a binary on `bastion1`, install Helm and kubectl through asdf for install/diagnostics, configure Helm repos, install cert-manager, then install Rancher.
