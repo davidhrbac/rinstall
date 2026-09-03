@@ -26,7 +26,7 @@ make infra-plan ENV=envs/example
 make provision-all ENV=envs/example
 ```
 
-`make provision-all` asks for confirmation, runs `infra-apply`, configures bastion, prepares nodes, installs RKE2, installs Rancher, and prints a duration summary at the end. `make rancher-install` prepares the RKE2 kubeconfig automatically before the Helm phase. Use `make infra-plan` first as the review checkpoint before applying changes. For unattended runs use `make provision-all-yes ENV=envs/example`; it passes `-auto-approve` to Terraform apply and `--yes` to pyinfra.
+`make provision-all` asks for confirmation, runs `infra-apply`, configures bastion, prepares nodes, installs RKE2, installs Rancher, and prints a duration summary at the end. It writes complete phase output to `build/<environment.id>/provision-<timestamp>-<pid>.log` through a pseudo-terminal, preserving colors in both the terminal and log. Pyinfra progress redraw is disabled by default with `PYINFRA_PROGRESS=off` so logs stay readable; set `PYINFRA_PROGRESS=on` to restore it for an individual command. `make rancher-install` prepares the RKE2 kubeconfig automatically before the Helm phase. Use `make infra-plan` first as the review checkpoint before applying changes. For unattended runs use `make provision-all-yes ENV=envs/example`; it passes `-auto-approve` to Terraform apply and `--yes` to pyinfra.
 
 `make rancher-install` and `make rancher-bootstrap` automatically fetch `/etc/rancher/rke2/rke2.yaml` from the primary Rancher node, rewrite its Kubernetes API endpoint to the primary node IP, and upload the prepared kubeconfig to `bastion1:/root/rke2.yaml`. The helper target `make rke2-kubeconfig` is available for debugging that step directly.
 
