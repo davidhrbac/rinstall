@@ -30,7 +30,7 @@ release_chart_version() {
   local release=$2
 
   helm get metadata "$release" --namespace "$namespace" --output json 2>/dev/null \
-    | sed -n 's/.*"version":"\([^"]*\)".*/\1/p'
+    | sed -n 's/.*"chart":"[^"]*-\([^"]*\)".*/\1/p'
 }
 
 version_gt() {
