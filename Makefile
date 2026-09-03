@@ -18,7 +18,7 @@ PYINFRA_ARGS ?=
 ADMIN_SSH_HOST ?=
 ADMIN_SSH_CONFIG := $(BUILD_ENV_DIR)/$(ENV_ID).conf
 
-.PHONY: help render-infra-vars ssh-config admin-ssh-config install-admin-ssh-config infra-init infra-fmt infra-validate infra-plan infra-apply infra-output destroy-commands bastion-configure node-prep rke2-install rke2-kubeconfig rancher-install rancher-install-run rancher-bootstrap rancher-bootstrap-run provision-all provision-all-yes verify
+.PHONY: help render-infra-vars ssh-config admin-ssh-config install-admin-ssh-config infra-init infra-fmt infra-validate infra-plan infra-apply infra-output destroy-commands bastion-configure node-prep rke2-install rke2-kubeconfig rancher-install rancher-install-run rancher-bootstrap-password-command rancher-bootstrap rancher-bootstrap-run provision-all provision-all-yes verify
 
 help:
 	@printf '%s\n' 'Targets:'
@@ -120,10 +120,13 @@ rke2-kubeconfig:
 	ENV_CONFIG=$(ENV)/env.yaml PHASE=rke2-kubeconfig PYINFRA_PROGRESS=$(PYINFRA_PROGRESS) $(PYINFRA) $(PYINFRA_ARGS) pyinfra/inventory.py pyinfra/deploy.py
 	$(PYTHON) scripts/prepare-rke2-kubeconfig.py --env $(ENV)/env.yaml
 
-rancher-install: rke2-kubeconfig rancher-install-run
+rancher-install: rke2-kubeconfig rancher-install-run rancher-bootstrap-password-command
 
 rancher-install-run:
 	ENV_CONFIG=$(ENV)/env.yaml PHASE=rancher-install PYINFRA_PROGRESS=$(PYINFRA_PROGRESS) $(PYINFRA) $(PYINFRA_ARGS) pyinfra/inventory.py pyinfra/deploy.py
+
+rancher-bootstrap-password-command:
+	$(PYTHON) scripts/print-rancher-bootstrap-password-command.py --env $(ENV)/env.yaml
 
 rancher-bootstrap: rke2-kubeconfig rancher-bootstrap-run
 
@@ -233,7 +236,7 @@ provision-all-yes:
 	@$(MAKE) provision-all DEPLOY_YES=1 ENV="$(ENV)" PYTHON="$(PYTHON)" PYINFRA="$(PYINFRA)" PYINFRA_ARGS="--yes" TERRAFORM="$(TERRAFORM)" TF_BACKEND_CONFIG="$(TF_BACKEND_CONFIG)" TF_INIT_ARGS="$(TF_INIT_ARGS)" TF_APPLY_ARGS="-auto-approve"
 
 verify:
-	$(PYTHON) -m py_compile lib/env_config.py lib/ssh_config.py pyinfra/inventory.py pyinfra/deploy.py scripts/admin-jump-host.py scripts/environment-id.py scripts/render-admin-ssh-config.py scripts/render-infra-tfvars.py scripts/render-ssh-config.py scripts/prepare-rke2-kubeconfig.py
+	$(PYTHON) -m py_compile lib/env_config.py lib/ssh_config.py pyinfra/inventory.py pyinfra/deploy.py scripts/admin-jump-host.py scripts/environment-id.py scripts/print-rancher-bootstrap-password-command.py scripts/render-admin-ssh-config.py scripts/render-infra-tfvars.py scripts/render-ssh-config.py scripts/prepare-rke2-kubeconfig.py
 	bash -n scripts/install-rke2.sh scripts/install-rancher.sh scripts/bootstrap-rancher.sh
 	$(PYTHON) scripts/render-infra-tfvars.py --env $(ENV)/env.yaml --out $(INFRA_TFVARS)
 	$(PYTHON) scripts/render-ssh-config.py --env $(ENV)/env.yaml --out $(BUILD_ENV_DIR)/ssh_config

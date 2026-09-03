@@ -63,7 +63,7 @@
 - Rancher install/bootstrap fetch primary node `/etc/rancher/rke2/rke2.yaml`, rewrite the API endpoint to the primary node IP, write `build/<environment.id>/rke2.yaml`, and upload it to `bastion1:/root/rke2.yaml`; `make rke2-kubeconfig` is a helper/debug target for that step.
 - Rancher edition is selected by `rancher.edition` (`community` or `prime`); Helm repo/version live under `rancher.editions.<edition>` as `repo_name`, `repo_url`, and `version`, then are resolved by `lib/env_config.py` for install.
 - Rancher Helm install receives `proxy` from bastion Squid and `noProxy` from generated `proxy.no_proxy`; this is separate from OS/RKE2 proxy profile rendering.
-- Optional `rancher.bootstrap_password` is a one-time initial admin password; keep real values in private env configs only. Install passes it to Helm only when the Rancher release does not exist yet, never on repeat upgrades. If omitted for a new release, Rancher generates the password and install output prints a command to retrieve it from `cattle-system/bootstrap-secret`.
+- Optional `rancher.bootstrap_password` is a one-time initial admin password; keep real values in private env configs only. Install passes it to Helm only when the Rancher release does not exist yet, never on repeat upgrades. If omitted, every successful Rancher install prints a command that retrieves the generated password from `cattle-system/bootstrap-secret` if the release was newly installed.
 
 ## Future Bastion Service Networks
 

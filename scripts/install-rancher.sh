@@ -76,11 +76,6 @@ else
 fi
 
 rancher_current_version=$(release_chart_version cattle-system rancher || true)
-rancher_was_new=0
-if [[ -z "$rancher_current_version" ]]; then
-  rancher_was_new=1
-fi
-
 if [[ -n "$rancher_current_version" ]] && version_gt "$rancher_current_version" "$RANCHER_VERSION"; then
   printf 'rancher release is already at newer chart version %s, requested %s; configuration inconsistency, refusing downgrade\n' "$rancher_current_version" "$RANCHER_VERSION" >&2
   exit 1
@@ -110,10 +105,4 @@ else
   fi
 
   helm upgrade --install rancher "$RANCHER_REPO_NAME/rancher" "${rancher_args[@]}"
-
-  if ((rancher_was_new == 1)) && [[ -z "$RANCHER_BOOTSTRAP_PASSWORD" ]]; then
-    printf 'Rancher generated its bootstrap password. Retrieve it with:\n'
-    printf 'KUBECONFIG=%q kubectl -n cattle-system get secret bootstrap-secret -o go-template=%q\n' \
-      "$KUBECONFIG" '{{ .data.bootstrapPassword | base64decode }}{{ "\n" }}'
-  fi
 fi
