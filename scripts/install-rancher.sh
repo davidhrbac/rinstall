@@ -94,5 +94,14 @@ if [[ -z "$rancher_current_version" ]]; then
     rancher_args+=(--set-string noProxy="${RANCHER_NO_PROXY//,/\\,}")
   fi
 
-  helm upgrade --install rancher "$RANCHER_REPO_NAME/rancher" "${rancher_args[@]}"
+  helm install rancher "$RANCHER_REPO_NAME/rancher" "${rancher_args[@]}"
+elif [[ "$rancher_current_version" != "$RANCHER_VERSION" ]]; then
+  printf 'rancher release is at chart version %s, requested %s; rinstall does not manage Rancher upgrades or downgrades\n' \
+    "$rancher_current_version" "$RANCHER_VERSION" >&2
+  exit 1
+elif rancher_values_match; then
+  printf 'rancher release already at requested chart version %s with requested values, skipping\n' "$RANCHER_VERSION"
+else
+  printf 'rancher release values differ from the declared bootstrap configuration; rinstall does not manage Rancher configuration changes\n' >&2
+  exit 1
 fi

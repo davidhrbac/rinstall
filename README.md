@@ -246,6 +246,8 @@ For Rancher Prime, set `edition: prime` in the private env and fill the Prime ch
 
 Set `rancher.bootstrap_password` only in private env configs when you want to control the one-time initial admin password. The install script uses it only when the Rancher Helm release does not exist yet; repeat runs and upgrades never pass `bootstrapPassword` again. When it is omitted, each successful `make rancher-install` prints a command that retrieves the generated password from `cattle-system/bootstrap-secret` if this was the first Rancher release. Change the password after first login.
 
+`rinstall` installs cert-manager and Rancher only when their Helm releases are absent. An existing release must match the declared chart version; Rancher must also match the declared hostname, proxy, and no-proxy values. Any mismatch fails without an upgrade or downgrade, because Rancher and cert-manager lifecycle changes belong to the separate Rancher Environment repository. Synchronize the DR environment pins after those lifecycle changes.
+
 ## Source Of Truth
 
 Edit only `envs/<env>/env.yaml` for environment data. Every config requires `schema_version: 1` and an immutable `environment.id`. The ID is the canonical suffix for shell prompts and administrator SSH aliases, and it names generated artifacts under `build/<environment.id>/`. `make infra-plan` and `make infra-apply` render `build/<environment.id>/infra.tfvars.json` from that YAML before invoking Terraform. Do not edit generated files under `build/`.
