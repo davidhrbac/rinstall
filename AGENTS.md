@@ -40,7 +40,7 @@
 - Use VM template 1 for `bastion1` and `prom1`; use VM template 2 for local Rancher/RKE2 VMs and downstream cluster VMs.
 - vSphere VM object names must be unique; Terraform appends a stable random suffix as `<node>-xxxxx-xxxxx`, while guest hostname/DNS/SSH aliases stay as the unsuffixed node key.
 - `bastion1` primary interface is on the customer VLAN and has a static IP; secondary interface is on the management VLAN and gets DHCP.
-- Use `nodes.<node>.dns_servers` to override Terraform/vSphere clone customization DNS for a specific VM, for example bastion upstream DNS before local dnsmasq is ready.
+- `nodes.bastion1.dns_servers` is required management/vSphere DNS for bastion OS, Squid, and clone customization. Local nodes default to `local.vlan.dns_nodes`, normally bastion; `bastion.dnsmasq_upstream_servers` is a separate required list rendered as dnsmasq `server=` entries with `no-resolv`, so local clients do not inherit bastion management DNS.
 - Set static IPs for `bastion1`, `prom1`, and Rancher nodes with Terraform/vSphere clone customization; do not require DHCP or cloud-init for these fixed local customer-VLAN addresses.
 - Keep bastion customer-facing `service_ip` explicit because `dnsmasq` and `squid` should use it, not the dynamic management address.
 - `bastion1` runs `dnsmasq` for DHCP/DNS and `squid` so Rancher/local nodes can reach vSphere.

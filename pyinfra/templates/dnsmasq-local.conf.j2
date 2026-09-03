@@ -1,2 +1,6 @@
 domain={{ config.domain }}
 expand-hosts
+no-resolv
+{% for server in config.bastion.dnsmasq_upstream_servers %}
+server={{ server }}
+{% endfor %}

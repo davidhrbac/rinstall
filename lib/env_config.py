@@ -219,11 +219,28 @@ def expand_env(raw_env):
 
     bastion = require(env, "bastion", "env")
     bastion.setdefault("squid_http_port", 3128)
-    dns_nodes = local_vlan.setdefault("dns_nodes", [require(bastion, "service_node", "env.bastion")])
+    bastion_name = require(bastion, "service_node", "env.bastion")
+    bastion["dnsmasq_upstream_servers"] = require(
+        bastion, "dnsmasq_upstream_servers", "env.bastion"
+    )
+    if (
+        not isinstance(bastion["dnsmasq_upstream_servers"], list)
+        or not bastion["dnsmasq_upstream_servers"]
+        or not all(isinstance(server, str) and server for server in bastion["dnsmasq_upstream_servers"])
+    ):
+        raise SystemExit("env.bastion.dnsmasq_upstream_servers must be a non-empty list of DNS servers")
+    bastion_dns_servers = require(nodes[bastion_name], "dns_servers", f"env.nodes.{bastion_name}")
+    if (
+        not isinstance(bastion_dns_servers, list)
+        or not bastion_dns_servers
+        or not all(isinstance(server, str) and server for server in bastion_dns_servers)
+    ):
+        raise SystemExit(f"env.nodes.{bastion_name}.dns_servers must be a non-empty list of DNS servers")
+    dns_nodes = local_vlan.setdefault("dns_nodes", [bastion_name])
     local_vlan["dns_servers"] = [nodes[name]["ip"] for name in dns_nodes]
 
     if bastion.get("service_ip") is None:
-        bastion["service_ip"] = nodes[require(bastion, "service_node", "env.bastion")]["ip"]
+        bastion["service_ip"] = nodes[bastion_name]["ip"]
 
     rke2 = require(env, "rke2", "env")
     require(rke2, "version", "env.rke2")

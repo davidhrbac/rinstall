@@ -127,7 +127,7 @@ The loader expands that NIC to `ip`/`prefix` for Terraform and uses the same IP 
 
 vSphere clone customization applies static NIC addressing during VM clone/provisioning. Adding or changing `nics[].cidr` on an already-created VM may update Terraform/vSphere customization metadata but does not reliably reconfigure the guest OS network. For existing VMs, either recreate the VM or adjust the NetworkManager profile in the guest manually/through pyinfra, then keep `env.yaml` aligned for the next redeploy.
 
-By default, vSphere clone customization uses DNS servers derived from `local.vlan.dns_nodes`. Override `nodes.<node>.dns_servers` when a node needs a different DNS server during customization, for example when `bastion1` must use an upstream DNS server before local dnsmasq is ready.
+vSphere clone customization gives local nodes DNS servers derived from `local.vlan.dns_nodes`, normally `bastion1`. `nodes.bastion1.dns_servers` is required and supplies the separate management/vSphere DNS used by the bastion OS and Squid. Set `bastion.dnsmasq_upstream_servers` to the DNS resolvers that local clients may use through dnsmasq. dnsmasq renders `no-resolv` and explicit `server=` entries, so it never exposes the bastion's `/etc/resolv.conf` DNS to local clients.
 
 vSphere VM object names are made globally unique by Terraform with a stable random suffix: `<node>-xxxxx-xxxxx`. The node key still stays the operational hostname, so guest hostnames, SSH aliases, DNS records, and pyinfra groups remain `bastion1`, `prom1`, `rancher1`, and so on. Terraform outputs include `vsphere_name` for mapping the operational node name to the actual vSphere object name.
 
