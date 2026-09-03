@@ -119,6 +119,13 @@ if phase == "bastion" and role == "bastion":
         present=True,
     )
 
+    files.line(
+        name="Disable mutually exclusive dnsmasq static binding",
+        path="/etc/dnsmasq.conf",
+        line="bind-interfaces",
+        present=False,
+    )
+
     files.template(
         name="Render /etc/hosts DNS records",
         src="pyinfra/templates/hosts.j2",
@@ -178,6 +185,11 @@ if phase == "bastion" and role == "bastion":
                 route=config["bastion"]["vsphere_route"],
             )
         ],
+    )
+
+    server.shell(
+        name="Validate dnsmasq configuration",
+        commands=["dnsmasq --test"],
     )
 
     systemd.service(
