@@ -72,6 +72,8 @@ destroy-commands:
 	@printf 'Build dir:        %s\n' '$(BUILD_ENV_DIR)'
 	@printf 'Terraform dir:    %s\n' '$(TF_INFRA_DIR)'
 	@printf 'Tfvars:           %s\n' '$(INFRA_TFVARS)'
+	@if [[ -n "$${TF_VAR_vsphere_server:-}" ]]; then printf 'vSphere server:   %s\n' "$$TF_VAR_vsphere_server"; else printf 'vSphere server:   %s\n' '(from tfvars or unset)'; fi
+	@if [[ -n "$${TF_VAR_vsphere_user:-}" ]]; then printf 'vSphere user:     %s\n' "$$TF_VAR_vsphere_user"; else printf 'vSphere user:     %s\n' '(from tfvars or unset)'; fi
 	@if [[ -n '$(TF_BACKEND_CONFIG)' ]]; then printf 'Backend config:   %s\n' '$(TF_BACKEND_CONFIG)'; fi
 	@if [[ -n '$(TF_INIT_ARGS)' ]]; then printf 'Init args:        %s\n' '$(TF_INIT_ARGS)'; fi
 	@printf '%s\n' '============================================================'
@@ -150,6 +152,8 @@ provision-all:
 	printf 'ENV:              %s\n' "$(ENV)"; \
 	printf 'Build dir:        %s\n' "$(BUILD_ENV_DIR)"; \
 	printf 'Terraform dir:    %s\n' "$(TF_INFRA_DIR)"; \
+	if [[ -n "$${TF_VAR_vsphere_server:-}" ]]; then printf 'vSphere server:   %s\n' "$$TF_VAR_vsphere_server"; else printf 'vSphere server:   %s\n' '(from tfvars or unset)'; fi; \
+	if [[ -n "$${TF_VAR_vsphere_user:-}" ]]; then printf 'vSphere user:     %s\n' "$$TF_VAR_vsphere_user"; else printf 'vSphere user:     %s\n' '(from tfvars or unset)'; fi; \
 	printf 'Mode:             %s\n' "$$mode"; \
 	if [[ "$(DEPLOY_YES)" == "1" ]]; then \
 	  printf 'Terraform apply:  %s\n' '$(TF_APPLY_ARGS)'; \
