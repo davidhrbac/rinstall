@@ -2,15 +2,30 @@
 
 ## Next
 
-- Clarify the repository scope in `README.md`.
-  - Keep this repository limited to Day-0/DR bootstrap: vSphere, bastion, RKE2, and initial Rancher installation.
-  - State explicitly that Rancher API resources, Fleet, downstream cluster lifecycle, and Rancher/Kubernetes upgrades belong to a separate Rancher environment project.
+- Define the DR version-sync contract with the separate Rancher lifecycle repository.
+  - Every Rancher or local RKE2 upgrade must also update the bootstrap pins in the per-environment infra config before DR is considered complete.
+  - Start with a documented Definition of Done or checklist; do not introduce cross-repository Terraform state dependencies.
+
+- Add unit tests for `lib/env_config.py` and run them from `make verify`.
+  - Cover environment identity/schema, IP offsets, network/broadcast rejection, node-pool expansion, references, RKE2 primary-node selection, proxy derivation, management SSH IP derivation, and Rancher edition/version resolution.
+  - Extend verification with `terraform init -backend=false` and `terraform validate`.
 
 - Review vSphere TLS verification defaults.
   - Prefer `allow_unverified_ssl: false`; retain an insecure override only where explicitly required.
 
 - Consolidate Rancher and cert-manager version defaults.
   - Keep one source of truth in resolved environment config instead of duplicating fallback versions in pyinfra and shell scripts.
+
+- Pin bootstrap tooling and Python dependencies for DR reproducibility.
+  - Pin asdf, Helm, and kubectl versions instead of resolving `latest` during provisioning.
+  - Replace minimum-version Python dependencies with exact pins or a lockfile.
+
+- Protect kubeconfig artifacts explicitly.
+  - Enforce mode `0700` on the per-environment build/runtime directory and `0600` on `rke2.yaml.raw` and `rke2.yaml`, including standalone `make rke2-kubeconfig` runs.
+
+- Add per-environment SSH known-hosts handling for DR.
+  - Keep generated host keys outside global `~/.ssh/known_hosts` so redeploying VMs at the same IP does not block SSH.
+  - Add an explicit reset operation for that environment-only known-hosts file.
 
 - Add `make bastion-verify`.
   - Verify hostname, `/etc/hosts`, `dnsmasq`, `squid`, vSphere route, and Rancher URL round-robin DNS from bastion.
@@ -24,12 +39,17 @@
 
 ## Later
 
+- Move instance runtime state outside a pinned engine checkout.
+  - Support `RUNTIME_DIR` for generated tfvars, SSH config, kubeconfig, logs, and known-hosts.
+  - Set `TF_DATA_DIR` so Terraform backend metadata and provider/module data are outside the engine/module directory.
+  - Target a per-environment repo with a pinned engine submodule and ignored `.rinstall/` runtime directory.
+
 - Add declarative bastion service-network support for downstream VLANs.
-  - Define logical network name/VLAN, vSphere portgroup, CIDR, gateway host offset, and DHCP range in env config.
-  - Terraform must append the matching vNIC to bastion and expose logical network-to-MAC output for pyinfra.
+  - Define a stable logical network `id`, append-only attachment `slot`, VLAN ID, vSphere portgroup, CIDR, gateway host offset, and DHCP range in env config.
+  - Terraform must preserve base NIC ordering, append service NICs by slot, and expose logical network-to-MAC output for pyinfra.
   - pyinfra must resolve the guest interface by MAC, configure NetworkManager/dnsmasq declaratively, and never depend on `ens*` names or NIC ordering.
   - Render DHCP ranges only for explicit service interfaces; enable `dhcp-authoritative` only when dnsmasq serves those interfaces exclusively, and omit DHCP option 6 so clients receive the local dnsmasq address.
-  - Removing a configured network must require an explicit safety acknowledgement because it can disconnect downstream clusters.
+  - Support additions and DHCP changes first; refuse removal by default. Any removal requires an explicit safety acknowledgement because it can disconnect downstream clusters.
 
 - Split environment loading into parse, validate, and resolve stages when the config model grows.
 
@@ -41,14 +61,10 @@
 - Add Prometheus node configuration.
   - Current `node-prep` only sets hostname/prompt for `prom1`; define actual monitoring setup later.
 
-- Add downstream cluster automation as a separate layer.
-  - Do not mix downstream ingress DNS, Rancher API resources, Fleet, or downstream lifecycle into the local infra/RKE2 bootstrap layer.
-
 ## Questions
 
 - Which secret source should own the RKE2 token in production?
 - Should real env directories live under `envs/private/` only, or should there be another ignored naming convention?
 - Should the bastion VLAN section be named `bastion.service_networks` or `bastion.downstream_networks`?
-- Should per-environment repositories consume this engine through a pinned Git submodule, or should the engine become a versioned CLI?
-- Where should per-environment generated Terraform/runtime files live when the engine is consumed as a submodule?
+- Should the engine distribution remain a pinned Git submodule until a versioned CLI has a concrete operational advantage?
 - Should GitLab issues be created from the stable items in this file after the first real dry-run?
