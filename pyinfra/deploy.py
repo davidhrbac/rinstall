@@ -349,13 +349,13 @@ if phase == "rancher-install" and role == "bastion":
     )
 
     server.shell(
-        name="Install cert-manager and Rancher",
+        name="Install or verify cert-manager and Rancher",
         commands=[
             shell_env(
                 {
                     "RANCHER_HOSTNAME": config["rancher_url"],
-                    "CERT_MANAGER_VERSION": config["rancher"].get("cert_manager_version", "v1.15.3"),
-                    "RANCHER_VERSION": config["rancher"].get("rancher_chart_version", "2.9.2"),
+                    "CERT_MANAGER_VERSION": config["rancher"]["cert_manager_version"],
+                    "RANCHER_VERSION": config["rancher"]["rancher_chart_version"],
                     "RANCHER_REPO_NAME": config["rancher"]["chart_repo_name"],
                     "RANCHER_REPO_URL": config["rancher"]["chart_repo_url"],
                     "RANCHER_BOOTSTRAP_PASSWORD": config["rancher"].get("bootstrap_password", ""),

@@ -229,19 +229,20 @@ Rancher edition selection and Helm chart repositories are environment data. Defi
 ```yaml
 rancher:
   edition: community
+  cert_manager_version: v1.21.1
   editions:
     community:
       repo_name: rancher-stable
       repo_url: https://releases.rancher.com/server-charts/stable
-      version: 2.9.2
+      version: 2.14.4
     prime:
       repo_name: rancher-prime
-      repo_url: https://charts.example.invalid/rancher-prime
-      version: 2.9.2
+      repo_url: https://charts.rancher.com/server-charts/prime
+      version: 2.14.4
 ```
 
 For Rancher Prime, set `edition: prime` in the private env and fill the Prime chart repository/version approved for that customer. The env loader resolves the selected edition into the values expected by the install script.
-`agent_tls_mode` defaults to `system-store`, and `cert_manager_version` defaults to `v1.15.3`.
+`agent_tls_mode` defaults to `system-store`. `rke2.version`, `rancher.cert_manager_version`, and the selected Rancher edition `version` are required; the environment config is the only version source of truth.
 
 Set `rancher.bootstrap_password` only in private env configs when you want to control the one-time initial admin password. The install script uses it only when the Rancher Helm release does not exist yet; repeat runs and upgrades never pass `bootstrapPassword` again. When it is omitted, each successful `make rancher-install` prints a command that retrieves the generated password from `cattle-system/bootstrap-secret` if this was the first Rancher release. Change the password after first login.
 

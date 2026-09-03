@@ -286,10 +286,11 @@ def expand_env(raw_env):
     rancher = require(env, "rancher", "env")
     rancher.setdefault("edition", "community")
     rancher.setdefault("agent_tls_mode", "system-store")
-    rancher.setdefault("cert_manager_version", "v1.15.3")
+    require(rancher, "cert_manager_version", "env.rancher")
     selected_edition = rancher["editions"][rancher["edition"]]
-    rancher["chart_repo_name"] = selected_edition["repo_name"]
-    rancher["chart_repo_url"] = selected_edition["repo_url"]
-    rancher["rancher_chart_version"] = selected_edition["version"]
+    selected_edition_context = f"env.rancher.editions.{rancher['edition']}"
+    rancher["chart_repo_name"] = require(selected_edition, "repo_name", selected_edition_context)
+    rancher["chart_repo_url"] = require(selected_edition, "repo_url", selected_edition_context)
+    rancher["rancher_chart_version"] = require(selected_edition, "version", selected_edition_context)
 
     return env
