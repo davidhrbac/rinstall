@@ -4,6 +4,12 @@ Automation scaffold for a manually operated Rancher environment build on vSphere
 
 The design intentionally separates infrastructure from Rancher API configuration so disaster recovery can restore the base layer before Rancher-dependent resources are reconciled.
 
+## Scope
+
+This repository is a Day-0/DR bootstrap engine only. It provisions vSphere infrastructure, configures the bastion and local hosts, bootstraps RKE2, and performs the initial Rancher installation.
+
+Rancher API resources, Fleet configuration, downstream cluster lifecycle, and Rancher/Kubernetes upgrades are intentionally out of scope. Manage them in a separate per-environment Rancher lifecycle repository after Rancher exists.
+
 ## Layers
 
 ```text
@@ -11,7 +17,9 @@ Terraform infra  -> vSphere VMs, NICs, static IPs where required, VM inventory o
 pyinfra          -> bastion dnsmasq/squid/routes and rancher node file prep
 RKE2 scripts     -> local RKE2 cluster bootstrap
 Helm scripts     -> cert-manager and Rancher install from bastion1
-Rancher layer    -> downstream clusters and Rancher API resources after Rancher exists
+
+Hard boundary: a separate Rancher Environment repository manages Rancher upgrades,
+Fleet, imported downstream clusters, downstream lifecycle, and Kubernetes upgrades.
 ```
 
 ## Operator Flow
