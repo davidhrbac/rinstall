@@ -4,6 +4,7 @@
 terraform/infra/backend.tf
 build/
 envs/private/
+envs/elo-prod/
 envs/*-local/
 __pycache__/
 *.py[cod]
