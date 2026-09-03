@@ -28,6 +28,7 @@
   - Define logical network name/VLAN, vSphere portgroup, CIDR, gateway host offset, and DHCP range in env config.
   - Terraform must append the matching vNIC to bastion and expose logical network-to-MAC output for pyinfra.
   - pyinfra must resolve the guest interface by MAC, configure NetworkManager/dnsmasq declaratively, and never depend on `ens*` names or NIC ordering.
+  - Render DHCP ranges and `dhcp-authoritative` only for explicit service interfaces; omit DHCP option 6 so clients receive the local dnsmasq address.
   - Removing a configured network must require an explicit safety acknowledgement because it can disconnect downstream clusters.
 
 - Split environment loading into parse, validate, and resolve stages when the config model grows.

@@ -69,6 +69,7 @@
 - Terraform must append the corresponding bastion vNIC and output the logical network-to-MAC mapping for pyinfra. Keep existing primary NIC ordering fixed and reject unsafe reorder/removal plans.
 - pyinfra must discover the guest device by its Terraform-provided MAC, then render a stable NetworkManager profile, gateway address, and dnsmasq DHCP configuration. Never persist MACs, guest interface names, VM UUIDs, or vSphere MoRefs in `env.yaml`.
 - Render NetworkManager and dnsmasq configuration declaratively as complete managed files, not append/patch operations.
+- DHCP ranges and `dhcp-authoritative` must be scoped to explicit service interfaces; never use `interface=*` or serve DHCP on the management interface. Omit DHCP option 6 so dnsmasq advertises its own address in the matching VLAN.
 - Removing a configured service network must require an explicit safety acknowledgement because it can disconnect existing downstream clusters.
 - Per-environment repos should consume this engine as a pinned dependency rather than a fork. Git submodule versus a versioned CLI, and the location of generated runtime artifacts outside the engine, remain open design decisions.
 
