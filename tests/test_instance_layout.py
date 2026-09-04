@@ -13,9 +13,10 @@ def test_makefile_derives_instance_paths(tmp_path):
     instance_root = tmp_path / "customer-a-prod-infra"
     instance_root.mkdir()
     shutil.copy(EXAMPLE_ENV, instance_root / "config.yaml")
+    (instance_root / "rinstall").symlink_to(ENGINE_ROOT, target_is_directory=True)
 
     result = subprocess.run(
-        ["make", "-f", str(ENGINE_ROOT / "Makefile"), "-n", "render-infra-vars"],
+        ["make", "-f", "rinstall/Makefile", "-n", "render-infra-vars"],
         cwd=instance_root,
         check=True,
         capture_output=True,
