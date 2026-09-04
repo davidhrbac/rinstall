@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import os
 import re
 from pathlib import Path
 
@@ -19,6 +20,8 @@ def main():
     env_path = Path(args.env)
     config = load_env(env_path)
     build_dir = build_dir_for_env(env_path)
+    build_dir.mkdir(parents=True, exist_ok=True)
+    os.chmod(build_dir, 0o700)
     raw_path = build_dir / "rke2.yaml.raw"
     out_path = build_dir / "rke2.yaml"
 
@@ -40,6 +43,7 @@ def main():
         raise SystemExit(f"No Kubernetes API server endpoint found in {raw_path}")
 
     out_path.write_text(content)
+    os.chmod(out_path, 0o600)
 
 
 if __name__ == "__main__":

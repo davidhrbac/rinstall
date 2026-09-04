@@ -50,12 +50,15 @@ help:
 	@printf '\033[3m%s\033[0m\n' '  destroy-commands    print explicit Terraform destroy commands for ENV=<env dir>'
 
 render-infra-vars:
+	install -d -m 700 $(BUILD_ENV_DIR)
 	$(PYTHON) $(ENGINE_ROOT)/scripts/render-infra-tfvars.py --env $(ENV_CONFIG) --out $(INFRA_TFVARS)
 
 ssh-config:
+	install -d -m 700 $(BUILD_ENV_DIR)
 	RUNTIME_DIR=$(RUNTIME_DIR) $(PYTHON) $(ENGINE_ROOT)/scripts/render-ssh-config.py --env $(ENV_CONFIG) --out $(BUILD_ENV_DIR)/ssh_config
 
 admin-ssh-config:
+	install -d -m 700 $(BUILD_ENV_DIR)
 	RUNTIME_DIR=$(RUNTIME_DIR) $(PYTHON) $(ENGINE_ROOT)/scripts/render-admin-ssh-config.py --env $(ENV_CONFIG) --out $(ADMIN_SSH_CONFIG)
 
 install-admin-ssh-config: admin-ssh-config
@@ -122,6 +125,7 @@ rke2-install:
 	ENV_CONFIG=$(ENV_CONFIG) RUNTIME_DIR=$(RUNTIME_DIR) PHASE=rke2-install-join PYINFRA_PROGRESS=$(PYINFRA_PROGRESS) $(PYINFRA) $(PYINFRA_ARGS) $(ENGINE_ROOT)/pyinfra/inventory.py $(ENGINE_ROOT)/pyinfra/deploy.py
 
 rke2-kubeconfig:
+	install -d -m 700 $(BUILD_ENV_DIR)
 	ENV_CONFIG=$(ENV_CONFIG) RUNTIME_DIR=$(RUNTIME_DIR) PHASE=rke2-kubeconfig PYINFRA_PROGRESS=$(PYINFRA_PROGRESS) $(PYINFRA) $(PYINFRA_ARGS) $(ENGINE_ROOT)/pyinfra/inventory.py $(ENGINE_ROOT)/pyinfra/deploy.py
 	RUNTIME_DIR=$(RUNTIME_DIR) $(PYTHON) $(ENGINE_ROOT)/scripts/prepare-rke2-kubeconfig.py --env $(ENV_CONFIG)
 
