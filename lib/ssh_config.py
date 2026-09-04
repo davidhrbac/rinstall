@@ -5,6 +5,9 @@ from lib.env_config import load_env
 
 
 def build_dir_for_env(env_config_path):
+    runtime_dir = os.environ.get("RUNTIME_DIR")
+    if runtime_dir:
+        return Path(runtime_dir)
     return Path("build") / load_env(env_config_path)["environment"]["id"]
 
 

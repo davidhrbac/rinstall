@@ -6,10 +6,14 @@ PYTHON ?= python3
 PYINFRA ?= pyinfra
 PYINFRA_PROGRESS ?= off
 TERRAFORM ?= terraform
-ENV_ID := $(shell $(PYTHON) scripts/environment-id.py --env $(ENV)/env.yaml)
-TF_INFRA_DIR := terraform/infra
-BUILD_ENV_DIR := build/$(ENV_ID)
+ENGINE_ROOT ?= $(CURDIR)
+ENV_CONFIG ?= $(abspath $(ENV)/env.yaml)
+ENV_ID := $(shell $(PYTHON) $(ENGINE_ROOT)/scripts/environment-id.py --env $(ENV_CONFIG))
+RUNTIME_DIR ?= $(ENGINE_ROOT)/build/$(ENV_ID)
+TF_INFRA_DIR := $(ENGINE_ROOT)/terraform/infra
+BUILD_ENV_DIR := $(RUNTIME_DIR)
 INFRA_TFVARS := $(BUILD_ENV_DIR)/infra.tfvars.json
+TF_DATA_DIR ?= $(BUILD_ENV_DIR)/terraform-data
 TF_BACKEND_CONFIG ?=
 TF_BACKEND_ARGS := $(addprefix -backend-config=,$(TF_BACKEND_CONFIG))
 TF_INIT_ARGS ?=
@@ -45,13 +49,13 @@ help:
 	@printf '\033[3m%s\033[0m\n' '  destroy-commands    print explicit Terraform destroy commands for ENV=<env dir>'
 
 render-infra-vars:
-	$(PYTHON) scripts/render-infra-tfvars.py --env $(ENV)/env.yaml --out $(INFRA_TFVARS)
+	$(PYTHON) $(ENGINE_ROOT)/scripts/render-infra-tfvars.py --env $(ENV_CONFIG) --out $(INFRA_TFVARS)
 
 ssh-config:
-	$(PYTHON) scripts/render-ssh-config.py --env $(ENV)/env.yaml --out $(BUILD_ENV_DIR)/ssh_config
+	RUNTIME_DIR=$(RUNTIME_DIR) $(PYTHON) $(ENGINE_ROOT)/scripts/render-ssh-config.py --env $(ENV_CONFIG) --out $(BUILD_ENV_DIR)/ssh_config
 
 admin-ssh-config:
-	$(PYTHON) scripts/render-admin-ssh-config.py --env $(ENV)/env.yaml --out $(ADMIN_SSH_CONFIG)
+	RUNTIME_DIR=$(RUNTIME_DIR) $(PYTHON) $(ENGINE_ROOT)/scripts/render-admin-ssh-config.py --env $(ENV_CONFIG) --out $(ADMIN_SSH_CONFIG)
 
 install-admin-ssh-config: admin-ssh-config
 	@set -euo pipefail; \
@@ -64,7 +68,7 @@ install-admin-ssh-config: admin-ssh-config
 	printf '%s\n' 'Ensure /root/.ssh/config includes ~/.ssh/config.d/*.conf; this target does not modify it.'
 
 infra-init:
-	$(TERRAFORM) -chdir=$(TF_INFRA_DIR) init $(TF_BACKEND_ARGS) $(TF_INIT_ARGS)
+	TF_DATA_DIR=$(TF_DATA_DIR) $(TERRAFORM) -chdir=$(TF_INFRA_DIR) init $(TF_BACKEND_ARGS) $(TF_INIT_ARGS)
 
 infra-fmt:
 	$(TERRAFORM) -chdir=$(TF_INFRA_DIR) fmt -check -recursive -diff
@@ -73,10 +77,10 @@ infra-validate:
 	$(TERRAFORM) -chdir=$(TF_INFRA_DIR) validate
 
 infra-plan: render-infra-vars
-	$(TERRAFORM) -chdir=$(TF_INFRA_DIR) plan -var-file=../../$(INFRA_TFVARS)
+	TF_DATA_DIR=$(TF_DATA_DIR) $(TERRAFORM) -chdir=$(TF_INFRA_DIR) plan -var-file=$(INFRA_TFVARS)
 
 infra-apply: render-infra-vars
-	$(TERRAFORM) -chdir=$(TF_INFRA_DIR) apply $(TF_APPLY_ARGS) -var-file=../../$(INFRA_TFVARS)
+	TF_DATA_DIR=$(TF_DATA_DIR) $(TERRAFORM) -chdir=$(TF_INFRA_DIR) apply $(TF_APPLY_ARGS) -var-file=$(INFRA_TFVARS)
 
 infra-output:
 	mkdir -p $(BUILD_ENV_DIR)
@@ -107,31 +111,31 @@ destroy-commands:
 	@printf '%s\n' '============================================================'
 
 bastion-configure:
-	ENV_CONFIG=$(ENV)/env.yaml PHASE=bastion PYINFRA_PROGRESS=$(PYINFRA_PROGRESS) $(PYINFRA) $(PYINFRA_ARGS) pyinfra/inventory.py pyinfra/deploy.py
+	ENV_CONFIG=$(ENV_CONFIG) RUNTIME_DIR=$(RUNTIME_DIR) PHASE=bastion PYINFRA_PROGRESS=$(PYINFRA_PROGRESS) $(PYINFRA) $(PYINFRA_ARGS) $(ENGINE_ROOT)/pyinfra/inventory.py $(ENGINE_ROOT)/pyinfra/deploy.py
 
 node-prep:
-	ENV_CONFIG=$(ENV)/env.yaml PHASE=node-prep PYINFRA_PROGRESS=$(PYINFRA_PROGRESS) $(PYINFRA) $(PYINFRA_ARGS) pyinfra/inventory.py pyinfra/deploy.py
+	ENV_CONFIG=$(ENV_CONFIG) RUNTIME_DIR=$(RUNTIME_DIR) PHASE=node-prep PYINFRA_PROGRESS=$(PYINFRA_PROGRESS) $(PYINFRA) $(PYINFRA_ARGS) $(ENGINE_ROOT)/pyinfra/inventory.py $(ENGINE_ROOT)/pyinfra/deploy.py
 
 rke2-install:
-	ENV_CONFIG=$(ENV)/env.yaml PHASE=rke2-install-primary PYINFRA_PROGRESS=$(PYINFRA_PROGRESS) $(PYINFRA) $(PYINFRA_ARGS) pyinfra/inventory.py pyinfra/deploy.py
-	ENV_CONFIG=$(ENV)/env.yaml PHASE=rke2-install-join PYINFRA_PROGRESS=$(PYINFRA_PROGRESS) $(PYINFRA) $(PYINFRA_ARGS) pyinfra/inventory.py pyinfra/deploy.py
+	ENV_CONFIG=$(ENV_CONFIG) RUNTIME_DIR=$(RUNTIME_DIR) PHASE=rke2-install-primary PYINFRA_PROGRESS=$(PYINFRA_PROGRESS) $(PYINFRA) $(PYINFRA_ARGS) $(ENGINE_ROOT)/pyinfra/inventory.py $(ENGINE_ROOT)/pyinfra/deploy.py
+	ENV_CONFIG=$(ENV_CONFIG) RUNTIME_DIR=$(RUNTIME_DIR) PHASE=rke2-install-join PYINFRA_PROGRESS=$(PYINFRA_PROGRESS) $(PYINFRA) $(PYINFRA_ARGS) $(ENGINE_ROOT)/pyinfra/inventory.py $(ENGINE_ROOT)/pyinfra/deploy.py
 
 rke2-kubeconfig:
-	ENV_CONFIG=$(ENV)/env.yaml PHASE=rke2-kubeconfig PYINFRA_PROGRESS=$(PYINFRA_PROGRESS) $(PYINFRA) $(PYINFRA_ARGS) pyinfra/inventory.py pyinfra/deploy.py
-	$(PYTHON) scripts/prepare-rke2-kubeconfig.py --env $(ENV)/env.yaml
+	ENV_CONFIG=$(ENV_CONFIG) RUNTIME_DIR=$(RUNTIME_DIR) PHASE=rke2-kubeconfig PYINFRA_PROGRESS=$(PYINFRA_PROGRESS) $(PYINFRA) $(PYINFRA_ARGS) $(ENGINE_ROOT)/pyinfra/inventory.py $(ENGINE_ROOT)/pyinfra/deploy.py
+	RUNTIME_DIR=$(RUNTIME_DIR) $(PYTHON) $(ENGINE_ROOT)/scripts/prepare-rke2-kubeconfig.py --env $(ENV_CONFIG)
 
 rancher-install: rke2-kubeconfig rancher-install-run rancher-bootstrap-password-command
 
 rancher-install-run:
-	ENV_CONFIG=$(ENV)/env.yaml PHASE=rancher-install PYINFRA_PROGRESS=$(PYINFRA_PROGRESS) $(PYINFRA) $(PYINFRA_ARGS) pyinfra/inventory.py pyinfra/deploy.py
+	ENV_CONFIG=$(ENV_CONFIG) RUNTIME_DIR=$(RUNTIME_DIR) PHASE=rancher-install PYINFRA_PROGRESS=$(PYINFRA_PROGRESS) $(PYINFRA) $(PYINFRA_ARGS) $(ENGINE_ROOT)/pyinfra/inventory.py $(ENGINE_ROOT)/pyinfra/deploy.py
 
 rancher-bootstrap-password-command:
-	@$(PYTHON) scripts/print-rancher-bootstrap-password-command.py --env $(ENV)/env.yaml
+	@$(PYTHON) $(ENGINE_ROOT)/scripts/print-rancher-bootstrap-password-command.py --env $(ENV_CONFIG)
 
 rancher-bootstrap: rke2-kubeconfig rancher-bootstrap-run
 
 rancher-bootstrap-run:
-	ENV_CONFIG=$(ENV)/env.yaml PHASE=rancher-bootstrap PYINFRA_PROGRESS=$(PYINFRA_PROGRESS) $(PYINFRA) $(PYINFRA_ARGS) pyinfra/inventory.py pyinfra/deploy.py
+	ENV_CONFIG=$(ENV_CONFIG) RUNTIME_DIR=$(RUNTIME_DIR) PHASE=rancher-bootstrap PYINFRA_PROGRESS=$(PYINFRA_PROGRESS) $(PYINFRA) $(PYINFRA_ARGS) $(ENGINE_ROOT)/pyinfra/inventory.py $(ENGINE_ROOT)/pyinfra/deploy.py
 
 provision-all:
 	@set -euo pipefail; \
@@ -160,7 +164,7 @@ provision-all:
 	  local phase_start=$$SECONDS; \
 	  local phase_number=$$3; \
 	  local command_line; \
-	  local command=("$(MAKE)" "$$target" "ENV=$(ENV)" "PYTHON=$(PYTHON)" "PYINFRA=$(PYINFRA)" "PYINFRA_PROGRESS=$(PYINFRA_PROGRESS)" "PYINFRA_ARGS=$(PYINFRA_ARGS)" "TERRAFORM=$(TERRAFORM)" "TF_BACKEND_CONFIG=$(TF_BACKEND_CONFIG)" "TF_INIT_ARGS=$(TF_INIT_ARGS)" "TF_APPLY_ARGS=$(TF_APPLY_ARGS)"); \
+	  local command=("$(MAKE)" "$$target" "ENGINE_ROOT=$(ENGINE_ROOT)" "ENV=$(ENV)" "ENV_CONFIG=$(ENV_CONFIG)" "RUNTIME_DIR=$(RUNTIME_DIR)" "TF_DATA_DIR=$(TF_DATA_DIR)" "PYTHON=$(PYTHON)" "PYINFRA=$(PYINFRA)" "PYINFRA_PROGRESS=$(PYINFRA_PROGRESS)" "PYINFRA_ARGS=$(PYINFRA_ARGS)" "TERRAFORM=$(TERRAFORM)" "TF_BACKEND_CONFIG=$(TF_BACKEND_CONFIG)" "TF_INIT_ARGS=$(TF_INIT_ARGS)" "TF_APPLY_ARGS=$(TF_APPLY_ARGS)"); \
 	  log '\n[%s/5] %s started\n' "$$phase_number" "$$label"; \
 	  printf -v command_line '%q ' "$${command[@]}"; \
 	  if script -q -e -f -a -c "$$command_line" "$$run_log"; then \
@@ -249,7 +253,7 @@ provision-all:
 	exit "$$status"
 
 provision-all-yes:
-	@$(MAKE) provision-all DEPLOY_YES=1 ENV="$(ENV)" PYTHON="$(PYTHON)" PYINFRA="$(PYINFRA)" PYINFRA_ARGS="--yes" TERRAFORM="$(TERRAFORM)" TF_BACKEND_CONFIG="$(TF_BACKEND_CONFIG)" TF_INIT_ARGS="$(TF_INIT_ARGS)" TF_APPLY_ARGS="-auto-approve"
+	@$(MAKE) provision-all DEPLOY_YES=1 ENGINE_ROOT="$(ENGINE_ROOT)" ENV="$(ENV)" ENV_CONFIG="$(ENV_CONFIG)" RUNTIME_DIR="$(RUNTIME_DIR)" TF_DATA_DIR="$(TF_DATA_DIR)" PYTHON="$(PYTHON)" PYINFRA="$(PYINFRA)" PYINFRA_ARGS="--yes" TERRAFORM="$(TERRAFORM)" TF_BACKEND_CONFIG="$(TF_BACKEND_CONFIG)" TF_INIT_ARGS="$(TF_INIT_ARGS)" TF_APPLY_ARGS="-auto-approve"
 
 verify:
 	$(PYTHON) -m pytest
