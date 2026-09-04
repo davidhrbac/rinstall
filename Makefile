@@ -30,8 +30,8 @@ help:
 	@printf '%s\n' '  provision-all       confirm, apply infra, run all phases, and print duration summary'
 	@printf '%s\n' '  provision-all-yes   run provision-all without prompt'
 	@printf '%s\n' ''
-	@printf '\033[3m%s\033[0m\n' '  render-infra-vars   render build/<environment.id>/infra.tfvars.json from env.yaml'
-	@printf '\033[3m%s\033[0m\n' '  ssh-config          render build/<environment.id>/ssh_config from env.yaml'
+	@printf '\033[3m%s\033[0m\n' '  render-infra-vars   render runtime/infra.tfvars.json from config.yaml'
+	@printf '\033[3m%s\033[0m\n' '  ssh-config          render runtime/ssh_config from config.yaml'
 	@printf '\033[3m%s\033[0m\n' '  admin-ssh-config    render admin jump-host SSH fragment from env.yaml'
 	@printf '\033[3m%s\033[0m\n' '  install-admin-ssh-config  upload the admin SSH fragment to the configured jump host'
 	@printf '%s\n' '  infra-init          terraform init for infra layer'
@@ -39,7 +39,7 @@ help:
 	@printf '%s\n' '  infra-validate      validate Terraform infra root'
 	@printf '%s\n' '  infra-plan          plan vSphere infra using ENV=<env dir>'
 	@printf '%s\n' '  infra-apply         apply vSphere infra using ENV=<env dir>'
-	@printf '\033[3m%s\033[0m\n' '  infra-output        write Terraform outputs to build/<environment.id>/infra-output.json'
+	@printf '\033[3m%s\033[0m\n' '  infra-output        write Terraform outputs to runtime/infra-output.json'
 	@printf '%s\n' '  bastion-configure   configure dnsmasq/squid/routes on bastion1 with pyinfra'
 	@printf '%s\n' '  node-prep           set hostnames/prompts on local nodes and prep Rancher nodes'
 	@printf '%s\n' '  rke2-install        install RKE2 primary first, then join nodes'
@@ -64,7 +64,7 @@ admin-ssh-config:
 install-admin-ssh-config: admin-ssh-config
 	@set -euo pipefail; \
 	admin_ssh_host="$(ADMIN_SSH_HOST)"; \
-	if [[ -z "$$admin_ssh_host" ]]; then admin_ssh_host="$$($(PYTHON) scripts/admin-jump-host.py --env $(ENV)/env.yaml)"; fi; \
+	if [[ -z "$$admin_ssh_host" ]]; then admin_ssh_host="$$($(PYTHON) $(ENGINE_ROOT)/scripts/admin-jump-host.py --env $(ENV_CONFIG))"; fi; \
 	ssh "$$admin_ssh_host" 'install -d -m 700 /root/.ssh/config.d'; \
 	scp "$(ADMIN_SSH_CONFIG)" "$$admin_ssh_host:/root/.ssh/config.d/$(ENV_ID).conf"; \
 	ssh "$$admin_ssh_host" 'chmod 600 /root/.ssh/config.d/$(ENV_ID).conf'; \
@@ -95,7 +95,7 @@ destroy-commands:
 	@printf '%s\n' '============================================================'
 	@printf '%s\n' 'Rancher Environment Terraform Destroy Commands'
 	@printf '%s\n' '============================================================'
-	@printf 'ENV:              %s\n' '$(ENV)'
+	@printf 'Environment file: %s\n' '$(ENV_CONFIG)'
 	@printf 'Build dir:        %s\n' '$(BUILD_ENV_DIR)'
 	@printf 'Terraform dir:    %s\n' '$(TF_INFRA_DIR)'
 	@printf 'Tfvars:           %s\n' '$(INFRA_TFVARS)'
