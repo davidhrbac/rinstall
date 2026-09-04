@@ -6,10 +6,10 @@ PYTHON ?= python3
 PYINFRA ?= pyinfra
 PYINFRA_PROGRESS ?= off
 TERRAFORM ?= terraform
-ENGINE_ROOT ?= $(CURDIR)
-ENV_CONFIG ?= $(abspath $(ENV)/env.yaml)
+ENGINE_ROOT ?= $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
+ENV_CONFIG ?= $(if $(wildcard $(CURDIR)/config.yaml),$(abspath $(CURDIR)/config.yaml),$(abspath $(ENV)/env.yaml))
 ENV_ID := $(shell $(PYTHON) $(ENGINE_ROOT)/scripts/environment-id.py --env $(ENV_CONFIG))
-RUNTIME_DIR ?= $(ENGINE_ROOT)/build/$(ENV_ID)
+RUNTIME_DIR ?= $(if $(wildcard $(CURDIR)/config.yaml),$(CURDIR)/.rinstall,$(ENGINE_ROOT)/build/$(ENV_ID))
 TF_INFRA_DIR := $(ENGINE_ROOT)/terraform/infra
 BUILD_ENV_DIR := $(RUNTIME_DIR)
 INFRA_TFVARS := $(BUILD_ENV_DIR)/infra.tfvars.json
@@ -256,12 +256,12 @@ provision-all-yes:
 	@$(MAKE) provision-all DEPLOY_YES=1 ENGINE_ROOT="$(ENGINE_ROOT)" ENV="$(ENV)" ENV_CONFIG="$(ENV_CONFIG)" RUNTIME_DIR="$(RUNTIME_DIR)" TF_DATA_DIR="$(TF_DATA_DIR)" PYTHON="$(PYTHON)" PYINFRA="$(PYINFRA)" PYINFRA_ARGS="--yes" TERRAFORM="$(TERRAFORM)" TF_BACKEND_CONFIG="$(TF_BACKEND_CONFIG)" TF_INIT_ARGS="$(TF_INIT_ARGS)" TF_APPLY_ARGS="-auto-approve"
 
 verify:
-	$(PYTHON) -m pytest
-	$(PYTHON) -m py_compile lib/env_config.py lib/ssh_config.py pyinfra/inventory.py pyinfra/deploy.py scripts/admin-jump-host.py scripts/environment-id.py scripts/print-rancher-bootstrap-password-command.py scripts/render-admin-ssh-config.py scripts/render-infra-tfvars.py scripts/render-ssh-config.py scripts/prepare-rke2-kubeconfig.py
-	bash -n scripts/install-rke2.sh scripts/install-rancher.sh scripts/bootstrap-rancher.sh
-	$(PYTHON) scripts/render-infra-tfvars.py --env $(ENV)/env.yaml --out $(INFRA_TFVARS)
-	$(PYTHON) scripts/render-ssh-config.py --env $(ENV)/env.yaml --out $(BUILD_ENV_DIR)/ssh_config
-	$(PYTHON) scripts/render-admin-ssh-config.py --env $(ENV)/env.yaml --out $(ADMIN_SSH_CONFIG)
+	cd $(ENGINE_ROOT) && $(PYTHON) -m pytest
+	$(PYTHON) -m py_compile $(ENGINE_ROOT)/lib/env_config.py $(ENGINE_ROOT)/lib/ssh_config.py $(ENGINE_ROOT)/pyinfra/inventory.py $(ENGINE_ROOT)/pyinfra/deploy.py $(ENGINE_ROOT)/scripts/admin-jump-host.py $(ENGINE_ROOT)/scripts/environment-id.py $(ENGINE_ROOT)/scripts/print-rancher-bootstrap-password-command.py $(ENGINE_ROOT)/scripts/render-admin-ssh-config.py $(ENGINE_ROOT)/scripts/render-infra-tfvars.py $(ENGINE_ROOT)/scripts/render-ssh-config.py $(ENGINE_ROOT)/scripts/prepare-rke2-kubeconfig.py
+	bash -n $(ENGINE_ROOT)/scripts/install-rke2.sh $(ENGINE_ROOT)/scripts/install-rancher.sh $(ENGINE_ROOT)/scripts/bootstrap-rancher.sh
+	$(PYTHON) $(ENGINE_ROOT)/scripts/render-infra-tfvars.py --env $(ENV_CONFIG) --out $(INFRA_TFVARS)
+	RUNTIME_DIR=$(RUNTIME_DIR) $(PYTHON) $(ENGINE_ROOT)/scripts/render-ssh-config.py --env $(ENV_CONFIG) --out $(BUILD_ENV_DIR)/ssh_config
+	RUNTIME_DIR=$(RUNTIME_DIR) $(PYTHON) $(ENGINE_ROOT)/scripts/render-admin-ssh-config.py --env $(ENV_CONFIG) --out $(ADMIN_SSH_CONFIG)
 	$(TERRAFORM) -chdir=$(TF_INFRA_DIR) fmt -check -recursive -diff
 	$(TERRAFORM) -chdir=$(TF_INFRA_DIR) init -backend=false
 	$(TERRAFORM) -chdir=$(TF_INFRA_DIR) validate
