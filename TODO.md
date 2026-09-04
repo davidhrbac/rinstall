@@ -6,15 +6,8 @@
   - Every Rancher or local RKE2 upgrade must also update the bootstrap pins in the per-environment infra config before DR is considered complete.
   - Start with a documented Definition of Done or checklist; do not introduce cross-repository Terraform state dependencies.
 
-- Add unit tests for `lib/env_config.py` and run them from `make verify`.
-  - Cover environment identity/schema, IP offsets, network/broadcast rejection, node-pool expansion, references, RKE2 primary-node selection, proxy derivation, management SSH IP derivation, and Rancher edition/version resolution.
-  - Extend verification with `terraform init -backend=false` and `terraform validate`.
-
 - Review vSphere TLS verification defaults.
   - Prefer `allow_unverified_ssl: false`; retain an insecure override only where explicitly required.
-
-- Consolidate Rancher and cert-manager version defaults.
-  - Keep one source of truth in resolved environment config instead of duplicating fallback versions in pyinfra and shell scripts.
 
 - Pin bootstrap tooling and Python dependencies for DR reproducibility.
   - Pin asdf, Helm, and kubectl versions instead of resolving `latest` during provisioning.

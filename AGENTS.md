@@ -30,7 +30,7 @@
 - Provision headers/logs record engine and environment Git revisions plus clean/dirty worktree state. While `ENV` is inside this repo both refer to the engine repo; retain both fields for future standalone environment repos.
 - Set `PYINFRA_PROGRESS=off` by default for readable terminal transcripts and logs; it disables only pyinfra's redraw spinner, not its colors or operation output.
 - Provision/destroy command headers may print `TF_VAR_vsphere_server` and `TF_VAR_vsphere_user` for operator confirmation; never print `TF_VAR_vsphere_password`.
-- Use `make verify` for syntax/format checks; it does not contact vSphere or Rancher.
+- Use `make verify` for unit tests, syntax/format checks, and Terraform initialization/validation with `-backend=false`; it does not contact vSphere or Rancher.
 - Do not commit real `*.auto.tfvars`, kubeconfigs, Rancher tokens, or RKE2 token files; `rke2.token` in committed examples must be dummy/test-only.
 - Avoid `webfetch` when possible; prefer local/repo sources or CLI tools.
 - Use `~/go/bin/gh` for GitHub tasks and `~/go/bin/glab` for GitLab tasks instead of assuming they are on `PATH`.
