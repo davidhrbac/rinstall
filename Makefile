@@ -157,7 +157,7 @@ provision-all:
 	    printf '%ds' "$$remaining"; \
 	  fi; \
 	}; \
-	git_revision() { git -C "$$1" rev-parse --short HEAD 2>/dev/null || printf '%s' '(unavailable)'; }; \
+	git_revision() { git -C "$$1" describe --tags --long --dirty --always 2>/dev/null || printf '%s' '(unavailable)'; }; \
 	git_worktree() { \
 	  if ! git -C "$$1" rev-parse --is-inside-work-tree >/dev/null 2>&1; then printf '%s' '(unavailable)'; \
 	  elif [[ -n "$$(git -C "$$1" status --porcelain --untracked-files=normal)" ]]; then printf '%s' 'dirty'; \
@@ -211,9 +211,9 @@ provision-all:
 	log 'Build dir:        %s\n' "$(BUILD_ENV_DIR)"; \
 	log 'Log file:         %s\n' "$$run_log"; \
 	log 'Terraform dir:    %s\n' "$(TF_INFRA_DIR)"; \
-	log 'Engine revision:  %s\n' "$$engine_revision"; \
+	log 'Engine version:   %s\n' "$$engine_revision"; \
 	log 'Engine worktree:  %s\n' "$$engine_worktree"; \
-	log 'Environment revision:  %s\n' "$$environment_revision"; \
+	log 'Environment version:  %s\n' "$$environment_revision"; \
 	log 'Environment worktree:  %s\n' "$$environment_worktree"; \
 	if [[ -n "$${TF_VAR_vsphere_server:-}" ]]; then log 'vSphere server:   %s\n' "$$TF_VAR_vsphere_server"; else log 'vSphere server:   %s\n' '(from tfvars or unset)'; fi; \
 	if [[ -n "$${TF_VAR_vsphere_user:-}" ]]; then log 'vSphere user:     %s\n' "$$TF_VAR_vsphere_user"; else log 'vSphere user:     %s\n' '(from tfvars or unset)'; fi; \
