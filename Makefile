@@ -187,8 +187,8 @@ provision-all:
 	}; \
 	mode='interactive'; \
 	if [[ "$(DEPLOY_YES)" == "1" ]]; then mode='noninteractive'; fi; \
-	engine_repo=$$(git rev-parse --show-toplevel 2>/dev/null || pwd); \
-	environment_repo=$$(git -C "$(ENV)" rev-parse --show-toplevel 2>/dev/null || printf '%s' '$(ENV)'); \
+	engine_repo=$$(git -C "$(ENGINE_ROOT)" rev-parse --show-toplevel 2>/dev/null || printf '%s' '$(ENGINE_ROOT)'); \
+	environment_repo=$$(git -C "$(CURDIR)" rev-parse --show-toplevel 2>/dev/null || printf '%s' '$(CURDIR)'); \
 	engine_revision=$$(git_revision "$$engine_repo"); \
 	engine_worktree=$$(git_worktree "$$engine_repo"); \
 	environment_revision=$$(git_revision "$$environment_repo"); \
@@ -207,7 +207,7 @@ provision-all:
 	log '============================================================\n'; \
 	log 'Rancher Environment Provisioning\n'; \
 	log '============================================================\n'; \
-	log 'ENV:              %s\n' "$(ENV)"; \
+	log 'Environment file: %s\n' "$(ENV_CONFIG)"; \
 	log 'Build dir:        %s\n' "$(BUILD_ENV_DIR)"; \
 	log 'Log file:         %s\n' "$$run_log"; \
 	log 'Terraform dir:    %s\n' "$(TF_INFRA_DIR)"; \
