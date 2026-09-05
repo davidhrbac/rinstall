@@ -9,8 +9,9 @@
 - Review vSphere TLS verification defaults.
   - Prefer `allow_unverified_ssl: false`; retain an insecure override only where explicitly required.
 
-- Pin bootstrap tooling and Python dependencies for DR reproducibility.
-  - Pin asdf, Helm, and kubectl versions instead of resolving `latest` during provisioning.
+- Make bootstrap tooling version-aware and lock Python dependencies for DR reproducibility.
+  - Derive or select `kubectl` compatible with the configured RKE2/Kubernetes version; do not blindly use `asdf latest kubectl`.
+  - Ensure Helm satisfies the configured Rancher release requirements without maintaining an independent historical pin unless DR policy requires it.
   - Replace minimum-version Python dependencies with exact pins or a lockfile.
 
 - Protect kubeconfig artifacts explicitly.
@@ -31,11 +32,6 @@
   - Run `make render-infra-vars`, `make infra-plan`, and SSH config checks before any apply.
 
 ## Later
-
-- Move instance runtime state outside a pinned engine checkout.
-  - Support `RUNTIME_DIR` for generated tfvars, SSH config, kubeconfig, logs, and known-hosts.
-  - Set `TF_DATA_DIR` so Terraform backend metadata and provider/module data are outside the engine/module directory.
-  - Target a per-environment repo with a pinned engine submodule and ignored `.rinstall/` runtime directory.
 
 - Add declarative bastion service-network support for downstream VLANs.
   - Define a stable logical network `id`, append-only attachment `slot`, VLAN ID, vSphere portgroup, CIDR, gateway host offset, and DHCP range in env config.
