@@ -243,7 +243,7 @@ provision-all:
 	log '  5. Rancher install     (make -f rinstall/Makefile rancher-install)\n'; \
 	log '================================================================================\n'; \
 	if [[ "$(DEPLOY_YES)" != "1" ]]; then \
-	  log 'Run make infra-plan first if you have not reviewed the Terraform plan.\n'; \
+	  log 'Run make -f rinstall/Makefile infra-plan first if you have not reviewed the Terraform plan.\n'; \
 	  printf 'Continue? [y/N] '; \
 	  read -r reply; \
 	  case "$$reply" in y|Y|yes|YES) ;; *) printf 'Aborted.\n'; exit 0 ;; esac; \
