@@ -28,18 +28,21 @@ ADMIN_SSH_CONFIG := $(BUILD_ENV_DIR)/$(ENV_ID).conf
 
 help:
 	@printf '%s\n' 'Targets:'
+	@printf '%s\n' '  Run from an instance repository root: make -f rinstall/Makefile <target>'
+	@printf '%s\n' '  Production config: config.yaml in the instance repository root'
+	@printf '%s\n' ''
 	@printf '%s\n' '  provision-all       confirm, apply infra, run all phases, and print duration summary'
 	@printf '%s\n' '  provision-all-yes   run provision-all without prompt'
 	@printf '%s\n' ''
 	@printf '\033[3m%s\033[0m\n' '  render-infra-vars   render runtime/infra.tfvars.json from config.yaml'
 	@printf '\033[3m%s\033[0m\n' '  ssh-config          render runtime/ssh_config from config.yaml'
-	@printf '\033[3m%s\033[0m\n' '  admin-ssh-config    render admin jump-host SSH fragment from env.yaml'
+	@printf '\033[3m%s\033[0m\n' '  admin-ssh-config    render admin jump-host SSH fragment from config.yaml'
 	@printf '\033[3m%s\033[0m\n' '  install-admin-ssh-config  upload the admin SSH fragment to the configured jump host'
 	@printf '%s\n' '  infra-init          terraform init for infra layer'
 	@printf '%s\n' '  infra-fmt           check Terraform formatting'
 	@printf '%s\n' '  infra-validate      validate Terraform infra root'
-	@printf '%s\n' '  infra-plan          plan vSphere infra using ENV=<env dir>'
-	@printf '%s\n' '  infra-apply         apply vSphere infra using ENV=<env dir>'
+	@printf '%s\n' '  infra-plan          plan vSphere infra from the instance config'
+	@printf '%s\n' '  infra-apply         apply vSphere infra from the instance config'
 	@printf '\033[3m%s\033[0m\n' '  infra-output        write Terraform outputs to runtime/infra-output.json'
 	@printf '%s\n' '  bastion-configure   configure dnsmasq/squid/routes on bastion1 with pyinfra'
 	@printf '%s\n' '  node-prep           set hostnames/prompts on local nodes and prep Rancher nodes'
@@ -48,7 +51,7 @@ help:
 	@printf '%s\n' '  rancher-install     install cert-manager and Rancher from bastion1 with pyinfra'
 	@printf '%s\n' '  rancher-bootstrap   set Rancher runtime settings with pyinfra'
 	@printf '%s\n' ''
-	@printf '\033[3m%s\033[0m\n' '  destroy-commands    print explicit Terraform destroy commands for ENV=<env dir>'
+	@printf '\033[3m%s\033[0m\n' '  destroy-commands    print explicit Terraform destroy commands'
 
 render-infra-vars:
 	install -d -m 700 $(BUILD_ENV_DIR)
