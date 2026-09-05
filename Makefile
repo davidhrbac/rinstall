@@ -108,10 +108,10 @@ destroy-commands:
 	@printf '%s\n' 'Confirm ENV, Terraform workspace/backend/state, and every planned deletion.'
 	@printf '%s\n' ''
 	@printf '%s\n' '1. Review plan:'
-	@printf '%s\n' 'TF_DATA_DIR=$(TF_DATA_DIR) $(TERRAFORM) -chdir=$(TF_INFRA_DIR) plan -destroy -var-file=$(INFRA_TFVARS)'
+	@printf '%s\n' '$(TF_BACKEND_ENV) TF_DATA_DIR=$(TF_DATA_DIR) $(TERRAFORM) -chdir=$(TF_INFRA_DIR) plan -destroy -var-file=$(INFRA_TFVARS)'
 	@printf '%s\n' ''
 	@printf '%s\n' '2. Destroy only after review:'
-	@printf '%s\n' 'TF_DATA_DIR=$(TF_DATA_DIR) $(TERRAFORM) -chdir=$(TF_INFRA_DIR) destroy -var-file=$(INFRA_TFVARS)'
+	@printf '%s\n' '$(TF_BACKEND_ENV) TF_DATA_DIR=$(TF_DATA_DIR) $(TERRAFORM) -chdir=$(TF_INFRA_DIR) destroy -var-file=$(INFRA_TFVARS)'
 	@printf '%s\n' '============================================================'
 
 bastion-configure:
