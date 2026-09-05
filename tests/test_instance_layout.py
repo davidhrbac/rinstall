@@ -94,6 +94,9 @@ def test_verify_uses_instance_terraform_data_dir(tmp_path):
     terraform_lines = [line for line in result.stdout.splitlines() if "terraform -chdir=" in line]
     assert terraform_lines
     assert all(f"TF_DATA_DIR={instance_root}/.rinstall/terraform-data" in line for line in terraform_lines)
+    init_lines = [line for line in terraform_lines if " init " in line]
+    assert init_lines
+    assert all("-backend=false" in line and "-lockfile=readonly" in line for line in init_lines)
 
 
 def test_kubeconfig_artifacts_are_private(tmp_path):
