@@ -10,19 +10,19 @@ ENGINE_ROOT ?= $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 INSTANCE_ROOT := $(CURDIR)
 ENV_FILE ?= $(if $(wildcard $(INSTANCE_ROOT)/config.yaml),$(abspath $(INSTANCE_ROOT)/config.yaml),$(abspath $(ENV)/env.yaml))
 ENV_CONFIG ?= $(ENV_FILE)
-ENV_ID := $(shell $(PYTHON) $(ENGINE_ROOT)/scripts/environment-id.py --env $(ENV_CONFIG) 2>/dev/null)
+ENV_ID = $(shell $(PYTHON) $(ENGINE_ROOT)/scripts/environment-id.py --env $(ENV_CONFIG) 2>/dev/null)
 RUNTIME_DIR ?= $(if $(wildcard $(INSTANCE_ROOT)/config.yaml),$(INSTANCE_ROOT)/.rinstall,$(ENGINE_ROOT)/build/$(ENV_ID))
-BUILD_ENV_DIR := $(RUNTIME_DIR)
+BUILD_ENV_DIR = $(RUNTIME_DIR)
 TF_ROOT := $(ENGINE_ROOT)/terraform/infra
 TF_INFRA_DIR := $(TF_ROOT)
-INFRA_TFVARS := $(BUILD_ENV_DIR)/infra.tfvars.json
+INFRA_TFVARS = $(BUILD_ENV_DIR)/infra.tfvars.json
 TF_DATA_DIR ?= $(BUILD_ENV_DIR)/terraform-data
 TF_BACKEND_ENV = $(shell $(PYTHON) $(ENGINE_ROOT)/scripts/terraform-backend-env.py --env $(ENV_CONFIG) 2>/dev/null)
 TF_INIT_ARGS ?=
 TF_APPLY_ARGS ?=
 PYINFRA_ARGS ?=
 ADMIN_SSH_HOST ?=
-ADMIN_SSH_CONFIG := $(BUILD_ENV_DIR)/$(ENV_ID).conf
+ADMIN_SSH_CONFIG = $(BUILD_ENV_DIR)/$(ENV_ID).conf
 
 .PHONY: help config-validate render-infra-vars instance-context ssh-config admin-ssh-config install-admin-ssh-config infra-init infra-fmt infra-validate infra-plan infra-apply infra-output destroy-commands bastion-configure node-prep rke2-install rke2-kubeconfig rancher-install rancher-install-run rancher-bootstrap-password-command rancher-bootstrap rancher-bootstrap-run provision-all provision-all-yes verify
 

@@ -188,6 +188,32 @@ def test_rejects_missing_required_gitlab_backend_configuration(missing):
         expand_env(config)
 
 
+def test_config_error_is_red_by_default(tmp_path, monkeypatch, capsys):
+    config = raw_example()
+    del config["terraform"]
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(yaml.safe_dump(config))
+    monkeypatch.delenv("NO_COLOR", raising=False)
+
+    with pytest.raises(SystemExit):
+        load_env(config_path)
+
+    assert "\033[31mERROR:\033[0m" in capsys.readouterr().err
+
+
+def test_config_error_has_no_color_when_no_color_is_set(tmp_path, monkeypatch, capsys):
+    config = raw_example()
+    del config["terraform"]
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(yaml.safe_dump(config))
+    monkeypatch.setenv("NO_COLOR", "")
+
+    with pytest.raises(SystemExit):
+        load_env(config_path)
+
+    assert "\033[" not in capsys.readouterr().err
+
+
 @pytest.mark.parametrize("url", ["http://gitlab.example", "https://gitlab.example/"])
 @pytest.mark.parametrize("state", ["infra", "prod_state-1.v2"])
 def test_accepts_valid_gitlab_backend_url_and_state(url, state):

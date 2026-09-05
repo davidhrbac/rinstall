@@ -123,9 +123,12 @@ def test_invalid_instance_config_fails_before_verify_work(tmp_path):
 
     combined_output = result.stdout + result.stderr
     assert result.returncode != 0
-    assert combined_output.count("missing env.terraform") == 1
-    assert "pytest" not in combined_output
-    assert "py_compile" not in combined_output
+    assert "invalid configuration" in result.stderr
+    assert combined_output.count("invalid configuration") == 1
+    assert "Missing required field:\n  terraform" in combined_output
+    assert f"Config:\n  {instance_root / 'config.yaml'}" in combined_output
+    assert " -m pytest" not in combined_output
+    assert " -m py_compile" not in combined_output
     assert "render-infra-tfvars.py" not in combined_output
     assert "terraform -chdir=" not in combined_output
 

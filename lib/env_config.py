@@ -1,7 +1,9 @@
 from copy import deepcopy
 from ipaddress import ip_interface, ip_network
+import os
 from pathlib import Path
 import re
+import sys
 from urllib.parse import urlparse
 
 import yaml
@@ -201,8 +203,24 @@ def expand_node_pools(env):
 
 
 def load_env(path):
-    with Path(path).open() as stream:
-        return expand_env(yaml.safe_load(stream))
+    config_path = Path(path).resolve()
+    try:
+        with config_path.open() as stream:
+            return expand_env(yaml.safe_load(stream))
+    except SystemExit as error:
+        message = str(error)
+        if message.startswith("missing env."):
+            field = message.removeprefix("missing env.")
+            detail = f"Missing required field:\n  {field}"
+        else:
+            detail = f"Validation error:\n  {message.removeprefix('env.')}"
+        if "NO_COLOR" in os.environ:
+            error_prefix = "ERROR:"
+        else:
+            error_prefix = "\033[31mERROR:\033[0m"
+        formatted = f"{error_prefix} invalid configuration\n\n{detail}\n\nConfig:\n  {config_path}"
+        print(formatted, file=sys.stderr)
+        raise SystemExit(1) from None
 
 
 def expand_env(raw_env):
