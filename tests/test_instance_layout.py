@@ -55,6 +55,9 @@ def test_makefile_derives_instance_paths(tmp_path):
         },
     )
     assert f"TF_DATA_DIR={instance_root}/.rinstall/terraform-data" in init_result.stdout
+    assert f"-chdir={instance_root}/.rinstall/terraform" in init_result.stdout
+    assert f"install -d -m 700 {instance_root}/.rinstall/terraform" in init_result.stdout
+    assert 'backend "http" {}' in init_result.stdout
     assert "-backend-config=path=" not in init_result.stdout
 
 

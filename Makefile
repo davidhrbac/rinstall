@@ -11,8 +11,9 @@ ENV_FILE ?= $(if $(wildcard $(CURDIR)/config.yaml),$(abspath $(CURDIR)/config.ya
 ENV_CONFIG ?= $(ENV_FILE)
 ENV_ID := $(shell $(PYTHON) $(ENGINE_ROOT)/scripts/environment-id.py --env $(ENV_CONFIG))
 RUNTIME_DIR ?= $(if $(wildcard $(CURDIR)/config.yaml),$(CURDIR)/.rinstall,$(ENGINE_ROOT)/build/$(ENV_ID))
-TF_INFRA_DIR := $(ENGINE_ROOT)/terraform/infra
+TF_SOURCE_DIR := $(ENGINE_ROOT)/terraform/infra
 BUILD_ENV_DIR := $(RUNTIME_DIR)
+TF_INFRA_DIR := $(BUILD_ENV_DIR)/terraform
 INFRA_TFVARS := $(BUILD_ENV_DIR)/infra.tfvars.json
 TF_DATA_DIR ?= $(BUILD_ENV_DIR)/terraform-data
 TF_BACKEND_CONFIG ?=
@@ -29,7 +30,7 @@ PYINFRA_ARGS ?=
 ADMIN_SSH_HOST ?=
 ADMIN_SSH_CONFIG := $(BUILD_ENV_DIR)/$(ENV_ID).conf
 
-.PHONY: help render-infra-vars ssh-config admin-ssh-config install-admin-ssh-config infra-init infra-fmt infra-validate infra-plan infra-apply infra-output destroy-commands bastion-configure node-prep rke2-install rke2-kubeconfig rancher-install rancher-install-run rancher-bootstrap-password-command rancher-bootstrap rancher-bootstrap-run provision-all provision-all-yes verify
+.PHONY: help render-infra-vars terraform-runtime ssh-config admin-ssh-config install-admin-ssh-config infra-init infra-fmt infra-validate infra-plan infra-apply infra-output destroy-commands bastion-configure node-prep rke2-install rke2-kubeconfig rancher-install rancher-install-run rancher-bootstrap-password-command rancher-bootstrap rancher-bootstrap-run provision-all provision-all-yes verify
 
 help:
 	@printf '%s\n' 'Targets:'
@@ -78,21 +79,33 @@ install-admin-ssh-config: admin-ssh-config
 	printf '%s\n' 'Ensure /root/.ssh/config includes ~/.ssh/config.d/*.conf; this target does not modify it.'
 
 infra-init:
+	$(MAKE) terraform-runtime
 	TF_DATA_DIR=$(TF_DATA_DIR) $(TERRAFORM) -chdir=$(TF_INFRA_DIR) init $(TF_BACKEND_ARGS) $(TF_INIT_ARGS)
 
+terraform-runtime:
+	install -d -m 700 $(TF_INFRA_DIR)
+	for file in $(TF_SOURCE_DIR)/*.tf; do ln -sfn "$$file" "$(TF_INFRA_DIR)/$$(basename "$$file")"; done
+	ln -sfn $(TF_SOURCE_DIR)/modules $(TF_INFRA_DIR)/modules
+	if [[ -n '$(TF_HTTP_ADDRESS)' || -n '$(TF_BACKEND_CONFIG)' ]]; then printf '%s\n' 'terraform {' '  backend "http" {}' '}' > $(TF_INFRA_DIR)/backend.tf; else rm -f $(TF_INFRA_DIR)/backend.tf; fi
+
 infra-fmt:
+	$(MAKE) terraform-runtime
 	$(TERRAFORM) -chdir=$(TF_INFRA_DIR) fmt -check -recursive -diff
 
 infra-validate:
+	$(MAKE) terraform-runtime
 	$(TERRAFORM) -chdir=$(TF_INFRA_DIR) validate
 
 infra-plan: render-infra-vars
+	$(MAKE) terraform-runtime
 	TF_DATA_DIR=$(TF_DATA_DIR) $(TERRAFORM) -chdir=$(TF_INFRA_DIR) plan -var-file=$(INFRA_TFVARS)
 
 infra-apply: render-infra-vars
+	$(MAKE) terraform-runtime
 	TF_DATA_DIR=$(TF_DATA_DIR) $(TERRAFORM) -chdir=$(TF_INFRA_DIR) apply $(TF_APPLY_ARGS) -var-file=$(INFRA_TFVARS)
 
 infra-output:
+	$(MAKE) terraform-runtime
 	mkdir -p $(BUILD_ENV_DIR)
 	TF_DATA_DIR=$(TF_DATA_DIR) $(TERRAFORM) -chdir=$(TF_INFRA_DIR) output -json > $(BUILD_ENV_DIR)/infra-output.json
 
