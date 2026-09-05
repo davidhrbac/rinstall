@@ -40,6 +40,10 @@ including Terraform metadata in `.rinstall/terraform-data/`.
 
 Production `config.yaml` declares the GitLab state location:
 
+Every `schema_version: 1` configuration must declare this GitLab backend
+identity. Local Terraform state is not a supported production mode; rinstall
+uses Terraform's HTTP backend for GitLab state.
+
 ```yaml
 schema_version: 1
 environment:
@@ -325,9 +329,9 @@ IPs, and SSH topology out of this engine repository.
 ## Terraform State
 
 Production instances use the static `backend "http" {}` declaration in the
-pinned engine and GitLab state settings from `config.yaml`. Do not put GitLab
-tokens in `config.yaml`; provide `TF_HTTP_USERNAME` and `TF_HTTP_PASSWORD` at
-runtime.
+pinned engine and GitLab state settings from `config.yaml`. Local Terraform
+state is not a supported production mode. Do not put GitLab tokens in
+`config.yaml`; provide `TF_HTTP_USERNAME` and `TF_HTTP_PASSWORD` at runtime.
 
 
 ## Secrets

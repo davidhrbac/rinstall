@@ -6,7 +6,7 @@ terraform:
     type: gitlab
     url: https://gitlab.example
     project_id: 1234
-    state: example
+    state: infra
 environment:
   id: example-instance
 name: example-instance

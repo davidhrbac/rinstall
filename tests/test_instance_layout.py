@@ -28,6 +28,13 @@ def test_instance_fixture_ignores_runtime_files():
     assert ".rinstall/" in (INSTANCE_FIXTURE / ".gitignore").read_text().splitlines()
     assert (INSTANCE_FIXTURE / ".gitmodules").exists()
     assert (INSTANCE_FIXTURE / "config.yaml").exists()
+    backend = yaml.safe_load((INSTANCE_FIXTURE / "config.yaml").read_text())["terraform"]["backend"]
+    assert backend == {
+        "type": "gitlab",
+        "url": "https://gitlab.example",
+        "project_id": 1234,
+        "state": "infra",
+    }
 
 
 def test_makefile_derives_instance_paths(tmp_path):
@@ -94,6 +101,9 @@ def test_verify_uses_instance_terraform_data_dir(tmp_path):
     init_lines = [line for line in terraform_lines if " init " in line]
     assert init_lines
     assert all("-backend=false" in line and "-lockfile=readonly" in line for line in init_lines)
+    assert "gitlab.example" not in result.stdout
+    assert "TF_HTTP_USERNAME" not in result.stdout
+    assert "TF_HTTP_PASSWORD" not in result.stdout
 
 
 def test_fresh_instance_infra_plan_initializes_and_renders_vars(tmp_path):
