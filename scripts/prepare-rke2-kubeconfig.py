@@ -27,6 +27,7 @@ def main():
 
     if not raw_path.exists():
         raise SystemExit(f"RKE2 kubeconfig not found: {raw_path}")
+    os.chmod(raw_path, 0o600)
 
     primary = config["rke2"]["primary_node"]
     primary_ip = config["nodes"][primary]["ip"]
