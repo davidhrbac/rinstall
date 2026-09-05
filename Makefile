@@ -78,16 +78,16 @@ infra-init:
 infra-fmt:
 	$(TERRAFORM) -chdir=$(TF_INFRA_DIR) fmt -check -recursive -diff
 
-infra-validate:
-	$(TERRAFORM) -chdir=$(TF_INFRA_DIR) validate
+infra-validate: infra-init
+	$(TF_BACKEND_ENV) TF_DATA_DIR=$(TF_DATA_DIR) $(TERRAFORM) -chdir=$(TF_INFRA_DIR) validate
 
-infra-plan: render-infra-vars
+infra-plan: infra-init render-infra-vars
 	$(TF_BACKEND_ENV) TF_DATA_DIR=$(TF_DATA_DIR) $(TERRAFORM) -chdir=$(TF_INFRA_DIR) plan -var-file=$(INFRA_TFVARS)
 
-infra-apply: render-infra-vars
+infra-apply: infra-init render-infra-vars
 	$(TF_BACKEND_ENV) TF_DATA_DIR=$(TF_DATA_DIR) $(TERRAFORM) -chdir=$(TF_INFRA_DIR) apply $(TF_APPLY_ARGS) -var-file=$(INFRA_TFVARS)
 
-infra-output:
+infra-output: infra-init
 	mkdir -p $(BUILD_ENV_DIR)
 	$(TF_BACKEND_ENV) TF_DATA_DIR=$(TF_DATA_DIR) $(TERRAFORM) -chdir=$(TF_INFRA_DIR) output -json > $(BUILD_ENV_DIR)/infra-output.json
 

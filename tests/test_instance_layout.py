@@ -99,6 +99,30 @@ def test_verify_uses_instance_terraform_data_dir(tmp_path):
     assert all("-backend=false" in line and "-lockfile=readonly" in line for line in init_lines)
 
 
+def test_fresh_instance_infra_plan_initializes_and_renders_vars(tmp_path):
+    instance_root = tmp_path / "customer-a-prod-infra"
+    instance_root.mkdir()
+    shutil.copy(EXAMPLE_ENV, instance_root / "config.yaml")
+    (instance_root / "rinstall").symlink_to(ENGINE_ROOT, target_is_directory=True)
+
+    result = subprocess.run(
+        ["make", "-f", "rinstall/Makefile", "-n", "infra-plan"],
+        cwd=instance_root,
+        check=True,
+        capture_output=True,
+        text=True,
+        env={key: value for key, value in os.environ.items() if key not in {"ENV_FILE", "RUNTIME_DIR", "TF_DATA_DIR", "MAKEFLAGS", "MFLAGS"}},
+    )
+
+    lines = result.stdout.splitlines()
+    init_line = next(index for index, line in enumerate(lines) if " terraform -chdir=" in line and " init " in line)
+    render_line = next(index for index, line in enumerate(lines) if "render-infra-tfvars.py" in line)
+    plan_line = next(index for index, line in enumerate(lines) if " terraform -chdir=" in line and " plan " in line)
+    assert init_line < render_line < plan_line
+    assert f"TF_DATA_DIR={instance_root}/.rinstall/terraform-data" in lines[init_line]
+    assert f"--out {instance_root}/.rinstall/infra.tfvars.json" in lines[render_line]
+
+
 def test_kubeconfig_artifacts_are_private(tmp_path):
     runtime = tmp_path / ".rinstall"
     runtime.mkdir()
