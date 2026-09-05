@@ -3,17 +3,15 @@ import shlex
 import sys
 from pathlib import Path
 
-import yaml
-
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from lib.env_config import load_env
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--env", required=True)
     args = parser.parse_args()
-    with Path(args.env).open() as stream:
-        backend = (yaml.safe_load(stream) or {}).get("terraform", {}).get("backend", {})
+    backend = load_env(args.env).get("terraform", {}).get("backend", {})
     if not backend:
         return
     address = f"{backend['url'].rstrip('/')}/api/v4/projects/{backend['project_id']}/terraform/state/{backend['state']}"
