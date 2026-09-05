@@ -106,6 +106,30 @@ def test_verify_uses_instance_terraform_data_dir(tmp_path):
     assert "TF_HTTP_PASSWORD" not in result.stdout
 
 
+def test_invalid_instance_config_fails_before_verify_work(tmp_path):
+    instance_root = tmp_path / "customer-a-prod-infra"
+    instance_root.mkdir()
+    config = yaml.safe_load(EXAMPLE_ENV.read_text())
+    del config["terraform"]
+    (instance_root / "config.yaml").write_text(yaml.safe_dump(config))
+    (instance_root / "rinstall").symlink_to(ENGINE_ROOT, target_is_directory=True)
+
+    result = subprocess.run(
+        ["make", "-f", "rinstall/Makefile", "verify", f"PYTHON={sys.executable}"],
+        cwd=instance_root,
+        capture_output=True,
+        text=True,
+    )
+
+    combined_output = result.stdout + result.stderr
+    assert result.returncode != 0
+    assert combined_output.count("missing env.terraform") == 1
+    assert "pytest" not in combined_output
+    assert "py_compile" not in combined_output
+    assert "render-infra-tfvars.py" not in combined_output
+    assert "terraform -chdir=" not in combined_output
+
+
 def test_fresh_instance_infra_plan_initializes_and_renders_vars(tmp_path):
     instance_root = tmp_path / "customer-a-prod-infra"
     instance_root.mkdir()
