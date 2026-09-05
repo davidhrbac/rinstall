@@ -295,10 +295,10 @@ rancher:
       version: 2.14.4
 ```
 
-For Rancher Prime, set `edition: prime` in the private env and fill the Prime chart repository/version approved for that customer. The env loader resolves the selected edition into the values expected by the install script.
+For Rancher Prime, set `edition: prime` in the instance config and fill the Prime chart repository/version approved for that customer. The env loader resolves the selected edition into the values expected by the install script.
 `agent_tls_mode` defaults to `system-store`. `rke2.version`, `rancher.cert_manager_version`, and the selected Rancher edition `version` are required; the environment config is the only version source of truth.
 
-Set `rancher.bootstrap_password` only in private env configs when you want to control the one-time initial admin password. The install script uses it only when the Rancher Helm release does not exist yet; repeat runs and upgrades never pass `bootstrapPassword` again. When it is omitted, each successful `make rancher-install` prints a command that retrieves the generated password from `cattle-system/bootstrap-secret` if this was the first Rancher release. Change the password after first login.
+Set `rancher.bootstrap_password` only in instance configs when you want to control the one-time initial admin password. The install script uses it only when the Rancher Helm release does not exist yet; repeat runs and upgrades never pass `bootstrapPassword` again. When it is omitted, each successful `make rancher-install` prints a command that retrieves the generated password from `cattle-system/bootstrap-secret` if this was the first Rancher release. Change the password after first login.
 
 `rinstall` installs cert-manager and Rancher only when their Helm releases are absent. An existing release must match the declared chart version; Rancher must also match the declared hostname, proxy, and no-proxy values. Any mismatch fails without an upgrade or downgrade, because Rancher and cert-manager lifecycle changes belong to the separate Rancher Environment repository. Synchronize the DR environment pins after those lifecycle changes.
 
