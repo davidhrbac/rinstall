@@ -59,7 +59,7 @@ render-infra-vars:
 	$(PYTHON) $(ENGINE_ROOT)/scripts/render-infra-tfvars.py --env $(ENV_CONFIG) --out $(INFRA_TFVARS)
 
 instance-context:
-	$(PYTHON) $(ENGINE_ROOT)/scripts/print-instance-context.py --env $(ENV_CONFIG)
+	@$(PYTHON) $(ENGINE_ROOT)/scripts/print-instance-context.py --env $(ENV_CONFIG)
 
 ssh-config:
 	install -d -m 700 $(BUILD_ENV_DIR)
@@ -152,7 +152,7 @@ rancher-bootstrap: rke2-kubeconfig rancher-bootstrap-run
 rancher-bootstrap-run:
 	ENV_CONFIG=$(ENV_CONFIG) RUNTIME_DIR=$(RUNTIME_DIR) PHASE=rancher-bootstrap PYINFRA_PROGRESS=$(PYINFRA_PROGRESS) $(PYINFRA) $(PYINFRA_ARGS) $(ENGINE_ROOT)/pyinfra/inventory.py $(ENGINE_ROOT)/pyinfra/deploy.py
 
-provision-all: instance-context
+provision-all:
 	@set -euo pipefail; \
 	format_duration() { \
 	  local seconds=$$1; \
@@ -208,19 +208,22 @@ provision-all: instance-context
 	run_log="$(BUILD_ENV_DIR)/provision-$$(date +%Y%m%d-%H%M%S)-$$$$.log"; \
 	: >"$$run_log"; \
 	log() { printf "$$@" | tee -a "$$run_log"; }; \
+	eval "$$($(PYTHON) $(ENGINE_ROOT)/scripts/print-instance-context.py --env $(ENV_CONFIG) --shell)"; \
 	on_interrupt() { \
 	  trap - INT TERM; \
 	  log '\nProvisioning interrupted; log preserved at %s\n' "$$run_log" >&2; \
 	  exit 130; \
 	}; \
 	trap on_interrupt INT TERM; \
-	log '============================================================\n'; \
-	log 'Rancher Environment Provisioning\n'; \
-	log '============================================================\n'; \
-	log 'Environment file: %s\n' "$(ENV_CONFIG)"; \
-	log 'Build dir:        %s\n' "$(BUILD_ENV_DIR)"; \
-	log 'Log file:         %s\n' "$$run_log"; \
-	log 'Terraform dir:    %s\n' "$(TF_INFRA_DIR)"; \
+	log '================================================================================\n'; \
+	log 'rinstall :: provision-all\n\n'; \
+	log 'Environment:     %s\n' "$$INSTANCE_ID"; \
+	log 'Rancher:         %s\n' "$$RANCHER_URL"; \
+	log 'State:           %s\n' "$$STATE_ADDRESS"; \
+	log 'Config:          %s\n\n' "$(ENV_CONFIG)"; \
+	log 'Runtime dir:     %s\n' "$(BUILD_ENV_DIR)"; \
+	log 'Terraform:       %s\n' "$(TF_INFRA_DIR)"; \
+	log 'Log:             %s\n\n' "$$run_log"; \
 	log 'Engine version:   %s\n' "$$engine_revision"; \
 	log 'Engine worktree:  %s\n' "$$engine_worktree"; \
 	log 'Environment version:  %s\n' "$$environment_revision"; \
@@ -233,12 +236,12 @@ provision-all: instance-context
 	  log 'pyinfra:          %s\n' '$(PYINFRA_ARGS)'; \
 	fi; \
 	log 'Phases:\n'; \
-	log '  1. Terraform apply\n'; \
-	log '  2. Bastion configure\n'; \
-	log '  3. Node prep\n'; \
-	log '  4. RKE2 install\n'; \
-	log '  5. Rancher install\n'; \
-	log '============================================================\n'; \
+	log '  1. Terraform apply    (make infra-apply)\n'; \
+	log '  2. Bastion configure  (make bastion-configure)\n'; \
+	log '  3. Node prep          (make node-prep)\n'; \
+	log '  4. RKE2 install       (make rke2-install)\n'; \
+	log '  5. Rancher install    (make rancher-install)\n'; \
+	log '================================================================================\n'; \
 	if [[ "$(DEPLOY_YES)" != "1" ]]; then \
 	  log 'Run make infra-plan first if you have not reviewed the Terraform plan.\n'; \
 	  printf 'Continue? [y/N] '; \

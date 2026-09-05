@@ -137,10 +137,10 @@ def test_instance_context_prints_resolved_identity_without_credentials(tmp_path)
     )
     assert result.returncode == 0, result.stderr
 
-    assert "Environment ID:  example" in result.stdout
-    assert "Rancher:         rancher.example.internal" in result.stdout
-    assert "Terraform state: https://gitlab.example/api/v4/projects/1234/terraform/state/infra" in result.stdout
-    assert f"Config:          {instance_root / 'config.yaml'}" in result.stdout
+    assert "rinstall :: example\n\n" in result.stdout
+    assert "Rancher: rancher.example.internal" in result.stdout
+    assert "State:   https://gitlab.example/api/v4/projects/1234/terraform/state/infra" in result.stdout
+    assert f"Config:  {instance_root / 'config.yaml'}" in result.stdout
     assert "runtime-user" not in result.stdout
     assert "runtime-secret" not in result.stdout
 
