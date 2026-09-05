@@ -174,12 +174,30 @@ def test_validates_gitlab_backend_without_credentials():
     assert expand_env(config)["terraform"]["backend"]["project_id"] == 1234
 
 
+@pytest.mark.parametrize("url", ["http://gitlab.example", "https://gitlab.example/"])
+@pytest.mark.parametrize("state", ["infra", "prod_state-1.v2"])
+def test_accepts_valid_gitlab_backend_url_and_state(url, state):
+    config = raw_example()
+    config["terraform"] = {
+        "backend": {"type": "gitlab", "url": url, "project_id": 1234, "state": state}
+    }
+    assert expand_env(config)["terraform"]["backend"]["state"] == state
+
+
 @pytest.mark.parametrize("backend", [
     {"type": "s3"},
     {"type": "gitlab", "url": "", "project_id": 1, "state": "infra"},
     {"type": "gitlab", "url": "https://gitlab.example", "state": "infra"},
     {"type": "gitlab", "url": "https://gitlab.example", "project_id": "bad", "state": "infra"},
     {"type": "gitlab", "url": "https://gitlab.example", "project_id": 1, "state": ""},
+    {"type": "gitlab", "url": "ftp://gitlab.example", "project_id": 1, "state": "infra"},
+    {"type": "gitlab", "url": "https:///missing-host", "project_id": 1, "state": "infra"},
+    {"type": "gitlab", "url": "https://gitlab.example?project=1", "project_id": 1, "state": "infra"},
+    {"type": "gitlab", "url": "https://gitlab.example#state", "project_id": 1, "state": "infra"},
+    {"type": "gitlab", "url": "https://gitlab.example/gitlab", "project_id": 1, "state": "infra"},
+    {"type": "gitlab", "url": "https://gitlab.example", "project_id": 1, "state": "/"},
+    {"type": "gitlab", "url": "https://gitlab.example", "project_id": 1, "state": "prod/state"},
+    {"type": "gitlab", "url": "https://gitlab.example", "project_id": 1, "state": "prod state"},
 ])
 def test_rejects_invalid_gitlab_backend(backend):
     config = raw_example()

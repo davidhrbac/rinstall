@@ -22,6 +22,7 @@ DEFAULT_NO_PROXY_NAMES = [
 
 SUPPORTED_SCHEMA_VERSION = 1
 ENVIRONMENT_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9.-]*$")
+TERRAFORM_STATE_PATTERN = re.compile(r"^[A-Za-z0-9._-]+$")
 
 
 def require(mapping, key, context):
@@ -93,14 +94,24 @@ def validate_env_references(env):
             raise SystemExit("env.terraform.backend.type must be 'gitlab'")
         url = require(backend, "url", "env.terraform.backend")
         parsed_url = urlparse(str(url))
-        if not isinstance(url, str) or not url.strip() or parsed_url.scheme not in {"http", "https"} or parsed_url.path not in {"", "/"}:
+        if (
+            not isinstance(url, str)
+            or not url.strip()
+            or parsed_url.scheme not in {"http", "https"}
+            or not parsed_url.hostname
+            or parsed_url.query
+            or parsed_url.fragment
+            or parsed_url.path not in {"", "/"}
+        ):
             raise SystemExit("env.terraform.backend.url must be a non-empty GitLab base URL")
         project_id = require(backend, "project_id", "env.terraform.backend")
         if isinstance(project_id, bool) or not isinstance(project_id, int) or project_id <= 0:
             raise SystemExit("env.terraform.backend.project_id must be a positive integer")
         state = require(backend, "state", "env.terraform.backend")
-        if not isinstance(state, str) or not state.strip():
-            raise SystemExit("env.terraform.backend.state must be a non-empty string")
+        if not isinstance(state, str) or not TERRAFORM_STATE_PATTERN.fullmatch(state):
+            raise SystemExit(
+                "env.terraform.backend.state must contain only letters, digits, dots, hyphens, and underscores"
+            )
 
     infra = require(env, "infra", "env")
     networks = require(infra, "networks", "env.infra")
