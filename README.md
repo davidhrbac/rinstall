@@ -38,6 +38,25 @@ make -f rinstall/Makefile provision-all
 Generated runtime files are kept under the ignored `.rinstall/` directory,
 including Terraform metadata in `.rinstall/terraform-data/`.
 
+Production `config.yaml` declares the GitLab state location:
+
+```yaml
+schema_version: 1
+environment:
+  id: customer-a-prod
+terraform:
+  backend:
+    type: gitlab
+    url: https://gitlab.example
+    project_id: 1234
+    state: infra
+```
+
+Only credentials come from the runtime environment: `TF_HTTP_USERNAME` and
+`TF_HTTP_PASSWORD`. `rinstall` derives the address and lock/unlock URLs.
+When both are present, config-derived non-secret values override matching
+`TF_HTTP_*` values supplied by the shell.
+
 ## Development / Standalone Engine Flow
 
 For engine development and sanitized fixtures, run Terraform from the operator
@@ -94,7 +113,9 @@ export TF_VAR_vsphere_password="change-me"
 
 See `.envrc.example` for the expected variable names. `make render-infra-vars` omits `vsphere_server` and `vsphere_user` when they are not set in `env.yaml`, so Terraform will read `TF_VAR_vsphere_server` and `TF_VAR_vsphere_user` from the operator environment.
 
-The committed scaffold uses Terraform's default local state, so standalone `make infra-init` works without GitLab backend settings. For an instance using GitLab Terraform state, provide `TF_HTTP_ADDRESS` (plus lock/unlock settings and credentials) in the runtime environment, or pass the GitLab-provided settings with `TF_BACKEND_CONFIG=<file>`. The Makefile generates the HTTP backend declaration under `.rinstall/terraform/` and never modifies the `rinstall` submodule.
+Standalone engine validation uses `terraform init -backend=false`. Production
+instances use the static HTTP backend in the pinned engine and settings from
+`config.yaml`; no backend files or Terraform source are generated at runtime.
 
 If local nodes require a separate SSH jump host, configure it in the environment
 config. pyinfra inventory will generate `build/<environment.id>/ssh_config` in
@@ -293,15 +314,10 @@ IPs, and SSH topology out of this engine repository.
 
 ## Terraform State
 
-The committed infra layer defaults to local Terraform state so the scaffold can be initialized and planned without GitLab backend setup.
-
-For environments that need GitLab Terraform state, run
-`make -f rinstall/Makefile infra-init` with `TF_HTTP_ADDRESS` and lock settings,
-or use `TF_BACKEND_CONFIG=<backend-config-file>`. The backend declaration and
-Terraform working root are generated under `.rinstall/`; the pinned submodule is
-never modified. Do not put GitLab tokens in
-`config.yaml`; provide backend credentials via Terraform-supported environment
-variables such as `TF_HTTP_USERNAME` and `TF_HTTP_PASSWORD`.
+Production instances use the static `backend "http" {}` declaration in the
+pinned engine and GitLab state settings from `config.yaml`. Do not put GitLab
+tokens in `config.yaml`; provide `TF_HTTP_USERNAME` and `TF_HTTP_PASSWORD` at
+runtime.
 
 
 ## Secrets

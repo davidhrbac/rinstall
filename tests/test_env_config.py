@@ -162,3 +162,23 @@ def test_generates_compact_no_proxy_list_with_kubernetes_suffixes():
         "10.14.17.0/28",
         "rancher.example.internal",
     ]
+
+
+def test_validates_gitlab_backend_without_credentials():
+    config = raw_example()
+    config["terraform"] = {"backend": {"type": "gitlab", "url": "https://gitlab.example", "project_id": 1234, "state": "infra"}}
+    assert expand_env(config)["terraform"]["backend"]["project_id"] == 1234
+
+
+@pytest.mark.parametrize("backend", [
+    {"type": "s3"},
+    {"type": "gitlab", "url": "", "project_id": 1, "state": "infra"},
+    {"type": "gitlab", "url": "https://gitlab.example", "state": "infra"},
+    {"type": "gitlab", "url": "https://gitlab.example", "project_id": "bad", "state": "infra"},
+    {"type": "gitlab", "url": "https://gitlab.example", "project_id": 1, "state": ""},
+])
+def test_rejects_invalid_gitlab_backend(backend):
+    config = raw_example()
+    config["terraform"] = {"backend": backend}
+    with pytest.raises(SystemExit):
+        expand_env(config)

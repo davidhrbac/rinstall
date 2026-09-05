@@ -7,28 +7,24 @@ PYINFRA ?= pyinfra
 PYINFRA_PROGRESS ?= off
 TERRAFORM ?= terraform
 ENGINE_ROOT ?= $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
-ENV_FILE ?= $(if $(wildcard $(CURDIR)/config.yaml),$(abspath $(CURDIR)/config.yaml),$(abspath $(ENV)/env.yaml))
+INSTANCE_ROOT := $(CURDIR)
+ENV_FILE ?= $(if $(wildcard $(INSTANCE_ROOT)/config.yaml),$(abspath $(INSTANCE_ROOT)/config.yaml),$(abspath $(ENV)/env.yaml))
 ENV_CONFIG ?= $(ENV_FILE)
 ENV_ID := $(shell $(PYTHON) $(ENGINE_ROOT)/scripts/environment-id.py --env $(ENV_CONFIG))
-RUNTIME_DIR ?= $(if $(wildcard $(CURDIR)/config.yaml),$(CURDIR)/.rinstall,$(ENGINE_ROOT)/build/$(ENV_ID))
-TF_SOURCE_DIR := $(ENGINE_ROOT)/terraform/infra
+RUNTIME_DIR ?= $(if $(wildcard $(INSTANCE_ROOT)/config.yaml),$(INSTANCE_ROOT)/.rinstall,$(ENGINE_ROOT)/build/$(ENV_ID))
 BUILD_ENV_DIR := $(RUNTIME_DIR)
-TF_INFRA_DIR := $(BUILD_ENV_DIR)/terraform
+TF_ROOT := $(ENGINE_ROOT)/terraform/infra
+TF_INFRA_DIR := $(TF_ROOT)
 INFRA_TFVARS := $(BUILD_ENV_DIR)/infra.tfvars.json
 TF_DATA_DIR ?= $(BUILD_ENV_DIR)/terraform-data
-TF_BACKEND_CONFIG ?=
-ifneq ($(strip $(TF_BACKEND_CONFIG)),)
-TF_BACKEND_ARGS := $(addprefix -backend-config=,$(TF_BACKEND_CONFIG))
-else
-TF_BACKEND_ARGS :=
-endif
+TF_BACKEND_ENV := $(shell $(PYTHON) $(ENGINE_ROOT)/scripts/terraform-backend-env.py --env $(ENV_CONFIG))
 TF_INIT_ARGS ?=
 TF_APPLY_ARGS ?=
 PYINFRA_ARGS ?=
 ADMIN_SSH_HOST ?=
 ADMIN_SSH_CONFIG := $(BUILD_ENV_DIR)/$(ENV_ID).conf
 
-.PHONY: help render-infra-vars terraform-runtime ssh-config admin-ssh-config install-admin-ssh-config infra-init infra-fmt infra-validate infra-plan infra-apply infra-output destroy-commands bastion-configure node-prep rke2-install rke2-kubeconfig rancher-install rancher-install-run rancher-bootstrap-password-command rancher-bootstrap rancher-bootstrap-run provision-all provision-all-yes verify
+.PHONY: help render-infra-vars ssh-config admin-ssh-config install-admin-ssh-config infra-init infra-fmt infra-validate infra-plan infra-apply infra-output destroy-commands bastion-configure node-prep rke2-install rke2-kubeconfig rancher-install rancher-install-run rancher-bootstrap-password-command rancher-bootstrap rancher-bootstrap-run provision-all provision-all-yes verify
 
 help:
 	@printf '%s\n' 'Targets:'
@@ -76,30 +72,24 @@ install-admin-ssh-config: admin-ssh-config
 	printf 'Installed %s on %s:/root/.ssh/config.d/%s.conf\n' "$(ADMIN_SSH_CONFIG)" "$$admin_ssh_host" "$(ENV_ID)"; \
 	printf '%s\n' 'Ensure /root/.ssh/config includes ~/.ssh/config.d/*.conf; this target does not modify it.'
 
-infra-init: terraform-runtime
-	TF_DATA_DIR=$(TF_DATA_DIR) $(TERRAFORM) -chdir=$(TF_INFRA_DIR) init $(TF_BACKEND_ARGS) $(TF_INIT_ARGS)
+infra-init:
+	$(TF_BACKEND_ENV) TF_DATA_DIR=$(TF_DATA_DIR) $(TERRAFORM) -chdir=$(TF_INFRA_DIR) init -lockfile=readonly $(TF_INIT_ARGS)
 
-terraform-runtime:
-	install -d -m 700 $(TF_INFRA_DIR)
-	for file in $(TF_SOURCE_DIR)/*.tf; do ln -sfn "$$file" "$(TF_INFRA_DIR)/$$(basename "$$file")"; done
-	ln -sfn $(TF_SOURCE_DIR)/modules $(TF_INFRA_DIR)/modules
-	if [[ -n '$(TF_HTTP_ADDRESS)' || -n '$(TF_BACKEND_CONFIG)' ]]; then printf '%s\n' 'terraform {' '  backend "http" {}' '}' > $(TF_INFRA_DIR)/backend.tf; else rm -f $(TF_INFRA_DIR)/backend.tf; fi
-
-infra-fmt: terraform-runtime
+infra-fmt:
 	$(TERRAFORM) -chdir=$(TF_INFRA_DIR) fmt -check -recursive -diff
 
-infra-validate: terraform-runtime
+infra-validate:
 	$(TERRAFORM) -chdir=$(TF_INFRA_DIR) validate
 
-infra-plan: render-infra-vars terraform-runtime
-	TF_DATA_DIR=$(TF_DATA_DIR) $(TERRAFORM) -chdir=$(TF_INFRA_DIR) plan -var-file=$(INFRA_TFVARS)
+infra-plan: render-infra-vars
+	$(TF_BACKEND_ENV) TF_DATA_DIR=$(TF_DATA_DIR) $(TERRAFORM) -chdir=$(TF_INFRA_DIR) plan -var-file=$(INFRA_TFVARS)
 
-infra-apply: render-infra-vars terraform-runtime
-	TF_DATA_DIR=$(TF_DATA_DIR) $(TERRAFORM) -chdir=$(TF_INFRA_DIR) apply $(TF_APPLY_ARGS) -var-file=$(INFRA_TFVARS)
+infra-apply: render-infra-vars
+	$(TF_BACKEND_ENV) TF_DATA_DIR=$(TF_DATA_DIR) $(TERRAFORM) -chdir=$(TF_INFRA_DIR) apply $(TF_APPLY_ARGS) -var-file=$(INFRA_TFVARS)
 
-infra-output: terraform-runtime
+infra-output:
 	mkdir -p $(BUILD_ENV_DIR)
-	TF_DATA_DIR=$(TF_DATA_DIR) $(TERRAFORM) -chdir=$(TF_INFRA_DIR) output -json > $(BUILD_ENV_DIR)/infra-output.json
+	$(TF_BACKEND_ENV) TF_DATA_DIR=$(TF_DATA_DIR) $(TERRAFORM) -chdir=$(TF_INFRA_DIR) output -json > $(BUILD_ENV_DIR)/infra-output.json
 
 destroy-commands:
 	@$(PYTHON) $(ENGINE_ROOT)/scripts/render-infra-tfvars.py --env $(ENV_CONFIG) --out $(INFRA_TFVARS)
@@ -112,7 +102,6 @@ destroy-commands:
 	@printf 'Tfvars:           %s\n' '$(INFRA_TFVARS)'
 	@if [[ -n "$${TF_VAR_vsphere_server:-}" ]]; then printf 'vSphere server:   %s\n' "$$TF_VAR_vsphere_server"; else printf 'vSphere server:   %s\n' '(from tfvars or unset)'; fi
 	@if [[ -n "$${TF_VAR_vsphere_user:-}" ]]; then printf 'vSphere user:     %s\n' "$$TF_VAR_vsphere_user"; else printf 'vSphere user:     %s\n' '(from tfvars or unset)'; fi
-	@if [[ -n '$(TF_BACKEND_CONFIG)' ]]; then printf 'Backend config:   %s\n' '$(TF_BACKEND_CONFIG)'; fi
 	@if [[ -n '$(TF_INIT_ARGS)' ]]; then printf 'Init args:        %s\n' '$(TF_INIT_ARGS)'; fi
 	@printf '%s\n' '============================================================'
 	@printf '%s\n' 'Review the destroy plan before running destroy.'
@@ -180,7 +169,7 @@ provision-all:
 	  local phase_start=$$SECONDS; \
 	  local phase_number=$$3; \
 	  local command_line; \
-	  local command=("$(MAKE)" "-f" "$(ENGINE_ROOT)/Makefile" "$$target" "ENGINE_ROOT=$(ENGINE_ROOT)" "ENV=$(ENV)" "ENV_FILE=$(ENV_FILE)" "ENV_CONFIG=$(ENV_CONFIG)" "RUNTIME_DIR=$(RUNTIME_DIR)" "TF_DATA_DIR=$(TF_DATA_DIR)" "PYTHON=$(PYTHON)" "PYINFRA=$(PYINFRA)" "PYINFRA_PROGRESS=$(PYINFRA_PROGRESS)" "PYINFRA_ARGS=$(PYINFRA_ARGS)" "TERRAFORM=$(TERRAFORM)" "TF_BACKEND_CONFIG=$(TF_BACKEND_CONFIG)" "TF_INIT_ARGS=$(TF_INIT_ARGS)" "TF_APPLY_ARGS=$(TF_APPLY_ARGS)"); \
+  local command=("$(MAKE)" "-f" "$(ENGINE_ROOT)/Makefile" "$$target" "ENGINE_ROOT=$(ENGINE_ROOT)" "ENV=$(ENV)" "ENV_FILE=$(ENV_FILE)" "ENV_CONFIG=$(ENV_CONFIG)" "RUNTIME_DIR=$(RUNTIME_DIR)" "TF_DATA_DIR=$(TF_DATA_DIR)" "PYTHON=$(PYTHON)" "PYINFRA=$(PYINFRA)" "PYINFRA_PROGRESS=$(PYINFRA_PROGRESS)" "PYINFRA_ARGS=$(PYINFRA_ARGS)" "TERRAFORM=$(TERRAFORM)" "TF_INIT_ARGS=$(TF_INIT_ARGS)" "TF_APPLY_ARGS=$(TF_APPLY_ARGS)"); \
 	  log '\n[%s/5] %s started\n' "$$phase_number" "$$label"; \
 	  printf -v command_line '%q ' "$${command[@]}"; \
 	  if script -q -e -f -a -c "$$command_line" "$$run_log"; then \
@@ -269,11 +258,11 @@ provision-all:
 	exit "$$status"
 
 provision-all-yes:
-	@$(MAKE) -f "$(ENGINE_ROOT)/Makefile" provision-all DEPLOY_YES=1 ENGINE_ROOT="$(ENGINE_ROOT)" ENV="$(ENV)" ENV_FILE="$(ENV_FILE)" ENV_CONFIG="$(ENV_CONFIG)" RUNTIME_DIR="$(RUNTIME_DIR)" TF_DATA_DIR="$(TF_DATA_DIR)" PYTHON="$(PYTHON)" PYINFRA="$(PYINFRA)" PYINFRA_ARGS="--yes" TERRAFORM="$(TERRAFORM)" TF_BACKEND_CONFIG="$(TF_BACKEND_CONFIG)" TF_INIT_ARGS="$(TF_INIT_ARGS)" TF_APPLY_ARGS="-auto-approve"
+	@$(MAKE) -f "$(ENGINE_ROOT)/Makefile" provision-all DEPLOY_YES=1 ENGINE_ROOT="$(ENGINE_ROOT)" ENV="$(ENV)" ENV_FILE="$(ENV_FILE)" ENV_CONFIG="$(ENV_CONFIG)" RUNTIME_DIR="$(RUNTIME_DIR)" TF_DATA_DIR="$(TF_DATA_DIR)" PYTHON="$(PYTHON)" PYINFRA="$(PYINFRA)" PYINFRA_ARGS="--yes" TERRAFORM="$(TERRAFORM)" TF_INIT_ARGS="$(TF_INIT_ARGS)" TF_APPLY_ARGS="-auto-approve"
 
-verify: terraform-runtime
+verify:
 	cd $(ENGINE_ROOT) && $(PYTHON) -m pytest
-	$(PYTHON) -m py_compile $(ENGINE_ROOT)/lib/env_config.py $(ENGINE_ROOT)/lib/ssh_config.py $(ENGINE_ROOT)/pyinfra/inventory.py $(ENGINE_ROOT)/pyinfra/deploy.py $(ENGINE_ROOT)/scripts/admin-jump-host.py $(ENGINE_ROOT)/scripts/environment-id.py $(ENGINE_ROOT)/scripts/print-rancher-bootstrap-password-command.py $(ENGINE_ROOT)/scripts/render-admin-ssh-config.py $(ENGINE_ROOT)/scripts/render-infra-tfvars.py $(ENGINE_ROOT)/scripts/render-ssh-config.py $(ENGINE_ROOT)/scripts/prepare-rke2-kubeconfig.py
+	$(PYTHON) -m py_compile $(ENGINE_ROOT)/lib/env_config.py $(ENGINE_ROOT)/lib/ssh_config.py $(ENGINE_ROOT)/pyinfra/inventory.py $(ENGINE_ROOT)/pyinfra/deploy.py $(ENGINE_ROOT)/scripts/admin-jump-host.py $(ENGINE_ROOT)/scripts/environment-id.py $(ENGINE_ROOT)/scripts/print-rancher-bootstrap-password-command.py $(ENGINE_ROOT)/scripts/render-admin-ssh-config.py $(ENGINE_ROOT)/scripts/render-infra-tfvars.py $(ENGINE_ROOT)/scripts/render-ssh-config.py $(ENGINE_ROOT)/scripts/prepare-rke2-kubeconfig.py $(ENGINE_ROOT)/scripts/terraform-backend-env.py
 	bash -n $(ENGINE_ROOT)/scripts/install-rke2.sh $(ENGINE_ROOT)/scripts/install-rancher.sh $(ENGINE_ROOT)/scripts/bootstrap-rancher.sh
 	$(PYTHON) $(ENGINE_ROOT)/scripts/render-infra-tfvars.py --env $(ENV_CONFIG) --out $(INFRA_TFVARS)
 	RUNTIME_DIR=$(RUNTIME_DIR) $(PYTHON) $(ENGINE_ROOT)/scripts/render-ssh-config.py --env $(ENV_CONFIG) --out $(BUILD_ENV_DIR)/ssh_config

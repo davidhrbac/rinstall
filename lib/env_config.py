@@ -2,6 +2,7 @@ from copy import deepcopy
 from ipaddress import ip_interface, ip_network
 from pathlib import Path
 import re
+from urllib.parse import urlparse
 
 import yaml
 
@@ -84,6 +85,23 @@ def domain_from_rancher_url(rancher_url):
 
 
 def validate_env_references(env):
+    terraform = env.get("terraform", {})
+    backend = terraform.get("backend", {})
+    if backend:
+        backend_type = require(backend, "type", "env.terraform.backend")
+        if backend_type != "gitlab":
+            raise SystemExit("env.terraform.backend.type must be 'gitlab'")
+        url = require(backend, "url", "env.terraform.backend")
+        parsed_url = urlparse(str(url))
+        if not isinstance(url, str) or not url.strip() or parsed_url.scheme not in {"http", "https"} or parsed_url.path not in {"", "/"}:
+            raise SystemExit("env.terraform.backend.url must be a non-empty GitLab base URL")
+        project_id = require(backend, "project_id", "env.terraform.backend")
+        if isinstance(project_id, bool) or not isinstance(project_id, int) or project_id <= 0:
+            raise SystemExit("env.terraform.backend.project_id must be a positive integer")
+        state = require(backend, "state", "env.terraform.backend")
+        if not isinstance(state, str) or not state.strip():
+            raise SystemExit("env.terraform.backend.state must be a non-empty string")
+
     infra = require(env, "infra", "env")
     networks = require(infra, "networks", "env.infra")
     templates = require(infra, "templates", "env.infra")

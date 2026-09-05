@@ -1,7 +1,6 @@
 .terraform/
 *.tfstate
 *.tfstate.*
-terraform/infra/backend.tf
 build/
 .rinstall/
 envs/private/

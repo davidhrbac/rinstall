@@ -55,9 +55,9 @@ def test_makefile_derives_instance_paths(tmp_path):
         },
     )
     assert f"TF_DATA_DIR={instance_root}/.rinstall/terraform-data" in init_result.stdout
-    assert f"-chdir={instance_root}/.rinstall/terraform" in init_result.stdout
-    assert f"install -d -m 700 {instance_root}/.rinstall/terraform" in init_result.stdout
-    assert 'backend "http" {}' in init_result.stdout
+    assert f"-chdir={instance_root}/rinstall/terraform/infra" in init_result.stdout
+    assert f"{instance_root}/.rinstall/terraform " not in init_result.stdout
+    assert "-lockfile=readonly" in init_result.stdout
 
     local_init_result = subprocess.run(
         ["make", "-f", "rinstall/Makefile", "-n", "infra-init"],
@@ -71,7 +71,8 @@ def test_makefile_derives_instance_paths(tmp_path):
             if key not in {"ENV_FILE", "RUNTIME_DIR", "TF_DATA_DIR", "MAKEFLAGS", "MFLAGS", "TF_HTTP_ADDRESS"}
         },
     )
-    assert f"-chdir={instance_root}/.rinstall/terraform init" in local_init_result.stdout
+    assert f"-chdir={instance_root}/rinstall/terraform/infra init" in local_init_result.stdout
+    assert f"{instance_root}/.rinstall/terraform " not in local_init_result.stdout
     assert "-backend-config=path=" not in local_init_result.stdout
 
 
