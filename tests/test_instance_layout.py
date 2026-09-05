@@ -76,6 +76,26 @@ def test_makefile_derives_instance_paths(tmp_path):
     assert "-backend-config=path=" not in local_init_result.stdout
 
 
+def test_verify_uses_instance_terraform_data_dir(tmp_path):
+    instance_root = tmp_path / "customer-a-prod-infra"
+    instance_root.mkdir()
+    shutil.copy(EXAMPLE_ENV, instance_root / "config.yaml")
+    (instance_root / "rinstall").symlink_to(ENGINE_ROOT, target_is_directory=True)
+
+    result = subprocess.run(
+        ["make", "-f", "rinstall/Makefile", "-n", "verify"],
+        cwd=instance_root,
+        check=True,
+        capture_output=True,
+        text=True,
+        env={key: value for key, value in os.environ.items() if key not in {"ENV_FILE", "RUNTIME_DIR", "TF_DATA_DIR", "MAKEFLAGS", "MFLAGS"}},
+    )
+
+    terraform_lines = [line for line in result.stdout.splitlines() if "terraform -chdir=" in line]
+    assert terraform_lines
+    assert all(f"TF_DATA_DIR={instance_root}/.rinstall/terraform-data" in line for line in terraform_lines)
+
+
 def test_kubeconfig_artifacts_are_private(tmp_path):
     runtime = tmp_path / ".rinstall"
     runtime.mkdir()
