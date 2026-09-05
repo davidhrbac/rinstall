@@ -16,7 +16,13 @@ BUILD_ENV_DIR := $(RUNTIME_DIR)
 INFRA_TFVARS := $(BUILD_ENV_DIR)/infra.tfvars.json
 TF_DATA_DIR ?= $(BUILD_ENV_DIR)/terraform-data
 TF_BACKEND_CONFIG ?=
-TF_BACKEND_ARGS := $(if $(strip $(TF_BACKEND_CONFIG)),$(addprefix -backend-config=,$(TF_BACKEND_CONFIG)),-backend-config=path=$(RUNTIME_DIR)/terraform.tfstate)
+ifneq ($(strip $(TF_BACKEND_CONFIG)),)
+TF_BACKEND_ARGS := $(addprefix -backend-config=,$(TF_BACKEND_CONFIG))
+else ifneq ($(strip $(TF_HTTP_ADDRESS)),)
+TF_BACKEND_ARGS :=
+else
+TF_BACKEND_ARGS := -backend-config=path=$(RUNTIME_DIR)/terraform.tfstate
+endif
 TF_INIT_ARGS ?=
 TF_APPLY_ARGS ?=
 PYINFRA_ARGS ?=

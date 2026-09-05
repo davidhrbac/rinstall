@@ -32,6 +32,24 @@ def test_makefile_derives_instance_paths(tmp_path):
     assert f"--env {instance_root}/config.yaml" in command
     assert f"--out {instance_root}/.rinstall/infra.tfvars.json" in command
 
+    init_result = subprocess.run(
+        ["make", "-f", "rinstall/Makefile", "-n", "infra-init"],
+        cwd=instance_root,
+        check=True,
+        capture_output=True,
+        text=True,
+        env={
+            **{
+                key: value
+                for key, value in os.environ.items()
+                if key not in {"ENV_FILE", "RUNTIME_DIR", "TF_DATA_DIR", "MAKEFLAGS", "MFLAGS"}
+            },
+            "TF_HTTP_ADDRESS": "https://gitlab.example/api/v4/projects/1/terraform/state/example",
+        },
+    )
+    assert f"TF_DATA_DIR={instance_root}/.rinstall/terraform-data" in init_result.stdout
+    assert "-backend-config=path=" not in init_result.stdout
+
 
 def test_kubeconfig_artifacts_are_private(tmp_path):
     runtime = tmp_path / ".rinstall"
@@ -51,4 +69,5 @@ def test_kubeconfig_artifacts_are_private(tmp_path):
     )
 
     assert runtime.stat().st_mode & 0o777 == 0o700
+    assert (runtime / "rke2.yaml.raw").stat().st_mode & 0o777 == 0o600
     assert (runtime / "rke2.yaml").stat().st_mode & 0o777 == 0o600
