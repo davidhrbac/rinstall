@@ -174,6 +174,20 @@ def test_validates_gitlab_backend_without_credentials():
     assert expand_env(config)["terraform"]["backend"]["project_id"] == 1234
 
 
+@pytest.mark.parametrize("missing", ["terraform", "backend", "type", "url", "project_id", "state"])
+def test_rejects_missing_required_gitlab_backend_configuration(missing):
+    config = raw_example()
+    config["terraform"] = {"backend": {"type": "gitlab", "url": "https://gitlab.example", "project_id": 1234, "state": "infra"}}
+    if missing == "terraform":
+        del config["terraform"]
+    elif missing == "backend":
+        del config["terraform"]["backend"]
+    else:
+        del config["terraform"]["backend"][missing]
+    with pytest.raises(SystemExit):
+        expand_env(config)
+
+
 @pytest.mark.parametrize("url", ["http://gitlab.example", "https://gitlab.example/"])
 @pytest.mark.parametrize("state", ["infra", "prod_state-1.v2"])
 def test_accepts_valid_gitlab_backend_url_and_state(url, state):

@@ -1,6 +1,12 @@
 # Instance repositories provide their own production config based on this shape.
 # This file is a layout-only fixture and is not a provisioning configuration.
 schema_version: 1
+terraform:
+  backend:
+    type: gitlab
+    url: https://gitlab.example
+    project_id: 1234
+    state: example
 environment:
   id: example-instance
 name: example-instance
