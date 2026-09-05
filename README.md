@@ -83,27 +83,29 @@ Prefer static addressing on the bastion management NIC. Set it as `cidr` on the 
 
 Terraform commands use local workstation credentials/environment and talk to vSphere/GitLab from there. pyinfra and Helm/Rancher installation steps can also run from the workstation; SSH routing is handled by generated OpenSSH config.
 
-## Destroying Infra
+## Destroying Production Infra
 
-Destroy Terraform-managed vSphere VMs from the operator workstation with the same env and backend/state settings used for creation:
+From the production instance repository, destroy Terraform-managed vSphere VMs
+from the operator workstation with the same config and runtime credentials used
+for creation:
 
 ```bash
-make destroy-commands ENV=envs/example
+make -f rinstall/Makefile destroy-commands
 ```
 
-From an instance repository, run `make -f rinstall/Makefile destroy-commands`
-instead; its generated paths are under `.rinstall/`.
+Generated paths are under `.rinstall/` and the pinned Terraform root remains
+`rinstall/terraform/infra`.
 
 The helper prints the explicit Terraform commands to run, for example:
 
 ```bash
-terraform -chdir=terraform/infra plan -destroy -var-file=../../build/example/infra.tfvars.json
-terraform -chdir=terraform/infra destroy -var-file=../../build/example/infra.tfvars.json
+terraform -chdir=rinstall/terraform/infra plan -destroy -var-file=.rinstall/infra.tfvars.json
+terraform -chdir=rinstall/terraform/infra destroy -var-file=.rinstall/infra.tfvars.json
 ```
 
-Always confirm `ENV`, Terraform workspace/backend, and the destroy plan before approving. There is intentionally no `make infra-destroy` or `make destroy-all` shortcut, because destroy is destructive and should stay explicit. Terraform destroy only removes resources tracked by the Terraform infra state; it does not clean Rancher API resources, downstream clusters, external DNS/LB records, DHCP reservations, or local generated files under `build/`.
+Always confirm the instance repository, Terraform backend/state, and destroy plan before approving. There is intentionally no `make infra-destroy` or `make destroy-all` shortcut, because destroy is destructive and should stay explicit. Terraform destroy only removes resources tracked by the Terraform infra state; it does not clean Rancher API resources, downstream clusters, external DNS/LB records, DHCP reservations, or local generated files under `.rinstall/`.
 
-`make destroy-commands` prints a header with the selected env, build directory, Terraform directory, tfvars path, vSphere server/user when available from environment variables, optional backend/init settings, and then the explicit review/destroy commands. It never prints the vSphere password.
+`make -f rinstall/Makefile destroy-commands` prints a header with the selected instance config, runtime directory, Terraform directory, tfvars path, vSphere server/user when available from environment variables, backend/init settings, and then the explicit review/destroy commands. It never prints the vSphere password.
 
 Keep vCenter connection details out of `env.yaml` unless there is a specific reason to pin them there. Terraform accepts them through environment variables, which can be loaded by `direnv` from an ignored `.envrc`:
 
@@ -265,7 +267,7 @@ prompt:
 
 ## RKE2 Prep
 
-For Rancher nodes, `make node-prep` mirrors the manual `clush` file copy flow:
+For Rancher nodes, `make node-prep` renders these managed files:
 
 ```text
 /etc/NetworkManager/conf.d/rke2-canal.conf

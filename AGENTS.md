@@ -27,7 +27,7 @@
 - Do not add downstream ingress RR records, such as `.40-.62` test aliases, to the local management-cluster DNS model; those belong to downstream subnet automation later.
 - Proxy templates should keep `NO_PROXY` compact: private CIDRs, Kubernetes service DNS suffixes, `local.vlan.cidr`, Rancher URL, plus only explicit `proxy.extra_no_proxy` values.
 - Use `make -f rinstall/Makefile infra-plan` from an instance repository as the review checkpoint, then `make -f rinstall/Makefile provision-all` to confirm, apply infra, run bastion/node/RKE2/Rancher install phases, and print timing summary. Use the `-yes` target only when the apply has already been reviewed and noninteractive execution is intended.
-- `provision-all` writes full phase output to a private `build/<environment.id>/provision-<timestamp>-<pid>.log` through a pseudo-terminal, preserving colors in both the terminal and log.
+- `provision-all` writes full phase output to a private `.rinstall/provision-<timestamp>-<pid>.log` through a pseudo-terminal, preserving colors in both the terminal and log.
 - Provision headers/logs record the pinned engine and instance-repository Git revisions plus clean/dirty worktree state.
 - Set `PYINFRA_PROGRESS=off` by default for readable terminal transcripts and logs; it disables only pyinfra's redraw spinner, not its colors or operation output.
 - Provision/destroy command headers may print `TF_VAR_vsphere_server` and `TF_VAR_vsphere_user` for operator confirmation; never print `TF_VAR_vsphere_password`.
