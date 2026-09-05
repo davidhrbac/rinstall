@@ -24,7 +24,7 @@ PYINFRA_ARGS ?=
 ADMIN_SSH_HOST ?=
 ADMIN_SSH_CONFIG := $(BUILD_ENV_DIR)/$(ENV_ID).conf
 
-.PHONY: help render-infra-vars ssh-config admin-ssh-config install-admin-ssh-config infra-init infra-fmt infra-validate infra-plan infra-apply infra-output destroy-commands bastion-configure node-prep rke2-install rke2-kubeconfig rancher-install rancher-install-run rancher-bootstrap-password-command rancher-bootstrap rancher-bootstrap-run provision-all provision-all-yes verify
+.PHONY: help render-infra-vars instance-context ssh-config admin-ssh-config install-admin-ssh-config infra-init infra-fmt infra-validate infra-plan infra-apply infra-output destroy-commands bastion-configure node-prep rke2-install rke2-kubeconfig rancher-install rancher-install-run rancher-bootstrap-password-command rancher-bootstrap rancher-bootstrap-run provision-all provision-all-yes verify
 
 help:
 	@printf '%s\n' 'Targets:'
@@ -35,6 +35,7 @@ help:
 	@printf '%s\n' '  provision-all-yes   run provision-all without prompt'
 	@printf '%s\n' ''
 	@printf '\033[3m%s\033[0m\n' '  render-infra-vars   render runtime/infra.tfvars.json from config.yaml'
+	@printf '\033[3m%s\033[0m\n' '  instance-context    show the selected instance and Terraform state'
 	@printf '\033[3m%s\033[0m\n' '  ssh-config          render runtime/ssh_config from config.yaml'
 	@printf '\033[3m%s\033[0m\n' '  admin-ssh-config    render admin jump-host SSH fragment from config.yaml'
 	@printf '\033[3m%s\033[0m\n' '  install-admin-ssh-config  upload the admin SSH fragment to the configured jump host'
@@ -56,6 +57,9 @@ help:
 render-infra-vars:
 	install -d -m 700 $(BUILD_ENV_DIR)
 	$(PYTHON) $(ENGINE_ROOT)/scripts/render-infra-tfvars.py --env $(ENV_CONFIG) --out $(INFRA_TFVARS)
+
+instance-context:
+	$(PYTHON) $(ENGINE_ROOT)/scripts/print-instance-context.py --env $(ENV_CONFIG)
 
 ssh-config:
 	install -d -m 700 $(BUILD_ENV_DIR)
@@ -84,17 +88,17 @@ infra-fmt:
 infra-validate: infra-init
 	$(TF_BACKEND_ENV) TF_DATA_DIR=$(TF_DATA_DIR) $(TERRAFORM) -chdir=$(TF_INFRA_DIR) validate
 
-infra-plan: infra-init render-infra-vars
+infra-plan: instance-context infra-init render-infra-vars
 	$(TF_BACKEND_ENV) TF_DATA_DIR=$(TF_DATA_DIR) $(TERRAFORM) -chdir=$(TF_INFRA_DIR) plan -var-file=$(INFRA_TFVARS)
 
-infra-apply: infra-init render-infra-vars
+infra-apply: instance-context infra-init render-infra-vars
 	$(TF_BACKEND_ENV) TF_DATA_DIR=$(TF_DATA_DIR) $(TERRAFORM) -chdir=$(TF_INFRA_DIR) apply $(TF_APPLY_ARGS) -var-file=$(INFRA_TFVARS)
 
 infra-output: infra-init
 	mkdir -p $(BUILD_ENV_DIR)
 	$(TF_BACKEND_ENV) TF_DATA_DIR=$(TF_DATA_DIR) $(TERRAFORM) -chdir=$(TF_INFRA_DIR) output -json > $(BUILD_ENV_DIR)/infra-output.json
 
-destroy-commands:
+destroy-commands: instance-context
 	@$(PYTHON) $(ENGINE_ROOT)/scripts/render-infra-tfvars.py --env $(ENV_CONFIG) --out $(INFRA_TFVARS)
 	@printf '%s\n' '============================================================'
 	@printf '%s\n' 'Rancher Environment Terraform Destroy Commands'
@@ -107,8 +111,11 @@ destroy-commands:
 	@if [[ -n "$${TF_VAR_vsphere_user:-}" ]]; then printf 'vSphere user:     %s\n' "$$TF_VAR_vsphere_user"; else printf 'vSphere user:     %s\n' '(from tfvars or unset)'; fi
 	@if [[ -n '$(TF_INIT_ARGS)' ]]; then printf 'Init args:        %s\n' '$(TF_INIT_ARGS)'; fi
 	@printf '%s\n' '============================================================'
+	@printf '%s\n' 'On a fresh checkout, initialize the GitLab backend first:'
+	@printf '%s\n' '  make -f rinstall/Makefile infra-init'
+	@printf '%s\n' '============================================================'
 	@printf '%s\n' 'Review the destroy plan before running destroy.'
-	@printf '%s\n' 'Confirm ENV, Terraform workspace/backend/state, and every planned deletion.'
+	@printf '%s\n' 'Confirm config, Terraform workspace/backend/state, and every planned deletion.'
 	@printf '%s\n' ''
 	@printf '%s\n' '1. Review plan:'
 	@printf '%s\n' '$(TF_BACKEND_ENV) TF_DATA_DIR=$(TF_DATA_DIR) $(TERRAFORM) -chdir=$(TF_INFRA_DIR) plan -destroy -var-file=$(INFRA_TFVARS)'
@@ -145,7 +152,7 @@ rancher-bootstrap: rke2-kubeconfig rancher-bootstrap-run
 rancher-bootstrap-run:
 	ENV_CONFIG=$(ENV_CONFIG) RUNTIME_DIR=$(RUNTIME_DIR) PHASE=rancher-bootstrap PYINFRA_PROGRESS=$(PYINFRA_PROGRESS) $(PYINFRA) $(PYINFRA_ARGS) $(ENGINE_ROOT)/pyinfra/inventory.py $(ENGINE_ROOT)/pyinfra/deploy.py
 
-provision-all:
+provision-all: instance-context
 	@set -euo pipefail; \
 	format_duration() { \
 	  local seconds=$$1; \
@@ -265,7 +272,7 @@ provision-all-yes:
 
 verify:
 	cd $(ENGINE_ROOT) && $(PYTHON) -m pytest
-	$(PYTHON) -m py_compile $(ENGINE_ROOT)/lib/env_config.py $(ENGINE_ROOT)/lib/ssh_config.py $(ENGINE_ROOT)/pyinfra/inventory.py $(ENGINE_ROOT)/pyinfra/deploy.py $(ENGINE_ROOT)/scripts/admin-jump-host.py $(ENGINE_ROOT)/scripts/environment-id.py $(ENGINE_ROOT)/scripts/print-rancher-bootstrap-password-command.py $(ENGINE_ROOT)/scripts/render-admin-ssh-config.py $(ENGINE_ROOT)/scripts/render-infra-tfvars.py $(ENGINE_ROOT)/scripts/render-ssh-config.py $(ENGINE_ROOT)/scripts/prepare-rke2-kubeconfig.py $(ENGINE_ROOT)/scripts/terraform-backend-env.py
+	$(PYTHON) -m py_compile $(ENGINE_ROOT)/lib/env_config.py $(ENGINE_ROOT)/lib/ssh_config.py $(ENGINE_ROOT)/pyinfra/inventory.py $(ENGINE_ROOT)/pyinfra/deploy.py $(ENGINE_ROOT)/scripts/admin-jump-host.py $(ENGINE_ROOT)/scripts/environment-id.py $(ENGINE_ROOT)/scripts/print-instance-context.py $(ENGINE_ROOT)/scripts/print-rancher-bootstrap-password-command.py $(ENGINE_ROOT)/scripts/render-admin-ssh-config.py $(ENGINE_ROOT)/scripts/render-infra-tfvars.py $(ENGINE_ROOT)/scripts/render-ssh-config.py $(ENGINE_ROOT)/scripts/prepare-rke2-kubeconfig.py $(ENGINE_ROOT)/scripts/terraform-backend-env.py
 	bash -n $(ENGINE_ROOT)/scripts/install-rke2.sh $(ENGINE_ROOT)/scripts/install-rancher.sh $(ENGINE_ROOT)/scripts/bootstrap-rancher.sh
 	$(PYTHON) $(ENGINE_ROOT)/scripts/render-infra-tfvars.py --env $(ENV_CONFIG) --out $(INFRA_TFVARS)
 	RUNTIME_DIR=$(RUNTIME_DIR) $(PYTHON) $(ENGINE_ROOT)/scripts/render-ssh-config.py --env $(ENV_CONFIG) --out $(BUILD_ENV_DIR)/ssh_config

@@ -31,6 +31,10 @@ def require(mapping, key, context):
     return mapping[key]
 
 
+def gitlab_backend_state_address(backend):
+    return f"{backend['url'].rstrip('/')}/api/v4/projects/{backend['project_id']}/terraform/state/{backend['state']}"
+
+
 def validate_environment_identity(env):
     schema_version = require(env, "schema_version", "env")
     if schema_version != SUPPORTED_SCHEMA_VERSION:

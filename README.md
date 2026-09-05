@@ -90,11 +90,17 @@ from the operator workstation with the same config and runtime credentials used
 for creation:
 
 ```bash
+make -f rinstall/Makefile infra-init
 make -f rinstall/Makefile destroy-commands
 ```
 
 Generated paths are under `.rinstall/` and the pinned Terraform root remains
 `rinstall/terraform/infra`.
+
+Run `infra-init` first on a fresh workstation or checkout. It initializes the
+same config-derived GitLab backend using inherited runtime credentials. The
+`destroy-commands` target only renders tfvars and prints commands; it does not
+initialize Terraform, create a plan, or destroy resources automatically.
 
 The helper prints the explicit Terraform commands to run, for example:
 

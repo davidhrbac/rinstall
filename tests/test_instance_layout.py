@@ -4,6 +4,8 @@ import shutil
 import subprocess
 import sys
 
+import yaml
+
 
 ENGINE_ROOT = Path(__file__).parents[1]
 EXAMPLE_ENV = ENGINE_ROOT / "envs/example/env.yaml"
@@ -104,6 +106,43 @@ def test_fresh_instance_infra_plan_initializes_and_renders_vars(tmp_path):
     assert init_line < render_line < plan_line
     assert f"TF_DATA_DIR={instance_root}/.rinstall/terraform-data" in lines[init_line]
     assert f"--out {instance_root}/.rinstall/infra.tfvars.json" in lines[render_line]
+
+
+def test_instance_context_prints_resolved_identity_without_credentials(tmp_path):
+    instance_root = tmp_path / "customer-a-prod-infra"
+    instance_root.mkdir()
+    config = yaml.safe_load(EXAMPLE_ENV.read_text())
+    config["terraform"] = {
+        "backend": {
+            "type": "gitlab",
+            "url": "https://gitlab.example",
+            "project_id": 1234,
+            "state": "infra",
+        }
+    }
+    (instance_root / "config.yaml").write_text(yaml.safe_dump(config))
+    (instance_root / "rinstall").symlink_to(ENGINE_ROOT, target_is_directory=True)
+
+    result = subprocess.run(
+        ["make", "-f", "rinstall/Makefile", "instance-context", f"PYTHON={sys.executable}"],
+        cwd=instance_root,
+        check=False,
+        capture_output=True,
+        text=True,
+        env={
+            **os.environ,
+            "TF_HTTP_USERNAME": "runtime-user",
+            "TF_HTTP_PASSWORD": "runtime-secret",
+        },
+    )
+    assert result.returncode == 0, result.stderr
+
+    assert "Environment ID:  example" in result.stdout
+    assert "Rancher:         rancher.example.internal" in result.stdout
+    assert "Terraform state: https://gitlab.example/api/v4/projects/1234/terraform/state/infra" in result.stdout
+    assert f"Config:          {instance_root / 'config.yaml'}" in result.stdout
+    assert "runtime-user" not in result.stdout
+    assert "runtime-secret" not in result.stdout
 
 
 def test_kubeconfig_artifacts_are_private(tmp_path):

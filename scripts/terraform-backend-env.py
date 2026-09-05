@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from lib.env_config import load_env
+from lib.env_config import gitlab_backend_state_address, load_env
 
 
 def main():
@@ -14,7 +14,7 @@ def main():
     backend = load_env(args.env).get("terraform", {}).get("backend", {})
     if not backend:
         return
-    address = f"{backend['url'].rstrip('/')}/api/v4/projects/{backend['project_id']}/terraform/state/{backend['state']}"
+    address = gitlab_backend_state_address(backend)
     values = {
         "TF_HTTP_ADDRESS": address,
         "TF_HTTP_LOCK_ADDRESS": f"{address}/lock",
