@@ -15,8 +15,8 @@ def main():
 
     config_path = Path(args.env).resolve()
     env = load_env(config_path)
-    backend = env.get("terraform", {}).get("backend")
-    state_address = gitlab_backend_state_address(backend) if backend else "(not configured)"
+    backend = env["terraform"]["backend"]
+    state_address = gitlab_backend_state_address(backend)
 
     if args.shell:
         for key, value in {

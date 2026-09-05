@@ -11,6 +11,8 @@ import yaml
 ENGINE_ROOT = Path(__file__).parents[1]
 EXAMPLE_ENV = ENGINE_ROOT / "envs/example/env.yaml"
 INSTANCE_FIXTURE = ENGINE_ROOT / "examples/instance-repository"
+CONTEXT_HELPER = ENGINE_ROOT / "scripts/print-instance-context.py"
+BACKEND_HELPER = ENGINE_ROOT / "scripts/terraform-backend-env.py"
 SECRET_VALUES = [
     "TF_HTTP_USERNAME",
     "TF_HTTP_PASSWORD",
@@ -156,6 +158,23 @@ def test_instance_context_prints_resolved_identity_without_credentials(tmp_path)
     assert f"Config:  {instance_root / 'config.yaml'}" in result.stdout
     assert all(secret not in result.stdout for secret in SECRET_VALUES)
     assert "vsphere-password-secret" not in result.stdout
+
+
+@pytest.mark.parametrize("helper", [CONTEXT_HELPER, BACKEND_HELPER])
+def test_backend_helpers_reject_missing_backend(tmp_path, helper):
+    config = yaml.safe_load(EXAMPLE_ENV.read_text())
+    del config["terraform"]
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(yaml.safe_dump(config))
+
+    result = subprocess.run(
+        [sys.executable, str(helper), "--env", str(config_path)],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    assert "not configured" not in result.stdout
 
 
 @pytest.mark.parametrize("target", ["infra-plan", "infra-apply", "destroy-commands"])
