@@ -57,21 +57,23 @@ Only credentials come from the runtime environment: `TF_HTTP_USERNAME` and
 When both are present, config-derived non-secret values override matching
 `TF_HTTP_*` values supplied by the shell.
 
-## Development / Standalone Engine Flow
+## Development / Validation Fixture
 
-For engine development and sanitized fixtures, run Terraform from the operator
-workstation, not from `bastion1`. Use `envs/example/env.yaml`; generated files go
-to `build/<environment.id>/`.
+For engine development and sanitized fixtures, use `envs/example/env.yaml` for
+rendering, syntax checks, and tests. It is not a standalone Terraform
+provisioning configuration; do not run infrastructure targets with it unless
+you have added a GitLab backend configuration and runtime credentials.
 
 ```bash
-make infra-init ENV=envs/example
 make render-infra-vars ENV=envs/example
 make ssh-config ENV=envs/example
-make infra-plan ENV=envs/example
-make provision-all ENV=envs/example
 ```
 
-`make provision-all` asks for confirmation, runs `infra-apply`, configures bastion, prepares nodes, installs RKE2, installs Rancher, and prints a duration summary at the end. It writes complete phase output to `build/<environment.id>/provision-<timestamp>-<pid>.log` through a pseudo-terminal, preserving colors in both the terminal and log. The header records engine and environment Git revisions plus their clean/dirty worktree state; these are the same while `ENV` is inside this repo, and become independent when an environment uses its own repo. Pyinfra progress redraw is disabled by default with `PYINFRA_PROGRESS=off` so logs stay readable; set `PYINFRA_PROGRESS=on` to restore it for an individual command. `make rancher-install` prepares the RKE2 kubeconfig automatically before the Helm phase. Use `make infra-plan` first as the review checkpoint before applying changes. For unattended runs use `make provision-all-yes ENV=envs/example`; it passes `-auto-approve` to Terraform apply and `--yes` to pyinfra.
+For a development environment that needs Terraform provisioning, use an
+explicit GitLab-backed instance configuration and provide
+`TF_HTTP_USERNAME`/`TF_HTTP_PASSWORD` at runtime. The instance flow then uses
+the same `make -f rinstall/Makefile infra-init`, `infra-plan`, `infra-apply`,
+and `provision-all` targets documented above.
 
 `make rancher-install` and `make rancher-bootstrap` automatically fetch `/etc/rancher/rke2/rke2.yaml` from the primary Rancher node, rewrite its Kubernetes API endpoint to the primary node IP, and upload the prepared kubeconfig to `bastion1:/root/rke2.yaml`. The helper target `make rke2-kubeconfig` is available for debugging that step directly.
 
