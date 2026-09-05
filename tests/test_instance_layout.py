@@ -58,7 +58,21 @@ def test_makefile_derives_instance_paths(tmp_path):
     assert f"-chdir={instance_root}/.rinstall/terraform" in init_result.stdout
     assert f"install -d -m 700 {instance_root}/.rinstall/terraform" in init_result.stdout
     assert 'backend "http" {}' in init_result.stdout
-    assert "-backend-config=path=" not in init_result.stdout
+
+    local_init_result = subprocess.run(
+        ["make", "-f", "rinstall/Makefile", "-n", "infra-init"],
+        cwd=instance_root,
+        check=True,
+        capture_output=True,
+        text=True,
+        env={
+            key: value
+            for key, value in os.environ.items()
+            if key not in {"ENV_FILE", "RUNTIME_DIR", "TF_DATA_DIR", "MAKEFLAGS", "MFLAGS", "TF_HTTP_ADDRESS"}
+        },
+    )
+    assert f"-chdir={instance_root}/.rinstall/terraform init" in local_init_result.stdout
+    assert "-backend-config=path=" not in local_init_result.stdout
 
 
 def test_kubeconfig_artifacts_are_private(tmp_path):
