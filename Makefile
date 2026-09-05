@@ -19,10 +19,8 @@ TF_DATA_DIR ?= $(BUILD_ENV_DIR)/terraform-data
 TF_BACKEND_CONFIG ?=
 ifneq ($(strip $(TF_BACKEND_CONFIG)),)
 TF_BACKEND_ARGS := $(addprefix -backend-config=,$(TF_BACKEND_CONFIG))
-else ifneq ($(strip $(TF_HTTP_ADDRESS)),)
-TF_BACKEND_ARGS :=
 else
-TF_BACKEND_ARGS := -backend-config=path=$(RUNTIME_DIR)/terraform.tfstate
+TF_BACKEND_ARGS :=
 endif
 TF_INIT_ARGS ?=
 TF_APPLY_ARGS ?=
@@ -78,8 +76,7 @@ install-admin-ssh-config: admin-ssh-config
 	printf 'Installed %s on %s:/root/.ssh/config.d/%s.conf\n' "$(ADMIN_SSH_CONFIG)" "$$admin_ssh_host" "$(ENV_ID)"; \
 	printf '%s\n' 'Ensure /root/.ssh/config includes ~/.ssh/config.d/*.conf; this target does not modify it.'
 
-infra-init:
-	$(MAKE) terraform-runtime
+infra-init: terraform-runtime
 	TF_DATA_DIR=$(TF_DATA_DIR) $(TERRAFORM) -chdir=$(TF_INFRA_DIR) init $(TF_BACKEND_ARGS) $(TF_INIT_ARGS)
 
 terraform-runtime:
@@ -88,24 +85,19 @@ terraform-runtime:
 	ln -sfn $(TF_SOURCE_DIR)/modules $(TF_INFRA_DIR)/modules
 	if [[ -n '$(TF_HTTP_ADDRESS)' || -n '$(TF_BACKEND_CONFIG)' ]]; then printf '%s\n' 'terraform {' '  backend "http" {}' '}' > $(TF_INFRA_DIR)/backend.tf; else rm -f $(TF_INFRA_DIR)/backend.tf; fi
 
-infra-fmt:
-	$(MAKE) terraform-runtime
+infra-fmt: terraform-runtime
 	$(TERRAFORM) -chdir=$(TF_INFRA_DIR) fmt -check -recursive -diff
 
-infra-validate:
-	$(MAKE) terraform-runtime
+infra-validate: terraform-runtime
 	$(TERRAFORM) -chdir=$(TF_INFRA_DIR) validate
 
-infra-plan: render-infra-vars
-	$(MAKE) terraform-runtime
+infra-plan: render-infra-vars terraform-runtime
 	TF_DATA_DIR=$(TF_DATA_DIR) $(TERRAFORM) -chdir=$(TF_INFRA_DIR) plan -var-file=$(INFRA_TFVARS)
 
-infra-apply: render-infra-vars
-	$(MAKE) terraform-runtime
+infra-apply: render-infra-vars terraform-runtime
 	TF_DATA_DIR=$(TF_DATA_DIR) $(TERRAFORM) -chdir=$(TF_INFRA_DIR) apply $(TF_APPLY_ARGS) -var-file=$(INFRA_TFVARS)
 
-infra-output:
-	$(MAKE) terraform-runtime
+infra-output: terraform-runtime
 	mkdir -p $(BUILD_ENV_DIR)
 	TF_DATA_DIR=$(TF_DATA_DIR) $(TERRAFORM) -chdir=$(TF_INFRA_DIR) output -json > $(BUILD_ENV_DIR)/infra-output.json
 
@@ -279,7 +271,7 @@ provision-all:
 provision-all-yes:
 	@$(MAKE) -f "$(ENGINE_ROOT)/Makefile" provision-all DEPLOY_YES=1 ENGINE_ROOT="$(ENGINE_ROOT)" ENV="$(ENV)" ENV_FILE="$(ENV_FILE)" ENV_CONFIG="$(ENV_CONFIG)" RUNTIME_DIR="$(RUNTIME_DIR)" TF_DATA_DIR="$(TF_DATA_DIR)" PYTHON="$(PYTHON)" PYINFRA="$(PYINFRA)" PYINFRA_ARGS="--yes" TERRAFORM="$(TERRAFORM)" TF_BACKEND_CONFIG="$(TF_BACKEND_CONFIG)" TF_INIT_ARGS="$(TF_INIT_ARGS)" TF_APPLY_ARGS="-auto-approve"
 
-verify:
+verify: terraform-runtime
 	cd $(ENGINE_ROOT) && $(PYTHON) -m pytest
 	$(PYTHON) -m py_compile $(ENGINE_ROOT)/lib/env_config.py $(ENGINE_ROOT)/lib/ssh_config.py $(ENGINE_ROOT)/pyinfra/inventory.py $(ENGINE_ROOT)/pyinfra/deploy.py $(ENGINE_ROOT)/scripts/admin-jump-host.py $(ENGINE_ROOT)/scripts/environment-id.py $(ENGINE_ROOT)/scripts/print-rancher-bootstrap-password-command.py $(ENGINE_ROOT)/scripts/render-admin-ssh-config.py $(ENGINE_ROOT)/scripts/render-infra-tfvars.py $(ENGINE_ROOT)/scripts/render-ssh-config.py $(ENGINE_ROOT)/scripts/prepare-rke2-kubeconfig.py
 	bash -n $(ENGINE_ROOT)/scripts/install-rke2.sh $(ENGINE_ROOT)/scripts/install-rancher.sh $(ENGINE_ROOT)/scripts/bootstrap-rancher.sh
