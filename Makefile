@@ -217,7 +217,7 @@ provision-all:
 	trap on_interrupt INT TERM; \
 	log '================================================================================\n'; \
 	log 'rinstall :: provision-all\n\n'; \
-	log 'Environment:     %s\n' "$$INSTANCE_ID"; \
+	log 'Environment ID:  %s\n' "$$INSTANCE_ID"; \
 	log 'Rancher:         %s\n' "$$RANCHER_URL"; \
 	log 'State:           %s\n' "$$STATE_ADDRESS"; \
 	log 'Config:          %s\n\n' "$(ENV_CONFIG)"; \
@@ -236,11 +236,11 @@ provision-all:
 	  log 'pyinfra:          %s\n' '$(PYINFRA_ARGS)'; \
 	fi; \
 	log 'Phases:\n'; \
-	log '  1. Terraform apply    (make infra-apply)\n'; \
-	log '  2. Bastion configure  (make bastion-configure)\n'; \
-	log '  3. Node prep          (make node-prep)\n'; \
-	log '  4. RKE2 install       (make rke2-install)\n'; \
-	log '  5. Rancher install    (make rancher-install)\n'; \
+	log '  1. Terraform apply     (make -f rinstall/Makefile infra-apply)\n'; \
+	log '  2. Bastion configure   (make -f rinstall/Makefile bastion-configure)\n'; \
+	log '  3. Node prep           (make -f rinstall/Makefile node-prep)\n'; \
+	log '  4. RKE2 install        (make -f rinstall/Makefile rke2-install)\n'; \
+	log '  5. Rancher install     (make -f rinstall/Makefile rancher-install)\n'; \
 	log '================================================================================\n'; \
 	if [[ "$(DEPLOY_YES)" != "1" ]]; then \
 	  log 'Run make infra-plan first if you have not reviewed the Terraform plan.\n'; \
