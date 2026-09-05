@@ -22,9 +22,11 @@ Hard boundary: a separate Rancher Environment repository manages Rancher upgrade
 Fleet, imported downstream clusters, downstream lifecycle, and Kubernetes upgrades.
 ```
 
-## Operator Flow
+## Development / Standalone Engine Flow
 
-Run Terraform from the operator workstation, not from `bastion1`. Use a single environment inventory under `envs/`. Start from `envs/example/env.yaml`; generated Terraform var-files go to `build/`.
+For engine development and sanitized fixtures, run Terraform from the operator
+workstation, not from `bastion1`. Use `envs/example/env.yaml`; generated files go
+to `build/<environment.id>/`.
 
 ```bash
 make infra-init ENV=envs/example
@@ -37,23 +39,6 @@ make provision-all ENV=envs/example
 `make provision-all` asks for confirmation, runs `infra-apply`, configures bastion, prepares nodes, installs RKE2, installs Rancher, and prints a duration summary at the end. It writes complete phase output to `build/<environment.id>/provision-<timestamp>-<pid>.log` through a pseudo-terminal, preserving colors in both the terminal and log. The header records engine and environment Git revisions plus their clean/dirty worktree state; these are the same while `ENV` is inside this repo, and become independent when an environment uses its own repo. Pyinfra progress redraw is disabled by default with `PYINFRA_PROGRESS=off` so logs stay readable; set `PYINFRA_PROGRESS=on` to restore it for an individual command. `make rancher-install` prepares the RKE2 kubeconfig automatically before the Helm phase. Use `make infra-plan` first as the review checkpoint before applying changes. For unattended runs use `make provision-all-yes ENV=envs/example`; it passes `-auto-approve` to Terraform apply and `--yes` to pyinfra.
 
 `make rancher-install` and `make rancher-bootstrap` automatically fetch `/etc/rancher/rke2/rke2.yaml` from the primary Rancher node, rewrite its Kubernetes API endpoint to the primary node IP, and upload the prepared kubeconfig to `bastion1:/root/rke2.yaml`. The helper target `make rke2-kubeconfig` is available for debugging that step directly.
-
-### Instance Repository Usage
-
-An instance repository may contain only its committed `config.yaml` and a pinned
-`rinstall` submodule. Run the engine Makefile from the instance repository root:
-
-```bash
-make -f rinstall/Makefile verify
-make -f rinstall/Makefile infra-plan
-make -f rinstall/Makefile provision-all
-```
-
-When invoked this way, `config.yaml` is used automatically and generated files
-are written to `.rinstall/`. Terraform metadata is kept in
-`.rinstall/terraform-data/`. Override the configuration explicitly with
-`ENV_FILE=/path/to/config.yaml` when needed. Secrets remain runtime environment
-variables; `.envrc` is optional.
 
 Rancher Helm install receives `proxy` and `noProxy` values derived from the bastion Squid service IP/port and the generated `proxy.no_proxy` list. `noProxy` includes private CIDRs, Kubernetes service DNS suffixes, the local VLAN CIDR, the Rancher URL, and any explicit `proxy.extra_no_proxy` values. This is separate from the host-level proxy files rendered during node prep.
 
@@ -68,6 +53,9 @@ Destroy Terraform-managed vSphere VMs from the operator workstation with the sam
 ```bash
 make destroy-commands ENV=envs/example
 ```
+
+From an instance repository, run `make -f rinstall/Makefile destroy-commands`
+instead; its generated paths are under `.rinstall/`.
 
 The helper prints the explicit Terraform commands to run, for example:
 
@@ -92,7 +80,11 @@ See `.envrc.example` for the expected variable names. `make render-infra-vars` o
 
 The committed scaffold uses Terraform's default local state, so standalone `make infra-init` works without GitLab backend settings. For an instance using GitLab Terraform state, copy `rinstall/terraform/infra/backend.tf.example` to the ignored `rinstall/terraform/infra/backend.tf` and provide `TF_HTTP_ADDRESS` (plus lock/unlock settings and credentials) in the runtime environment. The Makefile then omits the local-backend-only `path` setting. Alternatively pass an explicit `TF_BACKEND_CONFIG=<file>`.
 
-If local nodes require a separate SSH jump host, configure it in `env.yaml`. pyinfra inventory will generate `build/<environment.id>/ssh_config` with per-host proxy rules. `bastion1` goes through the first jump host; local-only nodes can go through the first jump host and then `bastion1`:
+If local nodes require a separate SSH jump host, configure it in the environment
+config. pyinfra inventory will generate `build/<environment.id>/ssh_config` in
+standalone mode or `.rinstall/ssh_config` in an instance repository. `bastion1`
+goes through the first jump host; local-only nodes can go through the first jump
+host and then `bastion1`:
 
 ```yaml
 ssh:
@@ -106,10 +98,16 @@ ssh:
 
 The jump host alias should be defined in the operator's `~/.ssh/config`; `make ssh-config` generates `build/<environment.id>/ssh_config`, includes that file, and only adds target-node routing. Generated target entries use `ProxyCommand` so both OpenSSH and pyinfra's SSH connector can consume the same config. This keeps real internal hostnames, IPs, and upstream SSH topology out of the repo. Use `ssh_ip` per node only if the desired SSH target cannot be derived from a static management NIC.
 
-For administrator access from an existing admin jump host, run `make admin-ssh-config ENV=envs/private/<env>`. It renders `build/<environment.id>/<environment.id>.conf` with aliases such as `bastion1.<environment.id>` and `prom1.<environment.id>`. Configure that host once to include `~/.ssh/config.d/*.conf`, then upload the fragment explicitly:
+For administrator access from an existing admin jump host, run
+`make -f rinstall/Makefile admin-ssh-config` from an instance repository. It
+renders `.rinstall/<environment.id>.conf` with aliases such as
+`bastion1.<environment.id>` and `prom1.<environment.id>`. In standalone mode,
+pass `ENV=envs/example` and the output is under `build/<environment.id>/`.
+Configure that host once to include `~/.ssh/config.d/*.conf`, then upload the
+fragment explicitly:
 
 ```bash
-make install-admin-ssh-config ENV=envs/private/<env>
+make -f rinstall/Makefile install-admin-ssh-config
 ```
 
 The upload target uses `ssh.jump_host` unless `ADMIN_SSH_HOST=<SSH alias>` overrides it. It creates `/root/.ssh/config.d` and uploads the per-environment fragment with mode `0600`; it never modifies `/root/.ssh/config` or adds its `Include` directive.
@@ -267,9 +265,15 @@ Set `rancher.bootstrap_password` only in private env configs when you want to co
 
 ## Source Of Truth
 
-Edit only `envs/<env>/env.yaml` for environment data. Every config requires `schema_version: 1` and an immutable `environment.id`. The ID is the canonical suffix for shell prompts and administrator SSH aliases, and it names generated artifacts under `build/<environment.id>/`. `make infra-plan` and `make infra-apply` render `build/<environment.id>/infra.tfvars.json` from that YAML before invoking Terraform. Do not edit generated files under `build/`.
+Edit only the committed `config.yaml` in an instance repository, or
+`envs/<env>/env.yaml` in standalone engine mode. Every config requires
+`schema_version: 1` and an immutable `environment.id`. Generated artifacts live
+under `.rinstall/` for instances and `build/<environment.id>/` in standalone
+mode. Do not edit generated files.
 
-Use `envs/example` only for sanitized examples. Put real customer/internal environments under `envs/private/` or another untracked path if hostnames, IPs, or topology names should not be visible in the repo.
+Use `envs/example` only for sanitized engine development fixtures. Real customer
+configuration belongs in the separate instance repository, keeping hostnames,
+IPs, and SSH topology out of this engine repository.
 
 ## Terraform State
 
