@@ -22,6 +22,22 @@ Hard boundary: a separate Rancher Environment repository manages Rancher upgrade
 Fleet, imported downstream clusters, downstream lifecycle, and Kubernetes upgrades.
 ```
 
+## Production Instance Flow
+
+Production use is a separate instance repository containing `config.yaml`, a
+`.gitmodules` file, a `.gitignore` entry for `.rinstall/`, and the pinned
+`rinstall` submodule. The sanitized layout fixture is in
+`examples/instance-repository/`. No wrapper Makefile or `.envrc` is required:
+
+```bash
+make -f rinstall/Makefile verify
+make -f rinstall/Makefile infra-plan
+make -f rinstall/Makefile provision-all
+```
+
+Generated runtime files are kept under the ignored `.rinstall/` directory,
+including Terraform metadata in `.rinstall/terraform-data/`.
+
 ## Development / Standalone Engine Flow
 
 For engine development and sanitized fixtures, run Terraform from the operator

@@ -1,0 +1,7 @@
+# Copy and customize envs/example/env.yaml for a real instance repository.
+# This file is a layout-only fixture and is not a provisioning configuration.
+schema_version: 1
+environment:
+  id: example-instance
+name: example-instance
+rancher_url: rancher.example.internal

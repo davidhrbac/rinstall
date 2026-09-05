@@ -7,6 +7,13 @@ import sys
 
 ENGINE_ROOT = Path(__file__).parents[1]
 EXAMPLE_ENV = ENGINE_ROOT / "envs/example/env.yaml"
+INSTANCE_FIXTURE = ENGINE_ROOT / "examples/instance-repository"
+
+
+def test_instance_fixture_ignores_runtime_files():
+    assert ".rinstall/" in (INSTANCE_FIXTURE / ".gitignore").read_text().splitlines()
+    assert (INSTANCE_FIXTURE / ".gitmodules").exists()
+    assert (INSTANCE_FIXTURE / "config.yaml").exists()
 
 
 def test_makefile_derives_instance_paths(tmp_path):

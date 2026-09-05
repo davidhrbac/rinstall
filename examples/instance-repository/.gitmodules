@@ -1,0 +1,3 @@
+[submodule "rinstall"]
+	path = rinstall
+	url = https://github.com/example/rinstall.git
