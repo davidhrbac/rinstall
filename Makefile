@@ -220,20 +220,20 @@ provision-all: config-validate
 	trap on_interrupt INT TERM; \
 	log '================================================================================\n'; \
 	log 'rinstall :: provision-all\n\n'; \
-	log 'Environment ID:  %s\n' "$$INSTANCE_ID"; \
-	log 'Rancher:         %s\n' "$$RANCHER_URL"; \
-	log 'State:           %s\n' "$$STATE_ADDRESS"; \
-	log 'Config:          %s\n\n' "$(ENV_CONFIG)"; \
-	log 'Runtime dir:     %s\n' "$(BUILD_ENV_DIR)"; \
-	log 'Terraform:       %s\n' "$(TF_INFRA_DIR)"; \
-	log 'Log:             %s\n\n' "$$run_log"; \
-	log 'Engine version:   %s\n' "$$engine_revision"; \
-	log 'Engine worktree:  %s\n' "$$engine_worktree"; \
+	log 'Environment ID:       %s\n' "$$INSTANCE_ID"; \
+	log 'Rancher:              %s\n' "$$RANCHER_URL"; \
+	log 'State:                %s\n' "$$STATE_ADDRESS"; \
+	log 'Config:               %s\n\n' "$(ENV_CONFIG)"; \
+	log 'Runtime dir:          %s\n' "$(BUILD_ENV_DIR)"; \
+	log 'Terraform:            %s\n' "$(TF_INFRA_DIR)"; \
+	log 'Log:                  %s\n\n' "$$run_log"; \
+	log 'Engine version:       %s\n' "$$engine_revision"; \
+	log 'Engine worktree:      %s\n' "$$engine_worktree"; \
 	log 'Environment version:  %s\n' "$$environment_revision"; \
-	log 'Environment worktree:  %s\n' "$$environment_worktree"; \
-	if [[ -n "$${TF_VAR_vsphere_server:-}" ]]; then log 'vSphere server:   %s\n' "$$TF_VAR_vsphere_server"; else log 'vSphere server:   %s\n' '(from tfvars or unset)'; fi; \
-	if [[ -n "$${TF_VAR_vsphere_user:-}" ]]; then log 'vSphere user:     %s\n' "$$TF_VAR_vsphere_user"; else log 'vSphere user:     %s\n' '(from tfvars or unset)'; fi; \
-	log 'Mode:             %s\n' "$$mode"; \
+	log 'Environment worktree: %s\n' "$$environment_worktree"; \
+	if [[ -n "$${TF_VAR_vsphere_server:-}" ]]; then log 'vSphere server:       %s\n' "$$TF_VAR_vsphere_server"; else log 'vSphere server:       %s\n' '(from tfvars or unset)'; fi; \
+	if [[ -n "$${TF_VAR_vsphere_user:-}" ]]; then log 'vSphere user:         %s\n' "$$TF_VAR_vsphere_user"; else log 'vSphere user:         %s\n' '(from tfvars or unset)'; fi; \
+	log 'Mode:                 %s\n' "$$mode"; \
 	if [[ "$(DEPLOY_YES)" == "1" ]]; then \
 	  log 'Terraform apply:  %s\n' '$(TF_APPLY_ARGS)'; \
 	  log 'pyinfra:          %s\n' '$(PYINFRA_ARGS)'; \
