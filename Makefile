@@ -51,7 +51,7 @@ help:
 	@printf '%s\n' '  rke2-install        install RKE2 primary first, then join nodes'
 	@printf '\033[3m%s\033[0m\n' '  rke2-kubeconfig     helper: fetch RKE2 kubeconfig and rewrite endpoint for bastion use'
 	@printf '%s\n' '  rancher-install     install cert-manager and Rancher from bastion1 with pyinfra'
-	@printf '%s\n' '  rancher-bootstrap   set Rancher runtime settings with pyinfra'
+	@printf '%s\n' '  rancher-bootstrap   manually maintain Rancher runtime settings'
 	@printf '%s\n' ''
 	@printf '\033[3m%s\033[0m\n' '  destroy-commands    print explicit Terraform destroy commands'
 
