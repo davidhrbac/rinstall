@@ -257,6 +257,18 @@ def expand_env(raw_env):
             if nic.get("network") == "management" and nic.get("ip") is not None and node.get("ssh_ip") is None:
                 node["ssh_ip"] = nic["ip"]
 
+    primary_ips = {}
+    for name, node in nodes.items():
+        ip = node.get("ip")
+        if ip is None:
+            continue
+        if ip == local_vlan["gateway"]:
+            raise SystemExit(f"env.nodes.{name}.ip {ip} conflicts with local VLAN gateway")
+        previous_name = primary_ips.get(ip)
+        if previous_name is not None:
+            raise SystemExit(f"env.nodes.{name}.ip {ip} conflicts with env.nodes.{previous_name}.ip")
+        primary_ips[ip] = name
+
     bastion = require(env, "bastion", "env")
     bastion.setdefault("squid_http_port", 3128)
     bastion_name = require(bastion, "service_node", "env.bastion")

@@ -142,6 +142,34 @@ def test_rejects_service_node_that_is_not_bastion():
         expand_env(config)
 
 
+def test_rejects_duplicate_explicit_node_ips():
+    config = raw_example()
+    config["nodes"]["prom1"]["host"] = config["nodes"]["bastion1"]["host"]
+
+    with pytest.raises(SystemExit, match=r"prom1.*10\.14\.17\.4.*bastion1"):
+        expand_env(config)
+
+
+def test_rejects_explicit_ip_colliding_with_generated_rancher_node():
+    config = raw_example()
+    config["nodes"]["prom1"]["host"] = config["local"]["rancher_nodes"]["start_host"]
+
+    with pytest.raises(SystemExit, match=r"rancher1.*10\.14\.17\.11.*prom1"):
+        expand_env(config)
+
+
+def test_rejects_node_ip_colliding_with_local_gateway():
+    config = raw_example()
+    config["nodes"]["prom1"]["host"] = config["local"]["vlan"]["gateway_host"]
+
+    with pytest.raises(SystemExit, match=r"prom1.*10\.14\.17\.1.*gateway"):
+        expand_env(config)
+
+
+def test_accepts_unique_local_node_ips():
+    assert expand_env(raw_example())["environment"]["id"] == "example"
+
+
 def test_rejects_unknown_network_template_and_primary_node_role():
     unknown_network = raw_example()
     unknown_network["nodes"]["prom1"]["nics"][0]["network"] = "missing"
