@@ -12,7 +12,7 @@ output "nodes" {
 }
 
 output "bastion_ip" {
-  value = local.node_static_ips["bastion1"]
+  value = local.node_static_ips[var.bastion_service_node]
 }
 
 output "rancher_ips" {

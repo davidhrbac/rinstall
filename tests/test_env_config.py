@@ -315,6 +315,26 @@ def test_render_infra_tfvars_preserves_explicit_unverified_vsphere_tls(tmp_path)
     assert json.loads(output_path.read_text())["vsphere_allow_unverified_ssl"] is True
 
 
+def test_render_infra_tfvars_uses_configured_bastion_service_node(tmp_path):
+    config = raw_example()
+    config["nodes"]["bastion2"] = config["nodes"].pop("bastion1")
+    config["bastion"]["service_node"] = "bastion2"
+    config["local"]["vlan"]["dns_nodes"] = ["bastion2"]
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(yaml.safe_dump(config))
+    output_path = tmp_path / "infra.tfvars.json"
+
+    subprocess.run(
+        [sys.executable, str(TFVARS_HELPER), "--env", str(config_path), "--out", str(output_path)],
+        check=True,
+    )
+
+    assert json.loads(output_path.read_text())["bastion_service_node"] == "bastion2"
+    outputs = (TFVARS_HELPER.parents[1] / "terraform/infra/outputs.tf").read_text()
+    assert 'local.node_static_ips[var.bastion_service_node]' in outputs
+    assert 'local.node_static_ips["bastion1"]' not in outputs
+
+
 @pytest.mark.parametrize("url", ["http://gitlab.example", "https://gitlab.example/"])
 def test_accepts_valid_gitlab_backend_url_and_derives_state(url):
     config = raw_example()

@@ -22,6 +22,10 @@ variable "clone_timeout" {
   default = 60
 }
 
+variable "bastion_service_node" {
+  type = string
+}
+
 variable "datacenter" {
   type = string
 }
