@@ -121,10 +121,20 @@ destroy-commands: instance-context
 	@printf '%s\n' 'Confirm config, Terraform workspace/backend/state, and every planned deletion.'
 	@printf '%s\n' ''
 	@printf '%s\n' '1. Review plan:'
-	@printf '%s\n' '$(TF_BACKEND_ENV) TF_DATA_DIR=$(TF_DATA_DIR) $(TERRAFORM) -chdir=$(TF_INFRA_DIR) plan -destroy -var-file=$(INFRA_TFVARS)'
+	@$(PYTHON) $(ENGINE_ROOT)/scripts/terraform-backend-env.py --env $(ENV_CONFIG) --format multiline
+	@printf '%s %s\n' 'TF_DATA_DIR=$(TF_DATA_DIR)' '\'
+	@printf '%s %s\n' 'terraform' '\'
+	@printf '%s %s\n' '  -chdir=$(TF_INFRA_DIR)' '\'
+	@printf '%s %s\n' '  plan -destroy' '\'
+	@printf '%s\n' '  -var-file=$(INFRA_TFVARS)'
 	@printf '%s\n' ''
 	@printf '%s\n' '2. Destroy only after review:'
-	@printf '%s\n' '$(TF_BACKEND_ENV) TF_DATA_DIR=$(TF_DATA_DIR) $(TERRAFORM) -chdir=$(TF_INFRA_DIR) destroy -var-file=$(INFRA_TFVARS)'
+	@$(PYTHON) $(ENGINE_ROOT)/scripts/terraform-backend-env.py --env $(ENV_CONFIG) --format multiline
+	@printf '%s %s\n' 'TF_DATA_DIR=$(TF_DATA_DIR)' '\'
+	@printf '%s %s\n' 'terraform' '\'
+	@printf '%s %s\n' '  -chdir=$(TF_INFRA_DIR)' '\'
+	@printf '%s %s\n' '  destroy' '\'
+	@printf '%s\n' '  -var-file=$(INFRA_TFVARS)'
 	@printf '%s\n' '============================================================'
 
 bastion-configure:
