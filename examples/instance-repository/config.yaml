@@ -1,4 +1,4 @@
-# Copy and customize envs/example/env.yaml for a real instance repository.
+# Instance repositories provide their own production config based on this shape.
 # This file is a layout-only fixture and is not a provisioning configuration.
 schema_version: 1
 environment:

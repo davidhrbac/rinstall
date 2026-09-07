@@ -14,9 +14,6 @@
   - Ensure Helm satisfies the configured Rancher release requirements without maintaining an independent historical pin unless DR policy requires it.
   - Replace minimum-version Python dependencies with exact pins or a lockfile.
 
-- Protect kubeconfig artifacts explicitly.
-  - Enforce mode `0700` on the per-environment build/runtime directory and `0600` on `rke2.yaml.raw` and `rke2.yaml`, including standalone `make rke2-kubeconfig` runs.
-
 - Add per-environment SSH known-hosts handling for DR.
   - Keep generated host keys outside global `~/.ssh/known_hosts` so redeploying VMs at the same IP does not block SSH.
   - Add an explicit reset operation for that environment-only known-hosts file.
@@ -27,9 +24,9 @@
 - Add `make rke2-status`.
   - Verify `rke2-server` service state, ports `9345`/`6443`, and `kubectl get nodes` after install.
 
-- Test a real private environment dry-run.
-  - Use `envs/private/<env>/env.yaml` with sanitized repo examples unchanged.
-  - Run `make render-infra-vars`, `make infra-plan`, and SSH config checks before any apply.
+- Test a real instance repository dry-run.
+  - Keep customer configuration in the separate instance repository.
+  - Run the instance Makefile targets and SSH config checks before any apply.
 
 ## Later
 
@@ -53,7 +50,5 @@
 ## Questions
 
 - Which secret source should own the RKE2 token in production?
-- Should real env directories live under `envs/private/` only, or should there be another ignored naming convention?
 - Should the bastion VLAN section be named `bastion.service_networks` or `bastion.downstream_networks`?
-- Should the engine distribution remain a pinned Git submodule until a versioned CLI has a concrete operational advantage?
 - Should GitLab issues be created from the stable items in this file after the first real dry-run?

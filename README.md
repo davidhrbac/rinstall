@@ -38,21 +38,42 @@ make -f rinstall/Makefile provision-all
 Generated runtime files are kept under the ignored `.rinstall/` directory,
 including Terraform metadata in `.rinstall/terraform-data/`.
 
-## Development / Standalone Engine Flow
+Production `config.yaml` declares the GitLab state location:
 
-For engine development and sanitized fixtures, run Terraform from the operator
-workstation, not from `bastion1`. Use `envs/example/env.yaml`; generated files go
-to `build/<environment.id>/`.
-
-```bash
-make infra-init ENV=envs/example
-make render-infra-vars ENV=envs/example
-make ssh-config ENV=envs/example
-make infra-plan ENV=envs/example
-make provision-all ENV=envs/example
+```yaml
+schema_version: 1
+environment:
+  id: customer-a-prod
+terraform:
+  backend:
+    type: gitlab
+    url: https://gitlab.example
+    project_id: 1234
+    state: infra
 ```
 
-`make provision-all` asks for confirmation, runs `infra-apply`, configures bastion, prepares nodes, installs RKE2, installs Rancher, and prints a duration summary at the end. It writes complete phase output to `build/<environment.id>/provision-<timestamp>-<pid>.log` through a pseudo-terminal, preserving colors in both the terminal and log. The header records engine and environment Git revisions plus their clean/dirty worktree state; these are the same while `ENV` is inside this repo, and become independent when an environment uses its own repo. Pyinfra progress redraw is disabled by default with `PYINFRA_PROGRESS=off` so logs stay readable; set `PYINFRA_PROGRESS=on` to restore it for an individual command. `make rancher-install` prepares the RKE2 kubeconfig automatically before the Helm phase. Use `make infra-plan` first as the review checkpoint before applying changes. For unattended runs use `make provision-all-yes ENV=envs/example`; it passes `-auto-approve` to Terraform apply and `--yes` to pyinfra.
+Only credentials come from the runtime environment: `TF_HTTP_USERNAME` and
+`TF_HTTP_PASSWORD`. `rinstall` derives the address and lock/unlock URLs.
+When both are present, config-derived non-secret values override matching
+`TF_HTTP_*` values supplied by the shell.
+
+## Development / Validation Fixture
+
+For engine development and sanitized fixtures, use `envs/example/env.yaml` for
+rendering, syntax checks, and tests. It is not a standalone Terraform
+provisioning configuration; do not run infrastructure targets with it unless
+you have added a GitLab backend configuration and runtime credentials.
+
+```bash
+make render-infra-vars ENV=envs/example
+make ssh-config ENV=envs/example
+```
+
+For a development environment that needs Terraform provisioning, use an
+explicit GitLab-backed instance configuration and provide
+`TF_HTTP_USERNAME`/`TF_HTTP_PASSWORD` at runtime. The instance flow then uses
+the same `make -f rinstall/Makefile infra-init`, `infra-plan`, `infra-apply`,
+and `provision-all` targets documented above.
 
 `make rancher-install` and `make rancher-bootstrap` automatically fetch `/etc/rancher/rke2/rke2.yaml` from the primary Rancher node, rewrite its Kubernetes API endpoint to the primary node IP, and upload the prepared kubeconfig to `bastion1:/root/rke2.yaml`. The helper target `make rke2-kubeconfig` is available for debugging that step directly.
 
@@ -62,27 +83,29 @@ Prefer static addressing on the bastion management NIC. Set it as `cidr` on the 
 
 Terraform commands use local workstation credentials/environment and talk to vSphere/GitLab from there. pyinfra and Helm/Rancher installation steps can also run from the workstation; SSH routing is handled by generated OpenSSH config.
 
-## Destroying Infra
+## Destroying Production Infra
 
-Destroy Terraform-managed vSphere VMs from the operator workstation with the same env and backend/state settings used for creation:
+From the production instance repository, destroy Terraform-managed vSphere VMs
+from the operator workstation with the same config and runtime credentials used
+for creation:
 
 ```bash
-make destroy-commands ENV=envs/example
+make -f rinstall/Makefile destroy-commands
 ```
 
-From an instance repository, run `make -f rinstall/Makefile destroy-commands`
-instead; its generated paths are under `.rinstall/`.
+Generated paths are under `.rinstall/` and the pinned Terraform root remains
+`rinstall/terraform/infra`.
 
 The helper prints the explicit Terraform commands to run, for example:
 
 ```bash
-terraform -chdir=terraform/infra plan -destroy -var-file=../../build/example/infra.tfvars.json
-terraform -chdir=terraform/infra destroy -var-file=../../build/example/infra.tfvars.json
+terraform -chdir=rinstall/terraform/infra plan -destroy -var-file=.rinstall/infra.tfvars.json
+terraform -chdir=rinstall/terraform/infra destroy -var-file=.rinstall/infra.tfvars.json
 ```
 
-Always confirm `ENV`, Terraform workspace/backend, and the destroy plan before approving. There is intentionally no `make infra-destroy` or `make destroy-all` shortcut, because destroy is destructive and should stay explicit. Terraform destroy only removes resources tracked by the Terraform infra state; it does not clean Rancher API resources, downstream clusters, external DNS/LB records, DHCP reservations, or local generated files under `build/`.
+Always confirm the instance repository, Terraform backend/state, and destroy plan before approving. There is intentionally no `make infra-destroy` or `make destroy-all` shortcut, because destroy is destructive and should stay explicit. Terraform destroy only removes resources tracked by the Terraform infra state; it does not clean Rancher API resources, downstream clusters, external DNS/LB records, DHCP reservations, or local generated files under `.rinstall/`.
 
-`make destroy-commands` prints a header with the selected env, build directory, Terraform directory, tfvars path, vSphere server/user when available from environment variables, optional backend/init settings, and then the explicit review/destroy commands. It never prints the vSphere password.
+`make -f rinstall/Makefile destroy-commands` prints a header with the selected instance config, runtime directory, Terraform directory, tfvars path, vSphere server/user when available from environment variables, backend/init settings, and then the explicit review/destroy commands. It never prints the vSphere password.
 
 Keep vCenter connection details out of `env.yaml` unless there is a specific reason to pin them there. Terraform accepts them through environment variables, which can be loaded by `direnv` from an ignored `.envrc`:
 
@@ -94,7 +117,9 @@ export TF_VAR_vsphere_password="change-me"
 
 See `.envrc.example` for the expected variable names. `make render-infra-vars` omits `vsphere_server` and `vsphere_user` when they are not set in `env.yaml`, so Terraform will read `TF_VAR_vsphere_server` and `TF_VAR_vsphere_user` from the operator environment.
 
-The committed scaffold uses Terraform's default local state, so standalone `make infra-init` works without GitLab backend settings. For an instance using GitLab Terraform state, copy `rinstall/terraform/infra/backend.tf.example` to the ignored `rinstall/terraform/infra/backend.tf` and provide `TF_HTTP_ADDRESS` (plus lock/unlock settings and credentials) in the runtime environment. The Makefile then omits the local-backend-only `path` setting. Alternatively pass an explicit `TF_BACKEND_CONFIG=<file>`.
+Standalone engine validation uses `terraform init -backend=false`. Production
+instances use the static HTTP backend in the pinned engine and settings from
+`config.yaml`; no backend files or Terraform source are generated at runtime.
 
 If local nodes require a separate SSH jump host, configure it in the environment
 config. pyinfra inventory will generate `build/<environment.id>/ssh_config` in
@@ -242,7 +267,7 @@ prompt:
 
 ## RKE2 Prep
 
-For Rancher nodes, `make node-prep` mirrors the manual `clush` file copy flow:
+For Rancher nodes, `make node-prep` renders these managed files:
 
 ```text
 /etc/NetworkManager/conf.d/rke2-canal.conf
@@ -272,10 +297,10 @@ rancher:
       version: 2.14.4
 ```
 
-For Rancher Prime, set `edition: prime` in the private env and fill the Prime chart repository/version approved for that customer. The env loader resolves the selected edition into the values expected by the install script.
+For Rancher Prime, set `edition: prime` in the instance config and fill the Prime chart repository/version approved for that customer. The env loader resolves the selected edition into the values expected by the install script.
 `agent_tls_mode` defaults to `system-store`. `rke2.version`, `rancher.cert_manager_version`, and the selected Rancher edition `version` are required; the environment config is the only version source of truth.
 
-Set `rancher.bootstrap_password` only in private env configs when you want to control the one-time initial admin password. The install script uses it only when the Rancher Helm release does not exist yet; repeat runs and upgrades never pass `bootstrapPassword` again. When it is omitted, each successful `make rancher-install` prints a command that retrieves the generated password from `cattle-system/bootstrap-secret` if this was the first Rancher release. Change the password after first login.
+Set `rancher.bootstrap_password` only in instance configs when you want to control the one-time initial admin password. The install script uses it only when the Rancher Helm release does not exist yet; repeat runs and upgrades never pass `bootstrapPassword` again. When it is omitted, each successful `make rancher-install` prints a command that retrieves the generated password from `cattle-system/bootstrap-secret` if this was the first Rancher release. Change the password after first login.
 
 `rinstall` installs cert-manager and Rancher only when their Helm releases are absent. An existing release must match the declared chart version; Rancher must also match the declared hostname, proxy, and no-proxy values. Any mismatch fails without an upgrade or downgrade, because Rancher and cert-manager lifecycle changes belong to the separate Rancher Environment repository. Synchronize the DR environment pins after those lifecycle changes.
 
@@ -293,14 +318,10 @@ IPs, and SSH topology out of this engine repository.
 
 ## Terraform State
 
-The committed infra layer defaults to local Terraform state so the scaffold can be initialized and planned without GitLab backend setup.
-
-For environments that need GitLab Terraform state, create the ignored
-`rinstall/terraform/infra/backend.tf` from its example, then run
-`make -f rinstall/Makefile infra-init` with `TF_HTTP_ADDRESS` and lock settings,
-or use `TF_BACKEND_CONFIG=<backend-config-file>`. Do not put GitLab tokens in
-`config.yaml`; provide backend credentials via Terraform-supported environment
-variables such as `TF_HTTP_USERNAME` and `TF_HTTP_PASSWORD`.
+Production instances use the static `backend "http" {}` declaration in the
+pinned engine and GitLab state settings from `config.yaml`. Do not put GitLab
+tokens in `config.yaml`; provide `TF_HTTP_USERNAME` and `TF_HTTP_PASSWORD` at
+runtime.
 
 
 ## Secrets

@@ -1,4 +1,7 @@
 from pathlib import Path
+import os
+import subprocess
+import sys
 
 import pytest
 import yaml
@@ -7,6 +10,7 @@ from lib.env_config import expand_env, load_env
 
 
 EXAMPLE_ENV = Path(__file__).parents[1] / "envs/example/env.yaml"
+BACKEND_HELPER = EXAMPLE_ENV.parents[2] / "scripts/terraform-backend-env.py"
 
 
 def raw_example():
@@ -162,3 +166,62 @@ def test_generates_compact_no_proxy_list_with_kubernetes_suffixes():
         "10.14.17.0/28",
         "rancher.example.internal",
     ]
+
+
+def test_validates_gitlab_backend_without_credentials():
+    config = raw_example()
+    config["terraform"] = {"backend": {"type": "gitlab", "url": "https://gitlab.example", "project_id": 1234, "state": "infra"}}
+    assert expand_env(config)["terraform"]["backend"]["project_id"] == 1234
+
+
+@pytest.mark.parametrize("backend", [
+    {"type": "s3"},
+    {"type": "gitlab", "url": "", "project_id": 1, "state": "infra"},
+    {"type": "gitlab", "url": "https://gitlab.example", "state": "infra"},
+    {"type": "gitlab", "url": "https://gitlab.example", "project_id": "bad", "state": "infra"},
+    {"type": "gitlab", "url": "https://gitlab.example", "project_id": 1, "state": ""},
+])
+def test_rejects_invalid_gitlab_backend(backend):
+    config = raw_example()
+    config["terraform"] = {"backend": backend}
+    with pytest.raises(SystemExit):
+        expand_env(config)
+
+
+def test_derives_gitlab_backend_values_without_credentials(tmp_path):
+    config = raw_example()
+    config["terraform"] = {
+        "backend": {
+            "type": "gitlab",
+            "url": "https://gitlab.example",
+            "project_id": 1234,
+            "state": "infra",
+        }
+    }
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(yaml.safe_dump(config))
+
+    result = subprocess.run(
+        [sys.executable, str(BACKEND_HELPER), "--env", str(config_path)],
+        check=True,
+        capture_output=True,
+        text=True,
+        env={
+            **os.environ,
+            "TF_HTTP_ADDRESS": "https://conflicting.example/state",
+            "TF_HTTP_LOCK_ADDRESS": "https://conflicting.example/lock",
+            "TF_HTTP_USERNAME": "runtime-user",
+            "TF_HTTP_PASSWORD": "runtime-secret",
+        },
+    )
+
+    assert result.stdout.strip().split() == [
+        "TF_HTTP_ADDRESS=https://gitlab.example/api/v4/projects/1234/terraform/state/infra",
+        "TF_HTTP_LOCK_ADDRESS=https://gitlab.example/api/v4/projects/1234/terraform/state/infra/lock",
+        "TF_HTTP_UNLOCK_ADDRESS=https://gitlab.example/api/v4/projects/1234/terraform/state/infra/lock",
+        "TF_HTTP_LOCK_METHOD=POST",
+        "TF_HTTP_UNLOCK_METHOD=DELETE",
+        "TF_HTTP_RETRY_WAIT_MIN=5",
+    ]
+    assert "runtime-user" not in result.stdout
+    assert "runtime-secret" not in result.stdout
