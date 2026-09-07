@@ -33,14 +33,14 @@ def test_instance_fixture_ignores_runtime_files():
         "type": "gitlab",
         "url": "https://gitlab.example",
         "project_id": 1234,
-        "state": "infra",
     }
 
 
 def test_makefile_derives_instance_paths(tmp_path):
     instance_root = tmp_path / "customer-a-prod-infra"
     instance_root.mkdir()
-    shutil.copy(EXAMPLE_ENV, instance_root / "config.yaml")
+    config = yaml.safe_load(EXAMPLE_ENV.read_text())
+    (instance_root / "config.yaml").write_text(yaml.safe_dump(config))
     (instance_root / "rinstall").symlink_to(ENGINE_ROOT, target_is_directory=True)
 
     result = subprocess.run(
@@ -80,30 +80,63 @@ def test_makefile_derives_instance_paths(tmp_path):
     assert f"{instance_root}/.rinstall/terraform " not in init_result.stdout
     assert "-lockfile=readonly" in init_result.stdout
 
-def test_verify_uses_instance_terraform_data_dir(tmp_path):
+def test_verify_uses_clean_temporary_terraform_data_dir(tmp_path):
     instance_root = tmp_path / "customer-a-prod-infra"
     instance_root.mkdir()
     shutil.copy(EXAMPLE_ENV, instance_root / "config.yaml")
     (instance_root / "rinstall").symlink_to(ENGINE_ROOT, target_is_directory=True)
+    normal_data_dir = instance_root / ".rinstall" / "terraform-data"
+    normal_data_dir.mkdir(parents=True)
+    (normal_data_dir / "backend-metadata").write_text("existing HTTP backend metadata")
+    terraform = tmp_path / "terraform"
+    marker = tmp_path / "terraform-data-dir"
+    terraform.write_text(
+        "#!/bin/sh\n"
+        "printf 'ARGS=%s\\nTF_DATA_DIR=%s\\n' \"$*\" \"${TF_DATA_DIR:-}\" >> \"$TERRAFORM_MARKER\"\n"
+    )
+    terraform.chmod(0o700)
+    python = tmp_path / "python"
+    python.write_text(
+        "#!/bin/sh\n"
+        "if [ \"$1\" = \"-m\" ] && [ \"$2\" = \"pytest\" ]; then exit 0; fi\n"
+        f"exec {sys.executable} \"$@\"\n"
+    )
+    python.chmod(0o700)
 
     result = subprocess.run(
-        ["make", "-f", "rinstall/Makefile", "-n", "verify"],
+        [
+            "make",
+            "-f",
+            "rinstall/Makefile",
+            "verify",
+            f"PYTHON={python}",
+            f"TERRAFORM={terraform}",
+        ],
         cwd=instance_root,
-        check=True,
+        check=False,
         capture_output=True,
         text=True,
-        env={key: value for key, value in os.environ.items() if key not in {"ENV_FILE", "RUNTIME_DIR", "TF_DATA_DIR", "MAKEFLAGS", "MFLAGS"}},
+        env={
+            key: value
+            for key, value in os.environ.items()
+            if key not in {"ENV_FILE", "RUNTIME_DIR", "TF_DATA_DIR", "MAKEFLAGS", "MFLAGS"}
+        } | {"TERRAFORM_MARKER": str(marker)},
     )
 
-    terraform_lines = [line for line in result.stdout.splitlines() if "terraform -chdir=" in line]
-    assert terraform_lines
-    assert all(f"TF_DATA_DIR={instance_root}/.rinstall/terraform-data" in line for line in terraform_lines)
-    init_lines = [line for line in terraform_lines if " init " in line]
-    assert init_lines
-    assert all("-backend=false" in line and "-lockfile=readonly" in line for line in init_lines)
-    assert "gitlab.example" not in result.stdout
-    assert "TF_HTTP_USERNAME" not in result.stdout
-    assert "TF_HTTP_PASSWORD" not in result.stdout
+    assert result.returncode == 0, result.stderr
+    assert (normal_data_dir / "backend-metadata").read_text() == "existing HTTP backend metadata"
+    records = marker.read_text().splitlines()
+    invocations = [
+        dict(zip(("args", "tf_data_dir"), (records[index][5:], records[index + 1][12:])))
+        for index in range(0, len(records), 2)
+    ]
+    init = next(invocation for invocation in invocations if " init " in invocation["args"])
+    validate = next(invocation for invocation in invocations if " validate" in invocation["args"])
+    assert init["tf_data_dir"] != str(normal_data_dir)
+    assert validate["tf_data_dir"] == init["tf_data_dir"]
+    assert "-backend=false" in init["args"]
+    assert "-lockfile=readonly" in init["args"]
+    assert not Path(init["tf_data_dir"]).exists()
 
 
 def test_invalid_instance_config_fails_before_verify_work(tmp_path):
@@ -136,10 +169,15 @@ def test_invalid_instance_config_fails_before_verify_work(tmp_path):
 def test_backend_helper_failure_stops_terraform(tmp_path):
     instance_root = tmp_path / "customer-a-prod-infra"
     instance_root.mkdir()
-    shutil.copy(EXAMPLE_ENV, instance_root / "config.yaml")
+    config = yaml.safe_load(EXAMPLE_ENV.read_text())
+    (instance_root / "config.yaml").write_text(yaml.safe_dump(config))
     (instance_root / "rinstall").symlink_to(ENGINE_ROOT, target_is_directory=True)
     helper = tmp_path / "failing-backend-helper.py"
-    helper.write_text("import sys\nprint('backend helper failed', file=sys.stderr)\nsys.exit(7)\n")
+    helper.write_text(
+        "import sys\n"
+        "print('backend helper failed', file=sys.stderr)\n"
+        "sys.exit(7)\n"
+    )
     terraform = tmp_path / "terraform"
     terraform.write_text("#!/bin/sh\nprintf 'terraform ran\\n' >> \"$TERRAFORM_MARKER\"\n")
     terraform.chmod(0o700)
@@ -199,7 +237,6 @@ def test_instance_context_prints_resolved_identity_without_credentials(tmp_path)
             "type": "gitlab",
             "url": "https://gitlab.example",
             "project_id": 1234,
-            "state": "infra",
         }
     }
     config["rke2"]["token"] = "rke2-token-secret"
@@ -224,7 +261,7 @@ def test_instance_context_prints_resolved_identity_without_credentials(tmp_path)
 
     assert "rinstall :: example\n\n" in result.stdout
     assert "Rancher: rancher.example.internal" in result.stdout
-    assert "State:   https://gitlab.example/api/v4/projects/1234/terraform/state/infra" in result.stdout
+    assert "State:   https://gitlab.example/api/v4/projects/1234/terraform/state/example-infra" in result.stdout
     assert f"Config:  {instance_root / 'config.yaml'}" in result.stdout
     assert all(secret not in result.stdout for secret in SECRET_VALUES)
     assert "vsphere-password-secret" not in result.stdout
@@ -257,7 +294,6 @@ def test_operator_targets_include_instance_context_banner(tmp_path, target):
             "type": "gitlab",
             "url": "https://gitlab.example",
             "project_id": 1234,
-            "state": "infra",
         }
     }
     (instance_root / "config.yaml").write_text(yaml.safe_dump(config))
@@ -283,7 +319,6 @@ def test_provision_all_banner_is_complete_and_logged(tmp_path):
             "type": "gitlab",
             "url": "https://gitlab.example",
             "project_id": 1234,
-            "state": "infra",
         }
     }
     config["rke2"]["token"] = "rke2-token-secret"
@@ -320,7 +355,7 @@ def test_provision_all_banner_is_complete_and_logged(tmp_path):
     assert output.count("rinstall :: provision-all\n\n") == 1
     assert "Environment ID:       example" in output
     assert "Rancher:              rancher.example.internal" in output
-    assert "State:                https://gitlab.example/api/v4/projects/1234/terraform/state/infra" in output
+    assert "State:                https://gitlab.example/api/v4/projects/1234/terraform/state/example-infra" in output
     assert f"Config:               {instance_root / 'config.yaml'}" in output
     assert f"Runtime dir:          {instance_root / '.rinstall'}" in output
     assert f"Terraform:            {instance_root / 'rinstall/terraform/infra'}" in output
@@ -346,7 +381,7 @@ def test_provision_all_banner_is_complete_and_logged(tmp_path):
     log = log_path.read_text()
     assert "rinstall :: provision-all\n\n" in log
     assert "Environment ID:       example" in log
-    assert "State:                https://gitlab.example/api/v4/projects/1234/terraform/state/infra" in log
+    assert "State:                https://gitlab.example/api/v4/projects/1234/terraform/state/example-infra" in log
     assert log.count("rinstall :: provision-all\n\n") == 1
     assert all(secret not in log for secret in SECRET_VALUES)
     assert "vsphere-password-secret" not in log

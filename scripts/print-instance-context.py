@@ -16,7 +16,7 @@ def main():
     config_path = Path(args.env).resolve()
     env = load_env(config_path)
     backend = env["terraform"]["backend"]
-    state_address = gitlab_backend_state_address(backend)
+    state_address = gitlab_backend_state_address(backend, env["environment"]["id"])
 
     if args.shell:
         for key, value in {
