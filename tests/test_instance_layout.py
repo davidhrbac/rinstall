@@ -124,7 +124,7 @@ def test_verify_uses_clean_temporary_terraform_data_dir(tmp_path):
     )
 
     assert result.returncode == 0, result.stderr
-    assert (normal_data_dir / "backend-metadata").exists()
+    assert (normal_data_dir / "backend-metadata").read_text() == "existing HTTP backend metadata"
     records = marker.read_text().splitlines()
     invocations = [
         dict(zip(("args", "tf_data_dir"), (records[index][5:], records[index + 1][12:])))
