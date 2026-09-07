@@ -17,7 +17,7 @@ TF_ROOT := $(ENGINE_ROOT)/terraform/infra
 TF_INFRA_DIR := $(TF_ROOT)
 INFRA_TFVARS = $(BUILD_ENV_DIR)/infra.tfvars.json
 TF_DATA_DIR ?= $(BUILD_ENV_DIR)/terraform-data
-TF_BACKEND_ENV = $(shell $(PYTHON) $(ENGINE_ROOT)/scripts/terraform-backend-env.py --env $(ENV_CONFIG) 2>/dev/null)
+TF_BACKEND_HELPER ?= $(ENGINE_ROOT)/scripts/terraform-backend-env.py
 TF_INIT_ARGS ?=
 TF_APPLY_ARGS ?=
 PYINFRA_ARGS ?=
@@ -84,23 +84,23 @@ install-admin-ssh-config: admin-ssh-config
 	printf '%s\n' 'Ensure /root/.ssh/config includes ~/.ssh/config.d/*.conf; this target does not modify it.'
 
 infra-init: config-validate
-	$(TF_BACKEND_ENV) TF_DATA_DIR=$(TF_DATA_DIR) $(TERRAFORM) -chdir=$(TF_INFRA_DIR) init -lockfile=readonly $(TF_INIT_ARGS)
+	@set -e; backend_env="$$($(PYTHON) $(TF_BACKEND_HELPER) --env $(ENV_CONFIG))"; eval "$$backend_env TF_DATA_DIR=$(TF_DATA_DIR) $(TERRAFORM) -chdir=$(TF_INFRA_DIR) init -lockfile=readonly $(TF_INIT_ARGS)"
 
 infra-fmt:
 	$(TERRAFORM) -chdir=$(TF_INFRA_DIR) fmt -check -recursive -diff
 
 infra-validate: infra-init
-	$(TF_BACKEND_ENV) TF_DATA_DIR=$(TF_DATA_DIR) $(TERRAFORM) -chdir=$(TF_INFRA_DIR) validate
+	@set -e; backend_env="$$($(PYTHON) $(TF_BACKEND_HELPER) --env $(ENV_CONFIG))"; eval "$$backend_env TF_DATA_DIR=$(TF_DATA_DIR) $(TERRAFORM) -chdir=$(TF_INFRA_DIR) validate"
 
 infra-plan: $(if $(filter 1,$(PROVISION_PHASE)),,instance-context) infra-init render-infra-vars
-	$(TF_BACKEND_ENV) TF_DATA_DIR=$(TF_DATA_DIR) $(TERRAFORM) -chdir=$(TF_INFRA_DIR) plan -var-file=$(INFRA_TFVARS)
+	@set -e; backend_env="$$($(PYTHON) $(TF_BACKEND_HELPER) --env $(ENV_CONFIG))"; eval "$$backend_env TF_DATA_DIR=$(TF_DATA_DIR) $(TERRAFORM) -chdir=$(TF_INFRA_DIR) plan -var-file=$(INFRA_TFVARS)"
 
 infra-apply: $(if $(filter 1,$(PROVISION_PHASE)),,instance-context) infra-init render-infra-vars
-	$(TF_BACKEND_ENV) TF_DATA_DIR=$(TF_DATA_DIR) $(TERRAFORM) -chdir=$(TF_INFRA_DIR) apply $(TF_APPLY_ARGS) -var-file=$(INFRA_TFVARS)
+	@set -e; backend_env="$$($(PYTHON) $(TF_BACKEND_HELPER) --env $(ENV_CONFIG))"; eval "$$backend_env TF_DATA_DIR=$(TF_DATA_DIR) $(TERRAFORM) -chdir=$(TF_INFRA_DIR) apply $(TF_APPLY_ARGS) -var-file=$(INFRA_TFVARS)"
 
 infra-output: infra-init
 	mkdir -p $(BUILD_ENV_DIR)
-	$(TF_BACKEND_ENV) TF_DATA_DIR=$(TF_DATA_DIR) $(TERRAFORM) -chdir=$(TF_INFRA_DIR) output -json > $(BUILD_ENV_DIR)/infra-output.json
+	@set -e; backend_env="$$($(PYTHON) $(TF_BACKEND_HELPER) --env $(ENV_CONFIG))"; eval "$$backend_env TF_DATA_DIR=$(TF_DATA_DIR) $(TERRAFORM) -chdir=$(TF_INFRA_DIR) output -json" > $(BUILD_ENV_DIR)/infra-output.json
 
 destroy-commands: instance-context
 	@$(PYTHON) $(ENGINE_ROOT)/scripts/render-infra-tfvars.py --env $(ENV_CONFIG) --out $(INFRA_TFVARS)

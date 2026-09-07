@@ -133,6 +133,39 @@ def test_invalid_instance_config_fails_before_verify_work(tmp_path):
     assert "terraform -chdir=" not in combined_output
 
 
+def test_backend_helper_failure_stops_terraform(tmp_path):
+    instance_root = tmp_path / "customer-a-prod-infra"
+    instance_root.mkdir()
+    shutil.copy(EXAMPLE_ENV, instance_root / "config.yaml")
+    (instance_root / "rinstall").symlink_to(ENGINE_ROOT, target_is_directory=True)
+    helper = tmp_path / "failing-backend-helper.py"
+    helper.write_text("import sys\nprint('backend helper failed', file=sys.stderr)\nsys.exit(7)\n")
+    terraform = tmp_path / "terraform"
+    terraform.write_text("#!/bin/sh\nprintf 'terraform ran\\n' >> \"$TERRAFORM_MARKER\"\n")
+    terraform.chmod(0o700)
+    marker = tmp_path / "terraform-marker"
+
+    result = subprocess.run(
+        [
+            "make",
+            "-f",
+            "rinstall/Makefile",
+            "infra-init",
+            f"PYTHON={sys.executable}",
+            f"TF_BACKEND_HELPER={helper}",
+            f"TERRAFORM={terraform}",
+        ],
+        cwd=instance_root,
+        capture_output=True,
+        text=True,
+        env={**os.environ, "TERRAFORM_MARKER": str(marker)},
+    )
+
+    assert result.returncode != 0
+    assert "backend helper failed" in result.stderr
+    assert not marker.exists()
+
+
 def test_fresh_instance_infra_plan_initializes_and_renders_vars(tmp_path):
     instance_root = tmp_path / "customer-a-prod-infra"
     instance_root.mkdir()
