@@ -21,6 +21,7 @@ TF_BACKEND_ENV = $(shell $(PYTHON) $(ENGINE_ROOT)/scripts/terraform-backend-env.
 TF_INIT_ARGS ?=
 TF_APPLY_ARGS ?=
 PYINFRA_ARGS ?=
+PROVISION_PHASE ?= 0
 ADMIN_SSH_HOST ?=
 ADMIN_SSH_CONFIG = $(BUILD_ENV_DIR)/$(ENV_ID).conf
 
@@ -91,10 +92,10 @@ infra-fmt:
 infra-validate: infra-init
 	$(TF_BACKEND_ENV) TF_DATA_DIR=$(TF_DATA_DIR) $(TERRAFORM) -chdir=$(TF_INFRA_DIR) validate
 
-infra-plan: instance-context infra-init render-infra-vars
+infra-plan: $(if $(filter 1,$(PROVISION_PHASE)),,instance-context) infra-init render-infra-vars
 	$(TF_BACKEND_ENV) TF_DATA_DIR=$(TF_DATA_DIR) $(TERRAFORM) -chdir=$(TF_INFRA_DIR) plan -var-file=$(INFRA_TFVARS)
 
-infra-apply: instance-context infra-init render-infra-vars
+infra-apply: $(if $(filter 1,$(PROVISION_PHASE)),,instance-context) infra-init render-infra-vars
 	$(TF_BACKEND_ENV) TF_DATA_DIR=$(TF_DATA_DIR) $(TERRAFORM) -chdir=$(TF_INFRA_DIR) apply $(TF_APPLY_ARGS) -var-file=$(INFRA_TFVARS)
 
 infra-output: infra-init
@@ -121,10 +122,20 @@ destroy-commands: instance-context
 	@printf '%s\n' 'Confirm config, Terraform workspace/backend/state, and every planned deletion.'
 	@printf '%s\n' ''
 	@printf '%s\n' '1. Review plan:'
-	@printf '%s\n' '$(TF_BACKEND_ENV) TF_DATA_DIR=$(TF_DATA_DIR) $(TERRAFORM) -chdir=$(TF_INFRA_DIR) plan -destroy -var-file=$(INFRA_TFVARS)'
+	@$(PYTHON) $(ENGINE_ROOT)/scripts/terraform-backend-env.py --env $(ENV_CONFIG) --format multiline
+	@printf '%s %s\n' 'TF_DATA_DIR=$(TF_DATA_DIR)' '\'
+	@printf '%s %s\n' 'terraform' '\'
+	@printf '%s %s\n' '  -chdir=$(TF_INFRA_DIR)' '\'
+	@printf '%s %s\n' '  plan -destroy' '\'
+	@printf '%s\n' '  -var-file=$(INFRA_TFVARS)'
 	@printf '%s\n' ''
 	@printf '%s\n' '2. Destroy only after review:'
-	@printf '%s\n' '$(TF_BACKEND_ENV) TF_DATA_DIR=$(TF_DATA_DIR) $(TERRAFORM) -chdir=$(TF_INFRA_DIR) destroy -var-file=$(INFRA_TFVARS)'
+	@$(PYTHON) $(ENGINE_ROOT)/scripts/terraform-backend-env.py --env $(ENV_CONFIG) --format multiline
+	@printf '%s %s\n' 'TF_DATA_DIR=$(TF_DATA_DIR)' '\'
+	@printf '%s %s\n' 'terraform' '\'
+	@printf '%s %s\n' '  -chdir=$(TF_INFRA_DIR)' '\'
+	@printf '%s %s\n' '  destroy' '\'
+	@printf '%s\n' '  -var-file=$(INFRA_TFVARS)'
 	@printf '%s\n' '============================================================'
 
 bastion-configure:
@@ -176,23 +187,27 @@ provision-all: config-validate
 	  elif [[ -n "$$(git -C "$$1" status --porcelain --untracked-files=normal)" ]]; then printf '%s' 'dirty'; \
 	  else printf '%s' 'clean'; fi; \
 	}; \
+	blue=$$'\033[34m'; \
+	green=$$'\033[32m'; \
+	red=$$'\033[31m'; \
+	reset=$$'\033[0m'; \
 	run_phase() { \
 	  local label=$$1; \
 	  local target=$$2; \
 	  local phase_start=$$SECONDS; \
 	  local phase_number=$$3; \
 	  local command_line; \
-  local command=("$(MAKE)" "-f" "$(ENGINE_ROOT)/Makefile" "$$target" "ENGINE_ROOT=$(ENGINE_ROOT)" "ENV=$(ENV)" "ENV_FILE=$(ENV_FILE)" "ENV_CONFIG=$(ENV_CONFIG)" "RUNTIME_DIR=$(RUNTIME_DIR)" "TF_DATA_DIR=$(TF_DATA_DIR)" "PYTHON=$(PYTHON)" "PYINFRA=$(PYINFRA)" "PYINFRA_PROGRESS=$(PYINFRA_PROGRESS)" "PYINFRA_ARGS=$(PYINFRA_ARGS)" "TERRAFORM=$(TERRAFORM)" "TF_INIT_ARGS=$(TF_INIT_ARGS)" "TF_APPLY_ARGS=$(TF_APPLY_ARGS)"); \
-	  log '\n[%s/5] %s started\n' "$$phase_number" "$$label"; \
+	  local command=("$(MAKE)" "-f" "$(ENGINE_ROOT)/Makefile" "$$target" "ENGINE_ROOT=$(ENGINE_ROOT)" "ENV=$(ENV)" "ENV_FILE=$(ENV_FILE)" "ENV_CONFIG=$(ENV_CONFIG)" "RUNTIME_DIR=$(RUNTIME_DIR)" "TF_DATA_DIR=$(TF_DATA_DIR)" "PYTHON=$(PYTHON)" "PYINFRA=$(PYINFRA)" "PYINFRA_PROGRESS=$(PYINFRA_PROGRESS)" "PYINFRA_ARGS=$(PYINFRA_ARGS)" "TERRAFORM=$(TERRAFORM)" "TF_INIT_ARGS=$(TF_INIT_ARGS)" "TF_APPLY_ARGS=$(TF_APPLY_ARGS)" "PROVISION_PHASE=1"); \
+	  log '\n%s[%s/5] %s started%s\n' "$$blue" "$$phase_number" "$$label" "$$reset"; \
 	  printf -v command_line '%q ' "$${command[@]}"; \
 	  if script -q -e -f -a -c "$$command_line" "$$run_log"; then \
 	    local duration=$$((SECONDS - phase_start)); \
-	    log '[%s/5] %s completed in %s\n' "$$phase_number" "$$label" "$$(format_duration "$$duration")"; \
+	    log '%s[%s/5] %s completed in %s%s\n' "$$green" "$$phase_number" "$$label" "$$(format_duration "$$duration")" "$$reset"; \
 	    completed_labels+=("$$label"); \
 	    completed_durations+=("$$duration"); \
 	  else \
 	    local duration=$$((SECONDS - phase_start)); \
-	    log '[%s/5] %s failed after %s; see %s\n' "$$phase_number" "$$label" "$$(format_duration "$$duration")" "$$run_log" >&2; \
+	    log '%s[%s/5] %s failed after %s; see %s%s\n' "$$red" "$$phase_number" "$$label" "$$(format_duration "$$duration")" "$$run_log" "$$reset" >&2; \
 	    failed_phase=$$label; \
 	    failed_duration=$$duration; \
 	    return 1; \
@@ -220,25 +235,25 @@ provision-all: config-validate
 	trap on_interrupt INT TERM; \
 	log '================================================================================\n'; \
 	log 'rinstall :: provision-all\n\n'; \
-	log 'Environment ID:  %s\n' "$$INSTANCE_ID"; \
-	log 'Rancher:         %s\n' "$$RANCHER_URL"; \
-	log 'State:           %s\n' "$$STATE_ADDRESS"; \
-	log 'Config:          %s\n\n' "$(ENV_CONFIG)"; \
-	log 'Runtime dir:     %s\n' "$(BUILD_ENV_DIR)"; \
-	log 'Terraform:       %s\n' "$(TF_INFRA_DIR)"; \
-	log 'Log:             %s\n\n' "$$run_log"; \
-	log 'Engine version:   %s\n' "$$engine_revision"; \
-	log 'Engine worktree:  %s\n' "$$engine_worktree"; \
+	log 'Environment ID:       %s\n' "$$INSTANCE_ID"; \
+	log 'Rancher:              %s\n' "$$RANCHER_URL"; \
+	log 'State:                %s\n' "$$STATE_ADDRESS"; \
+	log 'Config:               %s\n\n' "$(ENV_CONFIG)"; \
+	log 'Runtime dir:          %s\n' "$(BUILD_ENV_DIR)"; \
+	log 'Terraform:            %s\n' "$(TF_INFRA_DIR)"; \
+	log 'Log:                  %s\n\n' "$$run_log"; \
+	log 'Engine version:       %s\n' "$$engine_revision"; \
+	log 'Engine worktree:      %s\n' "$$engine_worktree"; \
 	log 'Environment version:  %s\n' "$$environment_revision"; \
-	log 'Environment worktree:  %s\n' "$$environment_worktree"; \
-	if [[ -n "$${TF_VAR_vsphere_server:-}" ]]; then log 'vSphere server:   %s\n' "$$TF_VAR_vsphere_server"; else log 'vSphere server:   %s\n' '(from tfvars or unset)'; fi; \
-	if [[ -n "$${TF_VAR_vsphere_user:-}" ]]; then log 'vSphere user:     %s\n' "$$TF_VAR_vsphere_user"; else log 'vSphere user:     %s\n' '(from tfvars or unset)'; fi; \
-	log 'Mode:             %s\n' "$$mode"; \
+	log 'Environment worktree: %s\n' "$$environment_worktree"; \
+	if [[ -n "$${TF_VAR_vsphere_server:-}" ]]; then log 'vSphere server:       %s\n' "$$TF_VAR_vsphere_server"; else log 'vSphere server:       %s\n' '(from tfvars or unset)'; fi; \
+	if [[ -n "$${TF_VAR_vsphere_user:-}" ]]; then log 'vSphere user:         %s\n' "$$TF_VAR_vsphere_user"; else log 'vSphere user:         %s\n' '(from tfvars or unset)'; fi; \
+	log 'Mode:                 %s\n' "$$mode"; \
 	if [[ "$(DEPLOY_YES)" == "1" ]]; then \
-	  log 'Terraform apply:  %s\n' '$(TF_APPLY_ARGS)'; \
-	  log 'pyinfra:          %s\n' '$(PYINFRA_ARGS)'; \
+	  log 'Terraform apply:      %s\n' '$(TF_APPLY_ARGS)'; \
+	  log 'pyinfra:              %s\n' '$(PYINFRA_ARGS)'; \
 	fi; \
-	log 'Phases:\n'; \
+	log '\nPhases:\n'; \
 	log '  1. Terraform apply     (make -f rinstall/Makefile infra-apply)\n'; \
 	log '  2. Bastion configure   (make -f rinstall/Makefile bastion-configure)\n'; \
 	log '  3. Node prep           (make -f rinstall/Makefile node-prep)\n'; \
@@ -264,7 +279,7 @@ provision-all: config-validate
 	if ((status == 0)); then run_phase 'Rancher install' rancher-install 5 || status=1; fi; \
 	total_duration=$$((SECONDS - total_start)); \
 	log '\nDeployment summary for environment file=%s\n' "$(ENV_CONFIG)"; \
-	if ((status == 0)); then log 'Status: succeeded\n'; else log 'Status: failed\n'; fi; \
+	if ((status == 0)); then log 'Status: %ssucceeded%s\n' "$$green" "$$reset"; else log 'Status: %sfailed%s\n' "$$red" "$$reset"; fi; \
 	for index in "$${!completed_labels[@]}"; do \
 	  log '  %-20s %s\n' "$${completed_labels[$$index]}" "$$(format_duration "$${completed_durations[$$index]}")"; \
 	done; \
