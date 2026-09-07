@@ -33,7 +33,6 @@ def test_instance_fixture_ignores_runtime_files():
         "type": "gitlab",
         "url": "https://gitlab.example",
         "project_id": 1234,
-        "state": "infra",
     }
 
 
@@ -41,7 +40,6 @@ def test_makefile_derives_instance_paths(tmp_path):
     instance_root = tmp_path / "customer-a-prod-infra"
     instance_root.mkdir()
     config = yaml.safe_load(EXAMPLE_ENV.read_text())
-    del config["terraform"]["backend"]["state"]
     (instance_root / "config.yaml").write_text(yaml.safe_dump(config))
     (instance_root / "rinstall").symlink_to(ENGINE_ROOT, target_is_directory=True)
 
@@ -139,7 +137,6 @@ def test_backend_helper_failure_stops_terraform(tmp_path):
     instance_root = tmp_path / "customer-a-prod-infra"
     instance_root.mkdir()
     config = yaml.safe_load(EXAMPLE_ENV.read_text())
-    del config["terraform"]["backend"]["state"]
     (instance_root / "config.yaml").write_text(yaml.safe_dump(config))
     (instance_root / "rinstall").symlink_to(ENGINE_ROOT, target_is_directory=True)
     helper = tmp_path / "failing-backend-helper.py"
@@ -207,7 +204,6 @@ def test_instance_context_prints_resolved_identity_without_credentials(tmp_path)
             "type": "gitlab",
             "url": "https://gitlab.example",
             "project_id": 1234,
-            "state": "infra",
         }
     }
     config["rke2"]["token"] = "rke2-token-secret"
@@ -265,7 +261,6 @@ def test_operator_targets_include_instance_context_banner(tmp_path, target):
             "type": "gitlab",
             "url": "https://gitlab.example",
             "project_id": 1234,
-            "state": "infra",
         }
     }
     (instance_root / "config.yaml").write_text(yaml.safe_dump(config))
@@ -291,7 +286,6 @@ def test_provision_all_banner_is_complete_and_logged(tmp_path):
             "type": "gitlab",
             "url": "https://gitlab.example",
             "project_id": 1234,
-            "state": "infra",
         }
     }
     config["rke2"]["token"] = "rke2-token-secret"

@@ -38,12 +38,13 @@ make -f rinstall/Makefile provision-all
 Generated runtime files are kept under the ignored `.rinstall/` directory,
 including Terraform metadata in `.rinstall/terraform-data/`.
 
-Production `config.yaml` declares the GitLab state location:
+Production `config.yaml` declares the GitLab backend identity:
 
 Every `schema_version: 1` configuration must declare this GitLab backend
 identity. Only `type: gitlab` is supported. The backend URL, project ID, and
-state name belong in `config.yaml`; local Terraform state is not supported for
-provisioning. Rinstall uses Terraform's HTTP backend for GitLab state.
+The state name is derived automatically as `<environment.id>-infra`; local
+Terraform state is not supported for provisioning. Rinstall uses Terraform's
+HTTP backend for GitLab state.
 
 ```yaml
 schema_version: 1
@@ -54,7 +55,6 @@ terraform:
     type: gitlab
     url: https://gitlab.example
     project_id: 1234
-    state: infra
 ```
 
 Only credentials come from the runtime environment: `TF_HTTP_USERNAME` and
