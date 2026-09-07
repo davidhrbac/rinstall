@@ -22,7 +22,7 @@ def proxy_command_via(proxy_jump):
     return f"ssh -F ~/.ssh/config -J {','.join(hops[:-1])} -W %h:%p {hops[-1]}"
 
 
-def node_proxy_command(config, node_name, node):
+def node_proxy_command(config, node_name, node, known_hosts_file=None):
     ssh = config.get("ssh", {})
     jump_host = ssh.get("jump_host")
     if not jump_host:
@@ -38,17 +38,39 @@ def node_proxy_command(config, node_name, node):
     bastion_ssh_target = node_ssh_target(bastion_node)
     ssh_user = ssh.get("user", "root")
     ssh_key = os.path.expanduser(ssh.get("private_key", "~/.ssh/id_rsa"))
-    return f"ssh -F ~/.ssh/config -i {ssh_key} -l {ssh_user} -J {jump_alias} -W %h:%p {bastion_ssh_target}"
+    host_key_options = ""
+    if known_hosts_file:
+        host_key_options = (
+            f" -o UserKnownHostsFile={known_hosts_file}"
+            " -o GlobalKnownHostsFile=/dev/null"
+            " -o StrictHostKeyChecking=accept-new"
+        )
+    return f"ssh -F ~/.ssh/config{host_key_options} -i {ssh_key} -l {ssh_user} -J {jump_alias} -W %h:%p {bastion_ssh_target}"
 
 
-def render_ssh_config(config):
+def render_ssh_config(config, known_hosts_file=None):
     ssh = config.get("ssh", {})
     ssh_user = ssh.get("user", "root")
     ssh_key = os.path.expanduser(ssh.get("private_key", "~/.ssh/id_rsa"))
     jump_host = ssh.get("jump_host")
     jump_alias = None
     environment_id = config["environment"]["id"]
-    lines = ["Include ~/.ssh/config", ""]
+    default_runtime_dir = os.environ.get("RUNTIME_DIR") or Path("build") / environment_id
+    known_hosts_file = Path(known_hosts_file or Path(default_runtime_dir) / "known_hosts").resolve()
+    lines = []
+
+    for node_name, node in config["nodes"].items():
+        lines.extend(
+            [
+                f"Host {node_name} {node_name}.{environment_id} {node_ssh_target(node)}",
+                f"  UserKnownHostsFile {known_hosts_file}",
+                "  GlobalKnownHostsFile /dev/null",
+                "  StrictHostKeyChecking accept-new",
+                "",
+            ]
+        )
+
+    lines.extend(["Include ~/.ssh/config", ""])
 
     if jump_host:
         if isinstance(jump_host, str):
@@ -88,7 +110,7 @@ def render_ssh_config(config):
         )
 
     for node_name, node in config["nodes"].items():
-        proxy_command = node_proxy_command(config, node_name, node)
+        proxy_command = node_proxy_command(config, node_name, node, known_hosts_file)
 
         lines.extend(
             [
@@ -101,7 +123,6 @@ def render_ssh_config(config):
             ]
         )
 
-    lines.extend(["Host *", "  StrictHostKeyChecking accept-new"])
     return "\n".join(lines) + "\n"
 
 
@@ -134,7 +155,11 @@ def render_admin_ssh_config(config):
 def write_ssh_config(config, path):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(render_ssh_config(config))
+    path.parent.chmod(0o700)
+    known_hosts_file = (path.parent / "known_hosts").resolve()
+    known_hosts_file.touch(mode=0o600, exist_ok=True)
+    known_hosts_file.chmod(0o600)
+    path.write_text(render_ssh_config(config, known_hosts_file))
     return path
 
 

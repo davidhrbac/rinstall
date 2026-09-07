@@ -10,7 +10,7 @@ from lib.ssh_config import node_ssh_target as _node_ssh_target
 from lib.ssh_config import write_ssh_config as _write_ssh_config
 
 
-def _host_entry(node_name, node, config, ssh_config_file):
+def _host_entry(node_name, node, config, ssh_config_file, known_hosts_file):
     ssh = config.get("ssh", {})
     ssh_target = _node_ssh_target(node)
     address = ssh_target
@@ -20,6 +20,8 @@ def _host_entry(node_name, node, config, ssh_config_file):
         "ssh_hostname": ssh_target,
         "ssh_user": ssh.get("user", "root"),
         "ssh_key": _os.path.expanduser(ssh.get("private_key", "~/.ssh/id_rsa")),
+        "ssh_known_hosts_file": str(known_hosts_file),
+        "ssh_strict_host_key_checking": "accept-new",
         "env_config": config,
         "node_config": node,
     }
@@ -44,9 +46,11 @@ def _phase_hosts(phase, config):
 _env_config = _Path(_os.environ.get("ENV_CONFIG", "envs/example/env.yaml"))
 _phase = _os.environ.get("PHASE", "bastion")
 _config = _load_env(_env_config)
-_ssh_config_file = None
+_runtime_dir = _build_dir_for_env(_env_config)
+_ssh_config_file = _write_ssh_config(_config, _runtime_dir / "ssh_config")
+_known_hosts_file = (_runtime_dir / "known_hosts").resolve()
 
-if _config.get("ssh", {}).get("jump_host"):
-    _ssh_config_file = _write_ssh_config(_config, _build_dir_for_env(_env_config) / "ssh_config")
-
-all = [_host_entry(name, node, _config, _ssh_config_file) for name, node in _phase_hosts(_phase, _config).items()]
+all = [
+    _host_entry(name, node, _config, _ssh_config_file, _known_hosts_file)
+    for name, node in _phase_hosts(_phase, _config).items()
+]
