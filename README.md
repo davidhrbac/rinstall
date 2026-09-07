@@ -16,7 +16,7 @@ Rancher API resources, Fleet configuration, downstream cluster lifecycle, and Ra
 Terraform infra  -> vSphere VMs, NICs, static IPs where required, VM inventory outputs
 pyinfra          -> bastion dnsmasq/squid/routes and rancher node file prep
 RKE2 scripts     -> local RKE2 cluster bootstrap
-Helm scripts     -> cert-manager and Rancher install from bastion1
+Helm scripts     -> cert-manager and Rancher install from the configured bastion
 
 Hard boundary: a separate Rancher Environment repository manages Rancher upgrades,
 Fleet, imported downstream clusters, downstream lifecycle, and Kubernetes upgrades.
@@ -82,11 +82,11 @@ explicit GitLab-backed instance configuration and provide
 the same `make -f rinstall/Makefile infra-init`, `infra-plan`, `infra-apply`,
 and `provision-all` targets documented above.
 
-`make rancher-install` and `make rancher-bootstrap` automatically fetch `/etc/rancher/rke2/rke2.yaml` from the primary Rancher node, rewrite its Kubernetes API endpoint to the primary node IP, and upload the prepared kubeconfig to `bastion1:/root/rke2.yaml`. The helper target `make rke2-kubeconfig` is available for debugging that step directly.
+`make rancher-install` and `make rancher-bootstrap` automatically fetch `/etc/rancher/rke2/rke2.yaml` from the primary Rancher node, rewrite its Kubernetes API endpoint to the primary node IP, and upload the prepared kubeconfig to the configured bastion as `/root/rke2.yaml`. The helper target `make rke2-kubeconfig` is available for debugging that step directly.
 
 Rancher Helm install receives `proxy` and `noProxy` values derived from the bastion Squid service IP/port and the generated `proxy.no_proxy` list. `noProxy` includes private CIDRs, Kubernetes service DNS suffixes, the local VLAN CIDR, the Rancher URL, and any explicit `proxy.extra_no_proxy` values. This is separate from the host-level proxy files rendered during node prep.
 
-Prefer static addressing on the bastion management NIC. Set it as `cidr` on the management NIC and the env loader derives `nodes.bastion1.ssh_ip` from that address for generated SSH config.
+Prefer static addressing on the configured bastion management NIC. Set it as `cidr` on the management NIC and the env loader derives its `ssh_ip` from that address for generated SSH config.
 
 Terraform commands use local workstation credentials/environment and talk to vSphere/GitLab from there. pyinfra and Helm/Rancher installation steps can also run from the workstation; SSH routing is handled by generated OpenSSH config.
 
@@ -136,9 +136,9 @@ instances use the static HTTP backend in the pinned engine and settings from
 
 If local nodes require a separate SSH jump host, configure it in the environment
 config. pyinfra inventory will generate `build/<environment.id>/ssh_config` in
-standalone mode or `.rinstall/ssh_config` in an instance repository. `bastion1`
-goes through the first jump host; local-only nodes can go through the first jump
-host and then `bastion1`:
+standalone mode or `.rinstall/ssh_config` in an instance repository. The
+configured bastion goes through the first jump host; local-only nodes can go
+through the first jump host and then the configured bastion:
 
 ```yaml
 ssh:
@@ -154,8 +154,8 @@ The jump host alias should be defined in the operator's `~/.ssh/config`; `make s
 
 For administrator access from an existing admin jump host, run
 `make -f rinstall/Makefile admin-ssh-config` from an instance repository. It
-renders `.rinstall/<environment.id>.conf` with aliases such as
-`bastion1.<environment.id>` and `prom1.<environment.id>`. In standalone mode,
+renders `.rinstall/<environment.id>.conf` with aliases based on the configured
+node names. In standalone mode,
 pass `ENV=envs/example` and the output is under `build/<environment.id>/`.
 Configure that host once to include `~/.ssh/config.d/*.conf`, then upload the
 fragment explicitly:
@@ -166,9 +166,9 @@ make -f rinstall/Makefile install-admin-ssh-config
 
 The upload target uses `ssh.jump_host` unless `ADMIN_SSH_HOST=<SSH alias>` overrides it. It creates `/root/.ssh/config.d` and uploads the per-environment fragment with mode `0600`; it never modifies `/root/.ssh/config` or adds its `Include` directive.
 
-For bastion access through the management NIC, prefer static NIC addressing with `cidr`. The loader derives `nodes.bastion1.ssh_ip` from the management NIC IP; `bastion.service_ip` and local DNS/proxy services still use the customer-facing static IP from `host: 4`.
+For bastion access through the management NIC, prefer static NIC addressing with `cidr`. The loader derives the configured bastion's `ssh_ip` from the management NIC IP; `bastion.service_ip` and local DNS/proxy services still use the customer-facing static IP from its configured customer NIC.
 
-The pyinfra inventory is phase-aware. `PHASE=bastion`, `PHASE=rancher-install`, and `PHASE=rancher-bootstrap` connect only to bastion; RKE2 install phases connect only to the relevant Rancher nodes. The inventory uses the resolved `ssh_ip`/node IP as the connection target and keeps the operational node name in pyinfra host data. This allows bastion DNS/hosts/proxy setup to run before the rest of the local cluster is reachable through bastion. If `prom1` and Rancher nodes live only on the local/customer VLAN, include both `prometheus` and `rancher` in `ssh.bastion_proxy_roles`.
+The pyinfra inventory is phase-aware. `PHASE=bastion`, `PHASE=rancher-install`, and `PHASE=rancher-bootstrap` connect only to the configured bastion; RKE2 install phases connect only to the relevant Rancher nodes. The inventory uses the resolved `ssh_ip`/node IP as the connection target and keeps the operational node name in pyinfra host data. This allows bastion DNS/hosts/proxy setup to run before the rest of the local cluster is reachable through the bastion. If the Prometheus and Rancher nodes live only on the local/customer VLAN, include both `prometheus` and `rancher` in `ssh.bastion_proxy_roles`.
 
 ## Local Infra Addressing
 
@@ -210,9 +210,9 @@ vSphere clone customization applies static NIC addressing during VM clone/provis
 
 dnsmasq uses `no-dhcp-interface=<management-device>` and `bind-dynamic`, so it may provide DNS on the management NIC but never DHCP. The loader derives that device from `bastion.vsphere_route_connection`: it uses the connection directly when it is a device name, or the source device in `bastion.network_connection_names` when the route connection is a renamed NetworkManager profile.
 
-vSphere clone customization gives local nodes DNS servers derived from `local.vlan.dns_nodes`, normally `bastion1`. `nodes.bastion1.dns_servers` is required and supplies the separate management/vSphere DNS used by the bastion OS and Squid. Set `bastion.dnsmasq_upstream_servers` to the DNS resolvers that local clients may use through dnsmasq. dnsmasq renders `no-resolv` and explicit `server=` entries, so it never exposes the bastion's `/etc/resolv.conf` DNS to local clients.
+vSphere clone customization gives local nodes DNS servers derived from `local.vlan.dns_nodes`, normally the configured bastion. `nodes[bastion.service_node].dns_servers` is required and supplies the separate management/vSphere DNS used by the bastion OS and Squid. Set `bastion.dnsmasq_upstream_servers` to the DNS resolvers that local clients may use through dnsmasq. dnsmasq renders `no-resolv` and explicit `server=` entries, so it never exposes the bastion's `/etc/resolv.conf` DNS to local clients.
 
-vSphere VM object names are made globally unique by Terraform with a stable random suffix: `<node>-xxxxx-xxxxx`. The node key still stays the operational hostname, so guest hostnames, SSH aliases, DNS records, and pyinfra groups remain `bastion1`, `prom1`, `rancher1`, and so on. Terraform outputs include `vsphere_name` for mapping the operational node name to the actual vSphere object name.
+vSphere VM object names are made globally unique by Terraform with a stable random suffix: `<node>-xxxxx-xxxxx`. The node key still stays the operational hostname, so guest hostnames, SSH aliases, DNS records, and pyinfra groups retain the configured node names. Terraform outputs include `vsphere_name` for mapping the operational node name to the actual vSphere object name.
 
 Do not repeat the first octets of local IPs in every node. Define the local VLAN once, then use host offsets:
 
