@@ -3,7 +3,7 @@ from pathlib import Path
 import yaml
 
 from lib.env_config import expand_env, load_env
-from lib.ssh_config import render_admin_ssh_config, render_ssh_config
+from lib.ssh_config import render_admin_ssh_config, render_ssh_config, write_ssh_config
 
 
 EXAMPLE_ENV = Path(__file__).parents[1] / "envs/example/env.yaml"
@@ -14,17 +14,21 @@ def raw_example():
         return yaml.safe_load(stream)
 
 
-def test_generated_ssh_config_uses_environment_aliases_and_management_ip():
+def test_generated_ssh_config_uses_environment_aliases_and_management_ip(tmp_path):
     config = raw_example()
     config["nodes"]["bastion1"]["nics"][1]["cidr"] = "192.0.2.10/24"
     config = expand_env(config)
 
-    rendered = render_ssh_config(config)
+    known_hosts = tmp_path / "runtime" / "known_hosts"
+    rendered = render_ssh_config(config, known_hosts)
 
     assert "Host bastion1 bastion1.example 192.0.2.10" in rendered
     assert "  HostName 192.0.2.10" in rendered
     assert "Host rancher1 rancher1.example 10.14.17.11" in rendered
+    assert f"  UserKnownHostsFile {known_hosts}" in rendered
+    assert "  GlobalKnownHostsFile /dev/null" in rendered
     assert "  StrictHostKeyChecking accept-new" in rendered
+    assert "HostKeyAlias" not in rendered
 
 
 def test_admin_fragment_uses_bastion_proxy_for_local_nodes():
@@ -56,12 +60,29 @@ def test_ssh_config_uses_configured_bastion_service_node():
     assert "prom1" not in rendered
 
 
-def test_generated_ssh_config_routes_nodes_through_configured_jump_host():
+def test_generated_ssh_config_routes_nodes_through_configured_jump_host(tmp_path):
     config = load_env(EXAMPLE_ENV)
     config["ssh"]["jump_host"] = "admin-jump"
 
-    rendered = render_ssh_config(config)
+    known_hosts = tmp_path / "known_hosts"
+    rendered = render_ssh_config(config, known_hosts)
 
-    assert "ProxyCommand ssh -F ~/.ssh/config -W %h:%p admin-jump" in rendered
-    assert "ProxyCommand ssh -F ~/.ssh/config -i" in rendered
+    assert "  ProxyCommand ssh -F ~/.ssh/config -W %h:%p admin-jump\n" in rendered
+    assert f"ProxyCommand ssh -F ~/.ssh/config -o UserKnownHostsFile={known_hosts} -o GlobalKnownHostsFile=/dev/null -o StrictHostKeyChecking=accept-new -i" in rendered
     assert "-J admin-jump -W %h:%p 10.14.17.4" in rendered
+
+    assert "Host admin-jump" not in rendered
+    assert "UserKnownHostsFile" not in render_admin_ssh_config(config)
+
+
+def test_write_ssh_config_creates_private_runtime_known_hosts(tmp_path):
+    config = load_env(EXAMPLE_ENV)
+    runtime = tmp_path / ".rinstall"
+
+    output = write_ssh_config(config, runtime / "ssh_config")
+
+    known_hosts = runtime / "known_hosts"
+    assert output.exists()
+    assert known_hosts.exists()
+    assert known_hosts.stat().st_mode & 0o777 == 0o600
+    assert f"UserKnownHostsFile {known_hosts.resolve()}" in output.read_text()
