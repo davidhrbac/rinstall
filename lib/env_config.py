@@ -179,7 +179,7 @@ def expand_node_pools(env):
     if not rancher_pool:
         return
 
-    prefix = rancher_pool.get("name_prefix", "rancher")
+    prefix = require(rancher_pool, "name_prefix", "env.local.rancher_nodes")
     count = int(require(rancher_pool, "count", "env.local.rancher_nodes"))
     start_host = int(require(rancher_pool, "start_host", "env.local.rancher_nodes"))
     if count < 1:

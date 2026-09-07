@@ -89,6 +89,27 @@ def test_expands_rancher_pool_and_uses_first_node_as_primary():
     assert resolved["nodes"]["rancher2"]["rke2_server"] == "https://10.14.17.11:9345"
 
 
+def test_rejects_rancher_pool_without_name_prefix():
+    config = raw_example()
+    del config["local"]["rancher_nodes"]["name_prefix"]
+
+    with pytest.raises(SystemExit, match="missing env.local.rancher_nodes.name_prefix"):
+        expand_env(config)
+
+
+def test_expands_rancher_pool_with_configured_name_prefix():
+    config = raw_example()
+    config["local"]["rancher_nodes"]["name_prefix"] = "control"
+    resolved = expand_env(config)
+
+    assert [name for name in resolved["nodes"] if name.startswith("control")] == [
+        "control1",
+        "control2",
+        "control3",
+    ]
+    assert resolved["rke2"]["primary_node"] == "control1"
+
+
 def test_rejects_unknown_network_template_and_primary_node_role():
     unknown_network = raw_example()
     unknown_network["nodes"]["prom1"]["nics"][0]["network"] = "missing"
