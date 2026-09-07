@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 import os
 import subprocess
 import sys
@@ -12,6 +13,7 @@ from lib.env_config import expand_env, load_env
 EXAMPLE_ENV = Path(__file__).parents[1] / "envs/example/env.yaml"
 BACKEND_HELPER = EXAMPLE_ENV.parents[2] / "scripts/terraform-backend-env.py"
 VALIDATE_HELPER = EXAMPLE_ENV.parents[2] / "scripts/validate-config.py"
+TFVARS_HELPER = EXAMPLE_ENV.parents[2] / "scripts/render-infra-tfvars.py"
 
 
 def raw_example():
@@ -219,6 +221,34 @@ def test_config_error_has_no_color_when_no_color_is_set(tmp_path):
 
     assert result.returncode != 0
     assert "\033[" not in result.stderr
+
+
+def test_render_infra_tfvars_uses_default_clone_timeout(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(EXAMPLE_ENV.read_text())
+    output_path = tmp_path / "infra.tfvars.json"
+
+    subprocess.run(
+        [sys.executable, str(TFVARS_HELPER), "--env", str(config_path), "--out", str(output_path)],
+        check=True,
+    )
+
+    assert json.loads(output_path.read_text())["clone_timeout"] == 60
+
+
+def test_render_infra_tfvars_uses_configured_clone_timeout(tmp_path):
+    config = raw_example()
+    config["infra"]["vsphere"]["clone_timeout"] = 90
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(yaml.safe_dump(config))
+    output_path = tmp_path / "infra.tfvars.json"
+
+    subprocess.run(
+        [sys.executable, str(TFVARS_HELPER), "--env", str(config_path), "--out", str(output_path)],
+        check=True,
+    )
+
+    assert json.loads(output_path.read_text())["clone_timeout"] == 90
 
 
 @pytest.mark.parametrize("url", ["http://gitlab.example", "https://gitlab.example/"])

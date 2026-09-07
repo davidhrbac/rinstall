@@ -187,6 +187,10 @@ The example defines three Rancher nodes through `local.rancher_nodes`; increase 
 
 `bastion1` has a static IP on its primary/customer NIC and should use a static IP on the secondary management NIC for SSH. `prom1` and Rancher nodes also use static customer VLAN IPs. Terraform sets static IPs with vSphere clone customization, not cloud-init. DNS records are generated into dnsmasq from the same inventory; DHCP does not need to learn fixed Rancher nodes from leases.
 
+Set `infra.vsphere.clone_timeout` to control the vSphere VM clone timeout in
+minutes. It defaults to `60` and is passed to Terraform's `clone.timeout`; it
+does not change the provider API timeout.
+
 For static management addresses outside the local VLAN, use `cidr` directly on the NIC:
 
 ```yaml
