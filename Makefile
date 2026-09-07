@@ -21,6 +21,7 @@ TF_BACKEND_ENV = $(shell $(PYTHON) $(ENGINE_ROOT)/scripts/terraform-backend-env.
 TF_INIT_ARGS ?=
 TF_APPLY_ARGS ?=
 PYINFRA_ARGS ?=
+PROVISION_PHASE ?= 0
 ADMIN_SSH_HOST ?=
 ADMIN_SSH_CONFIG = $(BUILD_ENV_DIR)/$(ENV_ID).conf
 
@@ -91,10 +92,10 @@ infra-fmt:
 infra-validate: infra-init
 	$(TF_BACKEND_ENV) TF_DATA_DIR=$(TF_DATA_DIR) $(TERRAFORM) -chdir=$(TF_INFRA_DIR) validate
 
-infra-plan: instance-context infra-init render-infra-vars
+infra-plan: $(if $(filter 1,$(PROVISION_PHASE)),,instance-context) infra-init render-infra-vars
 	$(TF_BACKEND_ENV) TF_DATA_DIR=$(TF_DATA_DIR) $(TERRAFORM) -chdir=$(TF_INFRA_DIR) plan -var-file=$(INFRA_TFVARS)
 
-infra-apply: instance-context infra-init render-infra-vars
+infra-apply: $(if $(filter 1,$(PROVISION_PHASE)),,instance-context) infra-init render-infra-vars
 	$(TF_BACKEND_ENV) TF_DATA_DIR=$(TF_DATA_DIR) $(TERRAFORM) -chdir=$(TF_INFRA_DIR) apply $(TF_APPLY_ARGS) -var-file=$(INFRA_TFVARS)
 
 infra-output: infra-init
@@ -192,7 +193,7 @@ provision-all: config-validate
 	  local phase_start=$$SECONDS; \
 	  local phase_number=$$3; \
 	  local command_line; \
-  local command=("$(MAKE)" "-f" "$(ENGINE_ROOT)/Makefile" "$$target" "ENGINE_ROOT=$(ENGINE_ROOT)" "ENV=$(ENV)" "ENV_FILE=$(ENV_FILE)" "ENV_CONFIG=$(ENV_CONFIG)" "RUNTIME_DIR=$(RUNTIME_DIR)" "TF_DATA_DIR=$(TF_DATA_DIR)" "PYTHON=$(PYTHON)" "PYINFRA=$(PYINFRA)" "PYINFRA_PROGRESS=$(PYINFRA_PROGRESS)" "PYINFRA_ARGS=$(PYINFRA_ARGS)" "TERRAFORM=$(TERRAFORM)" "TF_INIT_ARGS=$(TF_INIT_ARGS)" "TF_APPLY_ARGS=$(TF_APPLY_ARGS)"); \
+	  local command=("$(MAKE)" "-f" "$(ENGINE_ROOT)/Makefile" "$$target" "ENGINE_ROOT=$(ENGINE_ROOT)" "ENV=$(ENV)" "ENV_FILE=$(ENV_FILE)" "ENV_CONFIG=$(ENV_CONFIG)" "RUNTIME_DIR=$(RUNTIME_DIR)" "TF_DATA_DIR=$(TF_DATA_DIR)" "PYTHON=$(PYTHON)" "PYINFRA=$(PYINFRA)" "PYINFRA_PROGRESS=$(PYINFRA_PROGRESS)" "PYINFRA_ARGS=$(PYINFRA_ARGS)" "TERRAFORM=$(TERRAFORM)" "TF_INIT_ARGS=$(TF_INIT_ARGS)" "TF_APPLY_ARGS=$(TF_APPLY_ARGS)" "PROVISION_PHASE=1"); \
 	  log '\n[%s/5] %s started\n' "$$phase_number" "$$label"; \
 	  printf -v command_line '%q ' "$${command[@]}"; \
 	  if script -q -e -f -a -c "$$command_line" "$$run_log"; then \
@@ -245,10 +246,10 @@ provision-all: config-validate
 	if [[ -n "$${TF_VAR_vsphere_user:-}" ]]; then log 'vSphere user:         %s\n' "$$TF_VAR_vsphere_user"; else log 'vSphere user:         %s\n' '(from tfvars or unset)'; fi; \
 	log 'Mode:                 %s\n' "$$mode"; \
 	if [[ "$(DEPLOY_YES)" == "1" ]]; then \
-	  log 'Terraform apply:  %s\n' '$(TF_APPLY_ARGS)'; \
-	  log 'pyinfra:          %s\n' '$(PYINFRA_ARGS)'; \
+	  log 'Terraform apply:      %s\n' '$(TF_APPLY_ARGS)'; \
+	  log 'pyinfra:              %s\n' '$(PYINFRA_ARGS)'; \
 	fi; \
-	log 'Phases:\n'; \
+	log '\nPhases:\n'; \
 	log '  1. Terraform apply     (make -f rinstall/Makefile infra-apply)\n'; \
 	log '  2. Bastion configure   (make -f rinstall/Makefile bastion-configure)\n'; \
 	log '  3. Node prep           (make -f rinstall/Makefile node-prep)\n'; \
