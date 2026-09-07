@@ -94,6 +94,10 @@ def validate_env_references(env):
     backend_type = require(backend, "type", "env.terraform.backend")
     if backend_type != "gitlab":
         raise SystemExit("env.terraform.backend.type must be 'gitlab'")
+    if "state" in backend:
+        raise SystemExit(
+            "env.terraform.backend.state is no longer supported; state is derived from env.environment.id"
+        )
     url = require(backend, "url", "env.terraform.backend")
     parsed_url = urlparse(str(url))
     if (

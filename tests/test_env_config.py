@@ -191,6 +191,17 @@ def test_rejects_missing_required_gitlab_backend_configuration(missing):
         expand_env(config)
 
 
+def test_rejects_configured_gitlab_backend_state_name():
+    config = raw_example()
+    config["terraform"]["backend"]["state"] = "manually-configured"
+
+    with pytest.raises(
+        SystemExit,
+        match="env.terraform.backend.state is no longer supported; state is derived from env.environment.id",
+    ):
+        expand_env(config)
+
+
 def test_config_error_is_red_by_default(tmp_path):
     config = raw_example()
     del config["terraform"]

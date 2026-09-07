@@ -40,7 +40,9 @@ def test_instance_fixture_ignores_runtime_files():
 def test_makefile_derives_instance_paths(tmp_path):
     instance_root = tmp_path / "customer-a-prod-infra"
     instance_root.mkdir()
-    shutil.copy(EXAMPLE_ENV, instance_root / "config.yaml")
+    config = yaml.safe_load(EXAMPLE_ENV.read_text())
+    del config["terraform"]["backend"]["state"]
+    (instance_root / "config.yaml").write_text(yaml.safe_dump(config))
     (instance_root / "rinstall").symlink_to(ENGINE_ROOT, target_is_directory=True)
 
     result = subprocess.run(
@@ -136,10 +138,16 @@ def test_invalid_instance_config_fails_before_verify_work(tmp_path):
 def test_backend_helper_failure_stops_terraform(tmp_path):
     instance_root = tmp_path / "customer-a-prod-infra"
     instance_root.mkdir()
-    shutil.copy(EXAMPLE_ENV, instance_root / "config.yaml")
+    config = yaml.safe_load(EXAMPLE_ENV.read_text())
+    del config["terraform"]["backend"]["state"]
+    (instance_root / "config.yaml").write_text(yaml.safe_dump(config))
     (instance_root / "rinstall").symlink_to(ENGINE_ROOT, target_is_directory=True)
     helper = tmp_path / "failing-backend-helper.py"
-    helper.write_text("import sys\nprint('backend helper failed', file=sys.stderr)\nsys.exit(7)\n")
+    helper.write_text(
+        "import sys\n"
+        "print('backend helper failed', file=sys.stderr)\n"
+        "sys.exit(7)\n"
+    )
     terraform = tmp_path / "terraform"
     terraform.write_text("#!/bin/sh\nprintf 'terraform ran\\n' >> \"$TERRAFORM_MARKER\"\n")
     terraform.chmod(0o700)
