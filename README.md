@@ -113,22 +113,18 @@ The helper prints the explicit Terraform commands to run, for example:
 
 ```bash
 terraform -chdir=rinstall/terraform/infra plan -destroy -var-file=.rinstall/infra.tfvars.json
-terraform -chdir=rinstall/terraform/infra destroy -var-file=.rinstall/infra.tfvars.json
+terraform -chdir=rinstall/terraform/infra destroy -var-file=.rinstall/infra.tfvars.json && make -f rinstall/Makefile ssh-hostkeys-reset
 ```
 
 Always confirm the instance repository, Terraform backend/state, and destroy plan before approving. There is intentionally no `make infra-destroy` or `make destroy-all` shortcut, because destroy is destructive and should stay explicit. Terraform destroy only removes resources tracked by the Terraform infra state; it does not clean Rancher API resources, downstream clusters, external DNS/LB records, DHCP reservations, or local generated files under `.rinstall/`.
 
 `make -f rinstall/Makefile destroy-commands` prints a header with the selected instance config, runtime directory, Terraform directory, tfvars path, vSphere server/user when available from environment variables, backend/init settings, and then the explicit review/destroy commands. It never prints the vSphere password.
 
-After a successful full infrastructure destroy, remove the obsolete VM host
-keys for that instance with:
-
-```bash
-make -f rinstall/Makefile ssh-hostkeys-reset
-```
-
-This removes only `.rinstall/known_hosts`; it does not change the operator's
-`~/.ssh/known_hosts` and is not run automatically by the destroy workflow.
+The generated full destroy command clears the instance-local
+`.rinstall/known_hosts` automatically after Terraform destroy succeeds. If
+Terraform destroy fails, the `&&` prevents the reset and preserves the
+instance-local SSH trust. Neither the automatic reset nor the standalone reset
+commands modify the operator's `~/.ssh/known_hosts`.
 
 Keep vCenter connection details out of `env.yaml` unless there is a specific reason to pin them there. Terraform accepts them through environment variables, which can be loaded by `direnv` from an ignored `.envrc`:
 
@@ -180,6 +176,16 @@ The command validates the node against the expanded environment config and
 does not modify `~/.ssh/known_hosts`. The generated administrator SSH fragment
 and admin-host-to-VM host-key lifecycle remain unchanged and are outside this
 instance-local workstation trust handling.
+
+For explicit manual recovery or a reset outside the full destroy workflow,
+remove all instance-local host keys with:
+
+```bash
+make -f rinstall/Makefile ssh-hostkeys-reset
+```
+
+This removes only `.rinstall/known_hosts` and never modifies
+`~/.ssh/known_hosts`.
 
 For administrator access from an existing admin jump host, run
 `make -f rinstall/Makefile admin-ssh-config` from an instance repository. It
