@@ -299,5 +299,4 @@ verify: config-validate
 	RUNTIME_DIR=$(RUNTIME_DIR) $(PYTHON) $(ENGINE_ROOT)/scripts/render-ssh-config.py --env $(ENV_CONFIG) --out $(BUILD_ENV_DIR)/ssh_config
 	RUNTIME_DIR=$(RUNTIME_DIR) $(PYTHON) $(ENGINE_ROOT)/scripts/render-admin-ssh-config.py --env $(ENV_CONFIG) --out $(ADMIN_SSH_CONFIG)
 	TF_DATA_DIR=$(TF_DATA_DIR) $(TERRAFORM) -chdir=$(TF_INFRA_DIR) fmt -check -recursive -diff
-	TF_DATA_DIR=$(TF_DATA_DIR) $(TERRAFORM) -chdir=$(TF_INFRA_DIR) init -backend=false -lockfile=readonly
-	TF_DATA_DIR=$(TF_DATA_DIR) $(TERRAFORM) -chdir=$(TF_INFRA_DIR) validate
+	@set -euo pipefail; verify_tf_data_dir="$$(mktemp -d)"; trap 'rm -rf "$$verify_tf_data_dir"' EXIT; TF_DATA_DIR="$$verify_tf_data_dir" $(TERRAFORM) -chdir=$(TF_INFRA_DIR) init -backend=false -lockfile=readonly; TF_DATA_DIR="$$verify_tf_data_dir" $(TERRAFORM) -chdir=$(TF_INFRA_DIR) validate

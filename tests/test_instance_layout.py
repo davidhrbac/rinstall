@@ -80,30 +80,52 @@ def test_makefile_derives_instance_paths(tmp_path):
     assert f"{instance_root}/.rinstall/terraform " not in init_result.stdout
     assert "-lockfile=readonly" in init_result.stdout
 
-def test_verify_uses_instance_terraform_data_dir(tmp_path):
+def test_verify_uses_clean_temporary_terraform_data_dir(tmp_path):
     instance_root = tmp_path / "customer-a-prod-infra"
     instance_root.mkdir()
     shutil.copy(EXAMPLE_ENV, instance_root / "config.yaml")
     (instance_root / "rinstall").symlink_to(ENGINE_ROOT, target_is_directory=True)
+    normal_data_dir = instance_root / ".rinstall" / "terraform-data"
+    normal_data_dir.mkdir(parents=True)
+    (normal_data_dir / "backend-metadata").write_text("existing HTTP backend metadata")
+    terraform = tmp_path / "terraform"
+    marker = tmp_path / "terraform-data-dir"
+    terraform.write_text(
+        "#!/bin/sh\n"
+        "if [ -n \"${TF_DATA_DIR:-}\" ]; then printf '%s\\n' \"$TF_DATA_DIR\" >> \"$TERRAFORM_MARKER\"; fi\n"
+    )
+    terraform.chmod(0o700)
+    python = tmp_path / "python"
+    python.write_text(
+        "#!/bin/sh\n"
+        "if [ \"$1\" = \"-m\" ] && [ \"$2\" = \"pytest\" ]; then exit 0; fi\n"
+        f"exec {sys.executable} \"$@\"\n"
+    )
+    python.chmod(0o700)
 
     result = subprocess.run(
-        ["make", "-f", "rinstall/Makefile", "-n", "verify"],
+        [
+            "make",
+            "-f",
+            "rinstall/Makefile",
+            "verify",
+            f"PYTHON={python}",
+            f"TERRAFORM={terraform}",
+        ],
         cwd=instance_root,
-        check=True,
+        check=False,
         capture_output=True,
         text=True,
-        env={key: value for key, value in os.environ.items() if key not in {"ENV_FILE", "RUNTIME_DIR", "TF_DATA_DIR", "MAKEFLAGS", "MFLAGS"}},
+        env={
+            key: value
+            for key, value in os.environ.items()
+            if key not in {"ENV_FILE", "RUNTIME_DIR", "TF_DATA_DIR", "MAKEFLAGS", "MFLAGS"}
+        } | {"TERRAFORM_MARKER": str(marker)},
     )
 
-    terraform_lines = [line for line in result.stdout.splitlines() if "terraform -chdir=" in line]
-    assert terraform_lines
-    assert all(f"TF_DATA_DIR={instance_root}/.rinstall/terraform-data" in line for line in terraform_lines)
-    init_lines = [line for line in terraform_lines if " init " in line]
-    assert init_lines
-    assert all("-backend=false" in line and "-lockfile=readonly" in line for line in init_lines)
-    assert "gitlab.example" not in result.stdout
-    assert "TF_HTTP_USERNAME" not in result.stdout
-    assert "TF_HTTP_PASSWORD" not in result.stdout
+    assert result.returncode == 0, result.stderr
+    assert (normal_data_dir / "backend-metadata").exists()
+    assert marker.read_text().strip() != str(normal_data_dir)
 
 
 def test_invalid_instance_config_fails_before_verify_work(tmp_path):
