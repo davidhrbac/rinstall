@@ -11,6 +11,7 @@ from lib.env_config import expand_env, load_env
 
 EXAMPLE_ENV = Path(__file__).parents[1] / "envs/example/env.yaml"
 BACKEND_HELPER = EXAMPLE_ENV.parents[2] / "scripts/terraform-backend-env.py"
+VALIDATE_HELPER = EXAMPLE_ENV.parents[2] / "scripts/validate-config.py"
 
 
 def raw_example():
@@ -172,6 +173,52 @@ def test_validates_gitlab_backend_without_credentials():
     config = raw_example()
     config["terraform"] = {"backend": {"type": "gitlab", "url": "https://gitlab.example", "project_id": 1234, "state": "infra"}}
     assert expand_env(config)["terraform"]["backend"]["project_id"] == 1234
+
+
+@pytest.mark.parametrize("missing", ["terraform", "backend", "type", "url", "project_id", "state"])
+def test_rejects_missing_required_gitlab_backend_configuration(missing):
+    config = raw_example()
+    config["terraform"] = {"backend": {"type": "gitlab", "url": "https://gitlab.example", "project_id": 1234, "state": "infra"}}
+    if missing == "terraform":
+        del config["terraform"]
+    elif missing == "backend":
+        del config["terraform"]["backend"]
+    else:
+        del config["terraform"]["backend"][missing]
+    with pytest.raises(SystemExit):
+        expand_env(config)
+
+
+def test_config_error_is_red_by_default(tmp_path):
+    config = raw_example()
+    del config["terraform"]
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(yaml.safe_dump(config))
+    result = subprocess.run(
+        [sys.executable, str(VALIDATE_HELPER), "--env", str(config_path)],
+        capture_output=True,
+        text=True,
+        env={key: value for key, value in os.environ.items() if key != "NO_COLOR"},
+    )
+
+    assert result.returncode != 0
+    assert "\033[31mERROR:\033[0m" in result.stderr
+
+
+def test_config_error_has_no_color_when_no_color_is_set(tmp_path):
+    config = raw_example()
+    del config["terraform"]
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(yaml.safe_dump(config))
+    result = subprocess.run(
+        [sys.executable, str(VALIDATE_HELPER), "--env", str(config_path)],
+        capture_output=True,
+        text=True,
+        env={**os.environ, "NO_COLOR": ""},
+    )
+
+    assert result.returncode != 0
+    assert "\033[" not in result.stderr
 
 
 @pytest.mark.parametrize("url", ["http://gitlab.example", "https://gitlab.example/"])

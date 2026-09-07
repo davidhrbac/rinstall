@@ -11,9 +11,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--env", required=True)
     args = parser.parse_args()
-    backend = load_env(args.env).get("terraform", {}).get("backend", {})
-    if not backend:
-        return
+    backend = load_env(args.env)["terraform"]["backend"]
     address = gitlab_backend_state_address(backend)
     values = {
         "TF_HTTP_ADDRESS": address,

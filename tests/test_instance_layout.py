@@ -11,6 +11,8 @@ import yaml
 ENGINE_ROOT = Path(__file__).parents[1]
 EXAMPLE_ENV = ENGINE_ROOT / "envs/example/env.yaml"
 INSTANCE_FIXTURE = ENGINE_ROOT / "examples/instance-repository"
+CONTEXT_HELPER = ENGINE_ROOT / "scripts/print-instance-context.py"
+BACKEND_HELPER = ENGINE_ROOT / "scripts/terraform-backend-env.py"
 SECRET_VALUES = [
     "TF_HTTP_USERNAME",
     "TF_HTTP_PASSWORD",
@@ -26,6 +28,13 @@ def test_instance_fixture_ignores_runtime_files():
     assert ".rinstall/" in (INSTANCE_FIXTURE / ".gitignore").read_text().splitlines()
     assert (INSTANCE_FIXTURE / ".gitmodules").exists()
     assert (INSTANCE_FIXTURE / "config.yaml").exists()
+    backend = yaml.safe_load((INSTANCE_FIXTURE / "config.yaml").read_text())["terraform"]["backend"]
+    assert backend == {
+        "type": "gitlab",
+        "url": "https://gitlab.example",
+        "project_id": 1234,
+        "state": "infra",
+    }
 
 
 def test_makefile_derives_instance_paths(tmp_path):
@@ -92,6 +101,36 @@ def test_verify_uses_instance_terraform_data_dir(tmp_path):
     init_lines = [line for line in terraform_lines if " init " in line]
     assert init_lines
     assert all("-backend=false" in line and "-lockfile=readonly" in line for line in init_lines)
+    assert "gitlab.example" not in result.stdout
+    assert "TF_HTTP_USERNAME" not in result.stdout
+    assert "TF_HTTP_PASSWORD" not in result.stdout
+
+
+def test_invalid_instance_config_fails_before_verify_work(tmp_path):
+    instance_root = tmp_path / "customer-a-prod-infra"
+    instance_root.mkdir()
+    config = yaml.safe_load(EXAMPLE_ENV.read_text())
+    del config["terraform"]
+    (instance_root / "config.yaml").write_text(yaml.safe_dump(config))
+    (instance_root / "rinstall").symlink_to(ENGINE_ROOT, target_is_directory=True)
+
+    result = subprocess.run(
+        ["make", "-f", "rinstall/Makefile", "verify", f"PYTHON={sys.executable}"],
+        cwd=instance_root,
+        capture_output=True,
+        text=True,
+    )
+
+    combined_output = result.stdout + result.stderr
+    assert result.returncode != 0
+    assert "invalid configuration" in result.stderr
+    assert combined_output.count("invalid configuration") == 1
+    assert "Missing required field:\n  terraform" in combined_output
+    assert f"Config:\n  {instance_root / 'config.yaml'}" in combined_output
+    assert " -m pytest" not in combined_output
+    assert " -m py_compile" not in combined_output
+    assert "render-infra-tfvars.py" not in combined_output
+    assert "terraform -chdir=" not in combined_output
 
 
 def test_fresh_instance_infra_plan_initializes_and_renders_vars(tmp_path):
@@ -156,6 +195,23 @@ def test_instance_context_prints_resolved_identity_without_credentials(tmp_path)
     assert f"Config:  {instance_root / 'config.yaml'}" in result.stdout
     assert all(secret not in result.stdout for secret in SECRET_VALUES)
     assert "vsphere-password-secret" not in result.stdout
+
+
+@pytest.mark.parametrize("helper", [CONTEXT_HELPER, BACKEND_HELPER])
+def test_backend_helpers_reject_missing_backend(tmp_path, helper):
+    config = yaml.safe_load(EXAMPLE_ENV.read_text())
+    del config["terraform"]
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(yaml.safe_dump(config))
+
+    result = subprocess.run(
+        [sys.executable, str(helper), "--env", str(config_path)],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    assert "not configured" not in result.stdout
 
 
 @pytest.mark.parametrize("target", ["infra-plan", "infra-apply", "destroy-commands"])
