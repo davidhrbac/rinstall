@@ -4,15 +4,17 @@
 - This repo is a Day-0/DR bootstrap engine only: vSphere infrastructure, bastion, RKE2, and initial Rancher installation.
 - Do not add Rancher API resources, Fleet configuration, downstream cluster lifecycle, or Rancher/Kubernetes upgrades here; manage them outside rinstall in the separate per-environment Rancher Terraform project.
 - Production configuration lives in a separate instance repository. Each instance repository contains `config.yaml` and a pinned `rinstall` Git submodule.
-- The pinned `rinstall` submodule is the Terraform engine and root: Terraform runs directly from `rinstall/terraform/infra` on the operator workstation, not from `bastion1`; pyinfra/Helm steps run against provisioned hosts over SSH after infra exists.
+- The pinned `rinstall` submodule is the Terraform engine and root: Terraform runs directly from `rinstall/terraform/infra` on the operator workstation, not from the configured bastion; pyinfra/Helm steps run against provisioned hosts over SSH after infra exists.
 - `.rinstall/` contains only per-instance runtime and generated data, including `infra.tfvars.json`, SSH artifacts, kubeconfigs, logs, and Terraform's `TF_DATA_DIR` under `.rinstall/terraform-data`.
 - `envs/example` is only a development/test/rendering fixture; it is not a standalone production provisioning environment. Keep real customer/internal hostnames, IPs, and SSH topology names in the separate instance repository.
+- Names such as `bastion1`, `prom1`, and `rancher1` are example topology names only; never hardcode them in runtime code or general operational instructions. Use `bastion.service_node`, node roles, and configured node names.
+- Schema v1 supports exactly one bastion node; multi-bastion/HA bastion support is deferred. `bastion.service_node` identifies that node.
 - Prefer `ssh.jump_host: <existing SSH config alias>` in instance configs; keep upstream SSH details in the operator's `~/.ssh/config`, not in this repo.
 - Use `make ssh-config ENV=<env>` to generate `build/<environment.id>/ssh_config` without running pyinfra.
 - Use `make admin-ssh-config ENV=<env>` to generate `build/<environment.id>/<environment.id>.conf` for an admin jump host. `make install-admin-ssh-config ENV=<env>` may upload that fragment to `/root/.ssh/config.d/` through `ssh.jump_host`, but must never modify `/root/.ssh/config` or add its `Include` directive.
-- Prefer static addressing on `bastion1` management NIC using `nics[].cidr`; `lib/env_config.py` derives `nodes.bastion1.ssh_ip` from that management NIC IP for generated SSH config.
+- Prefer static addressing on the configured bastion's management NIC using `nics[].cidr`; `lib/env_config.py` derives its `ssh_ip` from that management NIC IP for generated SSH config.
 - Static `nics[].cidr` values are vSphere clone customization inputs; changing them after VM creation may not reconfigure guest networking. Recreate the VM or adjust NetworkManager in-guest, then test on fresh redeploy.
-- If `ssh.jump_host` is set, generated SSH config includes `~/.ssh/config`; target host entries use `ProxyCommand` for pyinfra compatibility. `bastion1` proxies through `<jump_host>`, and local-only nodes proxy through `<jump_host>` then bastion when their roles are listed in `bastion_proxy_roles`, typically `prometheus` and `rancher`.
+- If `ssh.jump_host` is set, generated SSH config includes `~/.ssh/config`; target host entries use `ProxyCommand` for pyinfra compatibility. The configured bastion proxies through `<jump_host>`, and local-only nodes proxy through `<jump_host>` then bastion when their roles are listed in `bastion_proxy_roles`, typically `prometheus` and `rancher`.
 - pyinfra inventory is phase-aware: bastion/Rancher Helm/bootstrap phases connect only to bastion, RKE2 phases only to relevant Rancher nodes, and node-prep to all local nodes. Inventory connection targets use resolved `ssh_ip`/node IP while operational node names stay in host data.
 - In production, instance `config.yaml` is the configuration source of truth; generated `infra.tfvars.json` and other runtime artifacts should not be edited.
 - Environment configs require immutable `environment.id`, `schema_version: 1`, and a complete GitLab backend identity under `terraform.backend`; do not infer stable identity only from `$(notdir $(ENV))`. `environment.id` is the canonical environment suffix: derive shell prompt suffixes, administrator SSH aliases, generated artifact paths, and per-environment SSH fragment names from it rather than configuring each independently.
@@ -41,29 +43,29 @@
 ## Rancher Environment Workflow
 
 - Inputs normally known before provisioning: customer VLAN, datastore, resource pool, VM folder, Rancher URL, bastion/prom template, and local Rancher/RKE2 VM template.
-- Local cluster VLAN is usually `/28`: `.1` gateway, `.4` `bastion1`, `.5` reserved, `.6` `prom1`, `.11` `rancher1`, `.12` `rancher2`, `.13` `rancher3`.
-- Use VM template 1 for `bastion1` and `prom1`; use VM template 2 for local Rancher/RKE2 VMs and downstream cluster VMs.
+- The sanitized example local cluster VLAN is usually `/28`: `.1` gateway, `.4` `bastion1`, `.5` reserved, `.6` `prom1`, `.11` `rancher1`, `.12` `rancher2`, `.13` `rancher3`.
+- In the sanitized example, use VM template 1 for `bastion1` and `prom1`; use VM template 2 for local Rancher/RKE2 VMs and downstream cluster VMs.
 - vSphere VM object names must be unique; Terraform appends a stable random suffix as `<node>-xxxxx-xxxxx`, while guest hostname/DNS/SSH aliases stay as the unsuffixed node key.
-- `bastion1` primary interface is on the customer VLAN and has a static IP; secondary interface is on the management VLAN and gets DHCP.
-- `nodes.bastion1.dns_servers` is required management/vSphere DNS for bastion OS, Squid, and clone customization. Local nodes default to `local.vlan.dns_nodes`, normally bastion; `bastion.dnsmasq_upstream_servers` is a separate required list rendered as dnsmasq `server=` entries with `no-resolv`, so local clients do not inherit bastion management DNS.
-- Set static IPs for `bastion1`, `prom1`, and Rancher nodes with Terraform/vSphere clone customization; do not require DHCP or cloud-init for these fixed local customer-VLAN addresses.
-- Keep bastion customer-facing `service_ip` explicit because `dnsmasq` and `squid` should use it, not the dynamic management address.
-- `bastion1` runs `dnsmasq` for DHCP/DNS and `squid` so Rancher/local nodes can reach vSphere.
+- The configured bastion's primary interface is on the customer VLAN and has a static IP; its secondary interface is on the management VLAN and gets DHCP.
+- `nodes[bastion.service_node].dns_servers` is required management/vSphere DNS for bastion OS, Squid, and clone customization. Local nodes default to `local.vlan.dns_nodes`, normally the configured bastion; `bastion.dnsmasq_upstream_servers` is a separate required list rendered as dnsmasq `server=` entries with `no-resolv`, so local clients do not inherit bastion management DNS.
+- Set static IPs for the configured bastion, Prometheus node, and Rancher nodes with Terraform/vSphere clone customization; do not require DHCP or cloud-init for these fixed local customer-VLAN addresses.
+- `bastion.service_ip` defaults to the configured bastion's primary/customer IP; set it explicitly only when a different service address is needed so `dnsmasq` and `squid` do not use the dynamic management address.
+- The configured bastion runs `dnsmasq` for DHCP/DNS and `squid` so Rancher/local nodes can reach vSphere.
 - Optionally use `bastion.network_connection_names` to rename NetworkManager profiles on bastion, for example `ens192: local` and `ens224: mgmt`; downstream VLAN profiles can stay named `vlanXXX`.
 - Add the vSphere route on bastion from `bastion.vsphere_route` using `bastion.vsphere_route_connection`; this may be a NetworkManager connection profile name or device name. Keep real route values in instance config, not committed examples.
 - dnsmasq derives the known management device from `bastion.vsphere_route_connection`: use the direct device name or resolve the source device through `bastion.network_connection_names` when the route connection is a renamed NetworkManager profile. It renders `bind-dynamic` and `no-dhcp-interface=<management_device>` so management remains DNS-only.
 - DHCP reservations are needed for fixed local nodes only if choosing DHCP over Terraform static customization; account for the MAC-address chicken/egg when designing provisioning.
-- After `bastion1`, `prom1`, and Rancher nodes exist, run `make node-prep` before RKE2.
+- After the configured bastion, Prometheus node, and Rancher nodes exist, run `make node-prep` before RKE2.
 - `make node-prep` sets local node hostnames to `<node>.<rancher_url>` with `hostnamectl` and renders `/etc/profile.d/prompt.sh`; prompt colors come from `env.yaml` `prompt` and its suffix is `environment.id`.
 - `make node-prep` copies `files/rke2-canal.conf` to `/etc/NetworkManager/conf.d/`, renders `/etc/default/rke2-server`, `/etc/profile.d/proxy.sh`, and `/etc/rancher/rke2/config.yaml`.
 - `make node-prep` renders `/etc/profile.d/rke2.sh` on Rancher nodes so root shells get RKE2 `PATH`, `KUBECONFIG`, `CRI_CONFIG_FILE`, `k` alias, and kubectl/crictl Bash completion.
 - If `rke2.token` is present in `env.yaml`, `make node-prep` writes it to `rke2.token_file`; use only dummy tokens in committed examples and prefer secret-source population for production.
-- RKE2 config uses `token-file`, `selinux: true`, `tls-san` defaulted from `rancher_url`; only non-primary Rancher nodes get `server: https://<rancher1-ip>:9345`.
+- RKE2 config uses `token-file`, `selinux: true`, `tls-san` defaulted from `rancher_url`; only non-primary Rancher nodes get `server: https://<primary-node-ip>:9345`.
 - `rke2.version` is required and passed to `get.rke2.io` as `INSTALL_RKE2_VERSION`. Existing nodes must already match the pin; this repo does not use reruns to upgrade or downgrade RKE2.
 - `make rke2-install` runs two pyinfra phases: install/enable `rke2-server --now` on `rke2.primary_node` first, then on all other Rancher join nodes.
 - RKE2 install disables Rancher RKE2 package repositories after installation because RKE2 is not upgraded through OS package updates.
-- After RKE2 is ready, install `asdf` as a binary on `bastion1`, install Helm and kubectl through asdf for install/diagnostics, configure Helm repos, install cert-manager, then install Rancher.
-- Rancher install/bootstrap fetch primary node `/etc/rancher/rke2/rke2.yaml`, rewrite the API endpoint to the primary node IP, write `.rinstall/rke2.yaml`, and upload it to `bastion1:/root/rke2.yaml`; `make -f rinstall/Makefile rke2-kubeconfig` is a helper/debug target for that step.
+- After RKE2 is ready, install `asdf` as a binary on the configured bastion, install Helm and kubectl through asdf for install/diagnostics, configure Helm repos, install cert-manager, then install Rancher.
+- Rancher install/bootstrap fetch primary node `/etc/rancher/rke2/rke2.yaml`, rewrite the API endpoint to the primary node IP, write `.rinstall/rke2.yaml`, and upload it to the configured bastion as `/root/rke2.yaml`; `make -f rinstall/Makefile rke2-kubeconfig` is a helper/debug target for that step.
 - Rancher edition is selected by `rancher.edition` (`community` or `prime`); Helm repo/version live under `rancher.editions.<edition>` as `repo_name`, `repo_url`, and `version`, then are resolved by `lib/env_config.py` for install.
 - Rancher Helm install receives `proxy` from bastion Squid and `noProxy` from generated `proxy.no_proxy`; this is separate from OS/RKE2 proxy profile rendering.
 - Optional `rancher.bootstrap_password` is a one-time initial admin password; keep real values in instance configs only. Install passes it to Helm only when the Rancher release does not exist yet, never on repeat upgrades. If omitted, every successful Rancher install prints a command that retrieves the generated password from `cattle-system/bootstrap-secret` if the release was newly installed.

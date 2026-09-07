@@ -61,6 +61,43 @@ def test_rejects_unsupported_schema_and_invalid_environment_id():
 
 
 @pytest.mark.parametrize(
+    "rancher_url",
+    [
+        "rancher.example.internal",
+        "rancher-1.example.internal",
+        "Rancher.Example.Internal",
+    ],
+)
+def test_accepts_bare_rancher_fqdn(rancher_url):
+    config = raw_example()
+    config["rancher_url"] = rancher_url
+
+    assert expand_env(config)["rancher_url"] == rancher_url
+
+
+@pytest.mark.parametrize(
+    "rancher_url",
+    [
+        "https://rancher.example.internal",
+        "rancher.example.internal:443",
+        "rancher.example.internal/path",
+        "rancher example.internal",
+        "rancher.example..internal",
+        "-rancher.example.internal",
+        "rancher-.example.internal",
+        "192.168.1.10",
+        "2001:db8::10",
+    ],
+)
+def test_rejects_non_bare_or_invalid_rancher_fqdn(rancher_url):
+    config = raw_example()
+    config["rancher_url"] = rancher_url
+
+    with pytest.raises(SystemExit, match="env.rancher_url must be a bare fully qualified DNS hostname"):
+        expand_env(config)
+
+
+@pytest.mark.parametrize(
     ("host", "message"),
     [
         (0, "network address"),
@@ -87,6 +124,87 @@ def test_expands_rancher_pool_and_uses_first_node_as_primary():
     ]
     assert resolved["rke2"]["primary_node"] == "rancher1"
     assert resolved["nodes"]["rancher2"]["rke2_server"] == "https://10.14.17.11:9345"
+
+
+def test_rejects_rancher_pool_without_name_prefix():
+    config = raw_example()
+    del config["local"]["rancher_nodes"]["name_prefix"]
+
+    with pytest.raises(SystemExit, match="missing env.local.rancher_nodes.name_prefix"):
+        expand_env(config)
+
+
+def test_expands_rancher_pool_with_configured_name_prefix():
+    config = raw_example()
+    config["local"]["rancher_nodes"]["name_prefix"] = "control"
+    resolved = expand_env(config)
+
+    assert [name for name in resolved["nodes"] if name.startswith("control")] == [
+        "control1",
+        "control2",
+        "control3",
+    ]
+    assert resolved["rke2"]["primary_node"] == "control1"
+
+
+def test_accepts_single_non_default_bastion_service_node():
+    config = raw_example()
+    config["nodes"]["bastion2"] = config["nodes"].pop("bastion1")
+    config["bastion"]["service_node"] = "bastion2"
+
+    assert expand_env(config)["bastion"]["service_node"] == "bastion2"
+
+
+def test_rejects_zero_bastion_nodes():
+    config = raw_example()
+    config["nodes"]["bastion1"]["role"] = "prometheus"
+
+    with pytest.raises(SystemExit, match="schema v1 supports exactly one bastion node"):
+        expand_env(config)
+
+
+def test_rejects_multiple_bastion_nodes():
+    config = raw_example()
+    config["nodes"]["prom1"]["role"] = "bastion"
+
+    with pytest.raises(SystemExit, match="schema v1 supports exactly one bastion node"):
+        expand_env(config)
+
+
+def test_rejects_service_node_that_is_not_bastion():
+    config = raw_example()
+    config["bastion"]["service_node"] = "prom1"
+
+    with pytest.raises(SystemExit, match="env.bastion.service_node references prom1 with role 'prometheus'"):
+        expand_env(config)
+
+
+def test_rejects_duplicate_explicit_node_ips():
+    config = raw_example()
+    config["nodes"]["prom1"]["host"] = config["nodes"]["bastion1"]["host"]
+
+    with pytest.raises(SystemExit, match=r"prom1.*10\.14\.17\.4.*bastion1"):
+        expand_env(config)
+
+
+def test_rejects_explicit_ip_colliding_with_generated_rancher_node():
+    config = raw_example()
+    config["nodes"]["prom1"]["host"] = config["local"]["rancher_nodes"]["start_host"]
+
+    with pytest.raises(SystemExit, match=r"rancher1.*10\.14\.17\.11.*prom1"):
+        expand_env(config)
+
+
+def test_rejects_node_ip_colliding_with_local_gateway():
+    config = raw_example()
+    config["nodes"]["prom1"]["host"] = config["local"]["vlan"]["gateway_host"]
+
+    with pytest.raises(SystemExit, match=r"prom1.*10\.14\.17\.1.*gateway"):
+        expand_env(config)
+
+
+def test_accepts_unique_local_node_ips():
+    assert expand_env(raw_example())["environment"]["id"] == "example"
 
 
 def test_rejects_unknown_network_template_and_primary_node_role():
@@ -262,6 +380,88 @@ def test_render_infra_tfvars_uses_configured_clone_timeout(tmp_path):
     assert json.loads(output_path.read_text())["clone_timeout"] == 90
 
 
+def test_clone_timeout_omitted_is_valid():
+    config = raw_example()
+    del config["infra"]["vsphere"]["clone_timeout"]
+
+    assert expand_env(config)["environment"]["id"] == "example"
+
+
+def test_clone_timeout_positive_integer_is_valid():
+    config = raw_example()
+    config["infra"]["vsphere"]["clone_timeout"] = 1
+
+    assert expand_env(config)["environment"]["id"] == "example"
+
+
+@pytest.mark.parametrize("clone_timeout", [0, -1, "60", 60.0, True])
+def test_clone_timeout_rejects_non_positive_or_non_integer_values(clone_timeout):
+    config = raw_example()
+    config["infra"]["vsphere"]["clone_timeout"] = clone_timeout
+
+    with pytest.raises(SystemExit, match="env.infra.vsphere.clone_timeout must be a positive integer"):
+        expand_env(config)
+
+
+def test_terraform_clone_timeout_wiring_is_preserved():
+    terraform_root = EXAMPLE_ENV.parents[2] / "terraform/infra"
+    root_module = (terraform_root / "main.tf").read_text()
+    vm_module = (terraform_root / "modules/vsphere-vm/main.tf").read_text()
+
+    assert "clone_timeout    = var.clone_timeout" in root_module
+    assert "timeout       = var.clone_timeout" in vm_module
+
+
+def test_render_infra_tfvars_defaults_to_verified_vsphere_tls(tmp_path):
+    config = raw_example()
+    del config["infra"]["vsphere"]["allow_unverified_ssl"]
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(yaml.safe_dump(config))
+    output_path = tmp_path / "infra.tfvars.json"
+
+    subprocess.run(
+        [sys.executable, str(TFVARS_HELPER), "--env", str(config_path), "--out", str(output_path)],
+        check=True,
+    )
+
+    assert json.loads(output_path.read_text())["vsphere_allow_unverified_ssl"] is False
+
+
+def test_render_infra_tfvars_preserves_explicit_unverified_vsphere_tls(tmp_path):
+    config = raw_example()
+    config["infra"]["vsphere"]["allow_unverified_ssl"] = True
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(yaml.safe_dump(config))
+    output_path = tmp_path / "infra.tfvars.json"
+
+    subprocess.run(
+        [sys.executable, str(TFVARS_HELPER), "--env", str(config_path), "--out", str(output_path)],
+        check=True,
+    )
+
+    assert json.loads(output_path.read_text())["vsphere_allow_unverified_ssl"] is True
+
+
+def test_render_infra_tfvars_uses_configured_bastion_service_node(tmp_path):
+    config = raw_example()
+    config["nodes"]["bastion2"] = config["nodes"].pop("bastion1")
+    config["bastion"]["service_node"] = "bastion2"
+    config["local"]["vlan"]["dns_nodes"] = ["bastion2"]
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(yaml.safe_dump(config))
+    output_path = tmp_path / "infra.tfvars.json"
+
+    subprocess.run(
+        [sys.executable, str(TFVARS_HELPER), "--env", str(config_path), "--out", str(output_path)],
+        check=True,
+    )
+
+    assert json.loads(output_path.read_text())["bastion_service_node"] == "bastion2"
+    outputs = (TFVARS_HELPER.parents[1] / "terraform/infra/outputs.tf").read_text()
+    assert 'local.node_static_ips[var.bastion_service_node]' in outputs
+    assert 'local.node_static_ips["bastion1"]' not in outputs
+
+
 @pytest.mark.parametrize("url", ["http://gitlab.example", "https://gitlab.example/"])
 def test_accepts_valid_gitlab_backend_url_and_derives_state(url):
     config = raw_example()
@@ -269,6 +469,27 @@ def test_accepts_valid_gitlab_backend_url_and_derives_state(url):
         "backend": {"type": "gitlab", "url": url, "project_id": 1234}
     }
     assert expand_env(config)["environment"]["id"] == "example"
+
+
+@pytest.mark.parametrize(
+    ("url", "valid"),
+    [
+        ("https://gitlab.example", True),
+        ("https://user@gitlab.example", False),
+        ("https://user:password@gitlab.example", False),
+    ],
+)
+def test_gitlab_backend_url_credentials_are_rejected(url, valid):
+    config = raw_example()
+    config["terraform"] = {
+        "backend": {"type": "gitlab", "url": url, "project_id": 1234}
+    }
+
+    if valid:
+        assert expand_env(config)["environment"]["id"] == "example"
+    else:
+        with pytest.raises(SystemExit, match="env.terraform.backend.url must not contain credentials"):
+            expand_env(config)
 
 
 @pytest.mark.parametrize("backend", [

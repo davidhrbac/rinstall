@@ -42,8 +42,9 @@ def render(env):
         nodes[name] = rendered_node
 
     rendered = {
-        "vsphere_allow_unverified_ssl": vsphere.get("allow_unverified_ssl", True),
+        "vsphere_allow_unverified_ssl": vsphere.get("allow_unverified_ssl", False),
         "clone_timeout": vsphere.get("clone_timeout", 60),
+        "bastion_service_node": require(env["bastion"], "service_node", "env.bastion"),
         "datacenter": require(vsphere, "datacenter", "env.infra.vsphere"),
         "datastore": require(vsphere, "datastore", "env.infra.vsphere"),
         "resource_pool": require(vsphere, "resource_pool", "env.infra.vsphere"),
