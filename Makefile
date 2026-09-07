@@ -187,16 +187,16 @@ provision-all: config-validate
 	  elif [[ -n "$$(git -C "$$1" status --porcelain --untracked-files=normal)" ]]; then printf '%s' 'dirty'; \
 	  else printf '%s' 'clean'; fi; \
 	}; \
+	blue=$$'\033[34m'; \
+	green=$$'\033[32m'; \
+	red=$$'\033[31m'; \
+	reset=$$'\033[0m'; \
 	run_phase() { \
 	  local label=$$1; \
 	  local target=$$2; \
 	  local phase_start=$$SECONDS; \
 	  local phase_number=$$3; \
 	  local command_line; \
-	  local blue=$$'\033[34m'; \
-	  local green=$$'\033[32m'; \
-	  local red=$$'\033[31m'; \
-	  local reset=$$'\033[0m'; \
 	  local command=("$(MAKE)" "-f" "$(ENGINE_ROOT)/Makefile" "$$target" "ENGINE_ROOT=$(ENGINE_ROOT)" "ENV=$(ENV)" "ENV_FILE=$(ENV_FILE)" "ENV_CONFIG=$(ENV_CONFIG)" "RUNTIME_DIR=$(RUNTIME_DIR)" "TF_DATA_DIR=$(TF_DATA_DIR)" "PYTHON=$(PYTHON)" "PYINFRA=$(PYINFRA)" "PYINFRA_PROGRESS=$(PYINFRA_PROGRESS)" "PYINFRA_ARGS=$(PYINFRA_ARGS)" "TERRAFORM=$(TERRAFORM)" "TF_INIT_ARGS=$(TF_INIT_ARGS)" "TF_APPLY_ARGS=$(TF_APPLY_ARGS)" "PROVISION_PHASE=1"); \
 	  log '\n%s[%s/5] %s started%s\n' "$$blue" "$$phase_number" "$$label" "$$reset"; \
 	  printf -v command_line '%q ' "$${command[@]}"; \
