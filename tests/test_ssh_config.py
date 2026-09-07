@@ -38,6 +38,24 @@ def test_admin_fragment_uses_bastion_proxy_for_local_nodes():
     assert "Include ~/.ssh/config" not in rendered
 
 
+def test_ssh_config_uses_configured_bastion_service_node():
+    config = raw_example()
+    config["nodes"]["bastion2"] = config["nodes"].pop("bastion1")
+    config["nodes"]["prom2"] = config["nodes"].pop("prom1")
+    config["bastion"]["service_node"] = "bastion2"
+    config["local"]["vlan"]["dns_nodes"] = ["bastion2"]
+    config = expand_env(config)
+
+    assert config["bastion"]["service_ip"] == config["nodes"]["bastion2"]["ip"]
+    assert config["nodes"]["bastion2"]["dns_servers"] == ["192.0.2.53"]
+    rendered = render_ssh_config(config)
+
+    assert "Host bastion2 bastion2.example" in rendered
+    assert "Host prom2 prom2.example" in rendered
+    assert "bastion1" not in rendered
+    assert "prom1" not in rendered
+
+
 def test_generated_ssh_config_routes_nodes_through_configured_jump_host():
     config = load_env(EXAMPLE_ENV)
     config["ssh"]["jump_host"] = "admin-jump"

@@ -29,7 +29,7 @@ def node_proxy_command(config, node_name, node):
         return None
 
     jump_alias = jump_host if isinstance(jump_host, str) else jump_host.get("alias", "rancher-env-jump")
-    bastion_name = config.get("bastion", {}).get("service_node", "bastion1")
+    bastion_name = config["bastion"]["service_node"]
     bastion_proxy_roles = set(ssh.get("bastion_proxy_roles", []))
     if node["role"] not in bastion_proxy_roles or node_name == bastion_name:
         return proxy_command_via(jump_alias)
