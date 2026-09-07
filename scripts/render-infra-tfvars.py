@@ -43,6 +43,7 @@ def render(env):
 
     rendered = {
         "vsphere_allow_unverified_ssl": vsphere.get("allow_unverified_ssl", True),
+        "clone_timeout": vsphere.get("clone_timeout", 60),
         "datacenter": require(vsphere, "datacenter", "env.infra.vsphere"),
         "datastore": require(vsphere, "datastore", "env.infra.vsphere"),
         "resource_pool": require(vsphere, "resource_pool", "env.infra.vsphere"),

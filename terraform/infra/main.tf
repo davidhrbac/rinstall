@@ -76,6 +76,7 @@ module "vm" {
   template         = data.vsphere_virtual_machine.template[each.value.template]
   gateway          = try(each.value.gateway, null)
   dns_servers      = coalesce(try(each.value.dns_servers, null), var.local_vlan.dns_servers)
+  clone_timeout    = var.clone_timeout
 
   nics = [for nic in each.value.nics : {
     network_id   = data.vsphere_network.this[nic.network].id

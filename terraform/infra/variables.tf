@@ -17,6 +17,11 @@ variable "vsphere_allow_unverified_ssl" {
   default = true
 }
 
+variable "clone_timeout" {
+  type    = number
+  default = 60
+}
+
 variable "datacenter" {
   type = string
 }

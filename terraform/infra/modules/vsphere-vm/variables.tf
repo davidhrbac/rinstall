@@ -26,6 +26,10 @@ variable "disk_gb" {
   type = number
 }
 
+variable "clone_timeout" {
+  type = number
+}
+
 variable "datastore_id" {
   type = string
 }
