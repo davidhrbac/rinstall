@@ -1,24 +1,39 @@
 # TODO
 
+## Completed In This Branch
+
+- Repo-per-instance architecture with mandatory GitLab backend and derived Terraform state `<environment.id>-infra`.
+- Verified vSphere TLS default, configurable clone timeout, and real instance-repository smoke testing.
+- Schema validation for single bastion scope, configured topology names, and required backend/config identities.
+
 ## Next
 
 - Define the DR version-sync contract with the separate Rancher lifecycle repository.
   - Every Rancher or local RKE2 upgrade must also update the bootstrap pins in the per-environment infra config before DR is considered complete.
   - Start with a documented Definition of Done or checklist; do not introduce cross-repository Terraform state dependencies.
 
-- Review vSphere TLS verification defaults.
-  - Prefer `allow_unverified_ssl: false`; retain an insecure override only where explicitly required.
-
-- Pin bootstrap tooling and Python dependencies for DR reproducibility.
-  - Pin asdf, Helm, and kubectl versions instead of resolving `latest` during provisioning.
+- Make bootstrap tooling version-aware and lock Python dependencies for DR reproducibility.
+  - Derive or select `kubectl` compatible with the configured RKE2/Kubernetes version; do not blindly use `asdf latest kubectl`.
+  - Ensure Helm satisfies the configured Rancher release requirements without maintaining an independent historical pin unless DR policy requires it.
   - Replace minimum-version Python dependencies with exact pins or a lockfile.
-
-- Protect kubeconfig artifacts explicitly.
-  - Enforce mode `0700` on the per-environment build/runtime directory and `0600` on `rke2.yaml.raw` and `rke2.yaml`, including standalone `make rke2-kubeconfig` runs.
 
 - Add per-environment SSH known-hosts handling for DR.
   - Keep generated host keys outside global `~/.ssh/known_hosts` so redeploying VMs at the same IP does not block SSH.
   - Add an explicit reset operation for that environment-only known-hosts file.
+
+- Add proxy-aware bootstrap/tool downloads.
+
+- Add vCenter CA bootstrap for Linux and Windows.
+
+- Add recovery for partial vSphere creates and orphan VMs.
+
+- Harden GitLab `project_id` and backend identity handling.
+
+- Run `make verify` in CI.
+
+- Add supply-chain hardening for bootstrap and provisioning dependencies.
+
+- Add multi-bastion/HA bastion support in a future schema; this remains outside schema v1 and v0.2.
 
 - Add `make bastion-verify`.
   - Verify hostname, `/etc/hosts`, `dnsmasq`, `squid`, vSphere route, and Rancher URL round-robin DNS from bastion.
@@ -26,16 +41,7 @@
 - Add `make rke2-status`.
   - Verify `rke2-server` service state, ports `9345`/`6443`, and `kubectl get nodes` after install.
 
-- Test a real private environment dry-run.
-  - Use `envs/private/<env>/env.yaml` with sanitized repo examples unchanged.
-  - Run `make render-infra-vars`, `make infra-plan`, and SSH config checks before any apply.
-
 ## Later
-
-- Move instance runtime state outside a pinned engine checkout.
-  - Support `RUNTIME_DIR` for generated tfvars, SSH config, kubeconfig, logs, and known-hosts.
-  - Set `TF_DATA_DIR` so Terraform backend metadata and provider/module data are outside the engine/module directory.
-  - Target a per-environment repo with a pinned engine submodule and ignored `.rinstall/` runtime directory.
 
 - Add declarative bastion service-network support for downstream VLANs.
   - Define a stable logical network `id`, append-only attachment `slot`, VLAN ID, vSphere portgroup, CIDR, gateway host offset, and DHCP range in env config.
@@ -52,12 +58,10 @@
   - Verify `server-url`, `agent-tls-mode`, Rancher pod readiness, and `/ping` through the Rancher URL.
 
 - Add Prometheus node configuration.
-  - Current `node-prep` only sets hostname/prompt for `prom1`; define actual monitoring setup later.
+   - Current `node-prep` only sets hostname/prompt for the Prometheus node; define actual monitoring setup later.
 
 ## Questions
 
 - Which secret source should own the RKE2 token in production?
-- Should real env directories live under `envs/private/` only, or should there be another ignored naming convention?
 - Should the bastion VLAN section be named `bastion.service_networks` or `bastion.downstream_networks`?
-- Should the engine distribution remain a pinned Git submodule until a versioned CLI has a concrete operational advantage?
 - Should GitLab issues be created from the stable items in this file after the first real dry-run?

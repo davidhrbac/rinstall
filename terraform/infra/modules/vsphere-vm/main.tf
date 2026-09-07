@@ -27,6 +27,7 @@ resource "vsphere_virtual_machine" "this" {
 
   clone {
     template_uuid = var.template.id
+    timeout       = var.clone_timeout
 
     customize {
       linux_options {

@@ -1,4 +1,8 @@
 from pathlib import Path
+import json
+import os
+import subprocess
+import sys
 
 import pytest
 import yaml
@@ -7,6 +11,9 @@ from lib.env_config import expand_env, load_env
 
 
 EXAMPLE_ENV = Path(__file__).parents[1] / "envs/example/env.yaml"
+BACKEND_HELPER = EXAMPLE_ENV.parents[2] / "scripts/terraform-backend-env.py"
+VALIDATE_HELPER = EXAMPLE_ENV.parents[2] / "scripts/validate-config.py"
+TFVARS_HELPER = EXAMPLE_ENV.parents[2] / "scripts/render-infra-tfvars.py"
 
 
 def raw_example():
@@ -54,6 +61,43 @@ def test_rejects_unsupported_schema_and_invalid_environment_id():
 
 
 @pytest.mark.parametrize(
+    "rancher_url",
+    [
+        "rancher.example.internal",
+        "rancher-1.example.internal",
+        "Rancher.Example.Internal",
+    ],
+)
+def test_accepts_bare_rancher_fqdn(rancher_url):
+    config = raw_example()
+    config["rancher_url"] = rancher_url
+
+    assert expand_env(config)["rancher_url"] == rancher_url
+
+
+@pytest.mark.parametrize(
+    "rancher_url",
+    [
+        "https://rancher.example.internal",
+        "rancher.example.internal:443",
+        "rancher.example.internal/path",
+        "rancher example.internal",
+        "rancher.example..internal",
+        "-rancher.example.internal",
+        "rancher-.example.internal",
+        "192.168.1.10",
+        "2001:db8::10",
+    ],
+)
+def test_rejects_non_bare_or_invalid_rancher_fqdn(rancher_url):
+    config = raw_example()
+    config["rancher_url"] = rancher_url
+
+    with pytest.raises(SystemExit, match="env.rancher_url must be a bare fully qualified DNS hostname"):
+        expand_env(config)
+
+
+@pytest.mark.parametrize(
     ("host", "message"),
     [
         (0, "network address"),
@@ -80,6 +124,87 @@ def test_expands_rancher_pool_and_uses_first_node_as_primary():
     ]
     assert resolved["rke2"]["primary_node"] == "rancher1"
     assert resolved["nodes"]["rancher2"]["rke2_server"] == "https://10.14.17.11:9345"
+
+
+def test_rejects_rancher_pool_without_name_prefix():
+    config = raw_example()
+    del config["local"]["rancher_nodes"]["name_prefix"]
+
+    with pytest.raises(SystemExit, match="missing env.local.rancher_nodes.name_prefix"):
+        expand_env(config)
+
+
+def test_expands_rancher_pool_with_configured_name_prefix():
+    config = raw_example()
+    config["local"]["rancher_nodes"]["name_prefix"] = "control"
+    resolved = expand_env(config)
+
+    assert [name for name in resolved["nodes"] if name.startswith("control")] == [
+        "control1",
+        "control2",
+        "control3",
+    ]
+    assert resolved["rke2"]["primary_node"] == "control1"
+
+
+def test_accepts_single_non_default_bastion_service_node():
+    config = raw_example()
+    config["nodes"]["bastion2"] = config["nodes"].pop("bastion1")
+    config["bastion"]["service_node"] = "bastion2"
+
+    assert expand_env(config)["bastion"]["service_node"] == "bastion2"
+
+
+def test_rejects_zero_bastion_nodes():
+    config = raw_example()
+    config["nodes"]["bastion1"]["role"] = "prometheus"
+
+    with pytest.raises(SystemExit, match="schema v1 supports exactly one bastion node"):
+        expand_env(config)
+
+
+def test_rejects_multiple_bastion_nodes():
+    config = raw_example()
+    config["nodes"]["prom1"]["role"] = "bastion"
+
+    with pytest.raises(SystemExit, match="schema v1 supports exactly one bastion node"):
+        expand_env(config)
+
+
+def test_rejects_service_node_that_is_not_bastion():
+    config = raw_example()
+    config["bastion"]["service_node"] = "prom1"
+
+    with pytest.raises(SystemExit, match="env.bastion.service_node references prom1 with role 'prometheus'"):
+        expand_env(config)
+
+
+def test_rejects_duplicate_explicit_node_ips():
+    config = raw_example()
+    config["nodes"]["prom1"]["host"] = config["nodes"]["bastion1"]["host"]
+
+    with pytest.raises(SystemExit, match=r"prom1.*10\.14\.17\.4.*bastion1"):
+        expand_env(config)
+
+
+def test_rejects_explicit_ip_colliding_with_generated_rancher_node():
+    config = raw_example()
+    config["nodes"]["prom1"]["host"] = config["local"]["rancher_nodes"]["start_host"]
+
+    with pytest.raises(SystemExit, match=r"rancher1.*10\.14\.17\.11.*prom1"):
+        expand_env(config)
+
+
+def test_rejects_node_ip_colliding_with_local_gateway():
+    config = raw_example()
+    config["nodes"]["prom1"]["host"] = config["local"]["vlan"]["gateway_host"]
+
+    with pytest.raises(SystemExit, match=r"prom1.*10\.14\.17\.1.*gateway"):
+        expand_env(config)
+
+
+def test_accepts_unique_local_node_ips():
+    assert expand_env(raw_example())["environment"]["id"] == "example"
 
 
 def test_rejects_unknown_network_template_and_primary_node_role():
@@ -162,3 +287,262 @@ def test_generates_compact_no_proxy_list_with_kubernetes_suffixes():
         "10.14.17.0/28",
         "rancher.example.internal",
     ]
+
+
+def test_validates_gitlab_backend_without_credentials():
+    config = raw_example()
+    config["terraform"] = {"backend": {"type": "gitlab", "url": "https://gitlab.example", "project_id": 1234}}
+    assert expand_env(config)["terraform"]["backend"]["project_id"] == 1234
+
+
+@pytest.mark.parametrize("missing", ["terraform", "backend", "type", "url", "project_id"])
+def test_rejects_missing_required_gitlab_backend_configuration(missing):
+    config = raw_example()
+    config["terraform"] = {"backend": {"type": "gitlab", "url": "https://gitlab.example", "project_id": 1234}}
+    if missing == "terraform":
+        del config["terraform"]
+    elif missing == "backend":
+        del config["terraform"]["backend"]
+    else:
+        del config["terraform"]["backend"][missing]
+    with pytest.raises(SystemExit):
+        expand_env(config)
+
+
+def test_rejects_configured_gitlab_backend_state_name():
+    config = raw_example()
+    config["terraform"]["backend"]["state"] = "manually-configured"
+
+    with pytest.raises(
+        SystemExit,
+        match="env.terraform.backend.state is no longer supported; state is derived from env.environment.id",
+    ):
+        expand_env(config)
+
+
+def test_config_error_is_red_by_default(tmp_path):
+    config = raw_example()
+    del config["terraform"]
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(yaml.safe_dump(config))
+    result = subprocess.run(
+        [sys.executable, str(VALIDATE_HELPER), "--env", str(config_path)],
+        capture_output=True,
+        text=True,
+        env={key: value for key, value in os.environ.items() if key != "NO_COLOR"},
+    )
+
+    assert result.returncode != 0
+    assert "\033[31mERROR:\033[0m" in result.stderr
+
+
+def test_config_error_has_no_color_when_no_color_is_set(tmp_path):
+    config = raw_example()
+    del config["terraform"]
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(yaml.safe_dump(config))
+    result = subprocess.run(
+        [sys.executable, str(VALIDATE_HELPER), "--env", str(config_path)],
+        capture_output=True,
+        text=True,
+        env={**os.environ, "NO_COLOR": ""},
+    )
+
+    assert result.returncode != 0
+    assert "\033[" not in result.stderr
+
+
+def test_render_infra_tfvars_uses_default_clone_timeout(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(EXAMPLE_ENV.read_text())
+    output_path = tmp_path / "infra.tfvars.json"
+
+    subprocess.run(
+        [sys.executable, str(TFVARS_HELPER), "--env", str(config_path), "--out", str(output_path)],
+        check=True,
+    )
+
+    assert json.loads(output_path.read_text())["clone_timeout"] == 60
+
+
+def test_render_infra_tfvars_uses_configured_clone_timeout(tmp_path):
+    config = raw_example()
+    config["infra"]["vsphere"]["clone_timeout"] = 90
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(yaml.safe_dump(config))
+    output_path = tmp_path / "infra.tfvars.json"
+
+    subprocess.run(
+        [sys.executable, str(TFVARS_HELPER), "--env", str(config_path), "--out", str(output_path)],
+        check=True,
+    )
+
+    assert json.loads(output_path.read_text())["clone_timeout"] == 90
+
+
+def test_clone_timeout_omitted_is_valid():
+    config = raw_example()
+    del config["infra"]["vsphere"]["clone_timeout"]
+
+    assert expand_env(config)["environment"]["id"] == "example"
+
+
+def test_clone_timeout_positive_integer_is_valid():
+    config = raw_example()
+    config["infra"]["vsphere"]["clone_timeout"] = 1
+
+    assert expand_env(config)["environment"]["id"] == "example"
+
+
+@pytest.mark.parametrize("clone_timeout", [0, -1, "60", 60.0, True])
+def test_clone_timeout_rejects_non_positive_or_non_integer_values(clone_timeout):
+    config = raw_example()
+    config["infra"]["vsphere"]["clone_timeout"] = clone_timeout
+
+    with pytest.raises(SystemExit, match="env.infra.vsphere.clone_timeout must be a positive integer"):
+        expand_env(config)
+
+
+def test_terraform_clone_timeout_wiring_is_preserved():
+    terraform_root = EXAMPLE_ENV.parents[2] / "terraform/infra"
+    root_module = (terraform_root / "main.tf").read_text()
+    vm_module = (terraform_root / "modules/vsphere-vm/main.tf").read_text()
+
+    assert "clone_timeout    = var.clone_timeout" in root_module
+    assert "timeout       = var.clone_timeout" in vm_module
+
+
+def test_render_infra_tfvars_defaults_to_verified_vsphere_tls(tmp_path):
+    config = raw_example()
+    del config["infra"]["vsphere"]["allow_unverified_ssl"]
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(yaml.safe_dump(config))
+    output_path = tmp_path / "infra.tfvars.json"
+
+    subprocess.run(
+        [sys.executable, str(TFVARS_HELPER), "--env", str(config_path), "--out", str(output_path)],
+        check=True,
+    )
+
+    assert json.loads(output_path.read_text())["vsphere_allow_unverified_ssl"] is False
+
+
+def test_render_infra_tfvars_preserves_explicit_unverified_vsphere_tls(tmp_path):
+    config = raw_example()
+    config["infra"]["vsphere"]["allow_unverified_ssl"] = True
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(yaml.safe_dump(config))
+    output_path = tmp_path / "infra.tfvars.json"
+
+    subprocess.run(
+        [sys.executable, str(TFVARS_HELPER), "--env", str(config_path), "--out", str(output_path)],
+        check=True,
+    )
+
+    assert json.loads(output_path.read_text())["vsphere_allow_unverified_ssl"] is True
+
+
+def test_render_infra_tfvars_uses_configured_bastion_service_node(tmp_path):
+    config = raw_example()
+    config["nodes"]["bastion2"] = config["nodes"].pop("bastion1")
+    config["bastion"]["service_node"] = "bastion2"
+    config["local"]["vlan"]["dns_nodes"] = ["bastion2"]
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(yaml.safe_dump(config))
+    output_path = tmp_path / "infra.tfvars.json"
+
+    subprocess.run(
+        [sys.executable, str(TFVARS_HELPER), "--env", str(config_path), "--out", str(output_path)],
+        check=True,
+    )
+
+    assert json.loads(output_path.read_text())["bastion_service_node"] == "bastion2"
+    outputs = (TFVARS_HELPER.parents[1] / "terraform/infra/outputs.tf").read_text()
+    assert 'local.node_static_ips[var.bastion_service_node]' in outputs
+    assert 'local.node_static_ips["bastion1"]' not in outputs
+
+
+@pytest.mark.parametrize("url", ["http://gitlab.example", "https://gitlab.example/"])
+def test_accepts_valid_gitlab_backend_url_and_derives_state(url):
+    config = raw_example()
+    config["terraform"] = {
+        "backend": {"type": "gitlab", "url": url, "project_id": 1234}
+    }
+    assert expand_env(config)["environment"]["id"] == "example"
+
+
+@pytest.mark.parametrize(
+    ("url", "valid"),
+    [
+        ("https://gitlab.example", True),
+        ("https://user@gitlab.example", False),
+        ("https://user:password@gitlab.example", False),
+    ],
+)
+def test_gitlab_backend_url_credentials_are_rejected(url, valid):
+    config = raw_example()
+    config["terraform"] = {
+        "backend": {"type": "gitlab", "url": url, "project_id": 1234}
+    }
+
+    if valid:
+        assert expand_env(config)["environment"]["id"] == "example"
+    else:
+        with pytest.raises(SystemExit, match="env.terraform.backend.url must not contain credentials"):
+            expand_env(config)
+
+
+@pytest.mark.parametrize("backend", [
+    {"type": "s3"},
+    {"type": "gitlab", "url": "", "project_id": 1},
+    {"type": "gitlab", "url": "https://gitlab.example"},
+    {"type": "gitlab", "url": "https://gitlab.example", "project_id": "bad"},
+    {"type": "gitlab", "url": "ftp://gitlab.example", "project_id": 1},
+    {"type": "gitlab", "url": "https:///missing-host", "project_id": 1},
+    {"type": "gitlab", "url": "https://gitlab.example?project=1", "project_id": 1},
+    {"type": "gitlab", "url": "https://gitlab.example#state", "project_id": 1},
+    {"type": "gitlab", "url": "https://gitlab.example/gitlab", "project_id": 1},
+])
+def test_rejects_invalid_gitlab_backend(backend):
+    config = raw_example()
+    config["terraform"] = {"backend": backend}
+    with pytest.raises(SystemExit):
+        expand_env(config)
+
+
+def test_derives_gitlab_backend_values_without_credentials(tmp_path):
+    config = raw_example()
+    config["terraform"] = {
+        "backend": {
+            "type": "gitlab",
+            "url": "https://gitlab.example",
+            "project_id": 1234,
+        }
+    }
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(yaml.safe_dump(config))
+
+    result = subprocess.run(
+        [sys.executable, str(BACKEND_HELPER), "--env", str(config_path)],
+        check=True,
+        capture_output=True,
+        text=True,
+        env={
+            **os.environ,
+            "TF_HTTP_ADDRESS": "https://conflicting.example/state",
+            "TF_HTTP_LOCK_ADDRESS": "https://conflicting.example/lock",
+            "TF_HTTP_USERNAME": "runtime-user",
+            "TF_HTTP_PASSWORD": "runtime-secret",
+        },
+    )
+
+    assert result.stdout.strip().split() == [
+        "TF_HTTP_ADDRESS=https://gitlab.example/api/v4/projects/1234/terraform/state/example-infra",
+        "TF_HTTP_LOCK_ADDRESS=https://gitlab.example/api/v4/projects/1234/terraform/state/example-infra/lock",
+        "TF_HTTP_UNLOCK_ADDRESS=https://gitlab.example/api/v4/projects/1234/terraform/state/example-infra/lock",
+        "TF_HTTP_LOCK_METHOD=POST",
+        "TF_HTTP_UNLOCK_METHOD=DELETE",
+        "TF_HTTP_RETRY_WAIT_MIN=5",
+    ]
+    assert "runtime-user" not in result.stdout
+    assert "runtime-secret" not in result.stdout

@@ -1,7 +1,8 @@
 from copy import deepcopy
-from ipaddress import ip_interface, ip_network
+from ipaddress import ip_address, ip_interface, ip_network
 from pathlib import Path
 import re
+from urllib.parse import urlparse
 
 import yaml
 
@@ -21,12 +22,20 @@ DEFAULT_NO_PROXY_NAMES = [
 
 SUPPORTED_SCHEMA_VERSION = 1
 ENVIRONMENT_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9.-]*$")
+RANCHER_HOSTNAME_PATTERN = re.compile(
+    r"^(?=.{1,253}$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+"
+    r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$"
+)
 
 
 def require(mapping, key, context):
     if key not in mapping or mapping[key] is None:
         raise SystemExit(f"missing {context}.{key}")
     return mapping[key]
+
+
+def gitlab_backend_state_address(backend, environment_id):
+    return f"{backend['url'].rstrip('/')}/api/v4/projects/{backend['project_id']}/terraform/state/{environment_id}-infra"
 
 
 def validate_environment_identity(env):
@@ -42,6 +51,18 @@ def validate_environment_identity(env):
         raise SystemExit(
             "env.environment.id must contain only lowercase letters, digits, dots, and hyphens"
         )
+
+    rancher_url = require(env, "rancher_url", "env")
+    try:
+        is_ip_literal = isinstance(rancher_url, str) and ip_address(rancher_url) is not None
+    except ValueError:
+        is_ip_literal = False
+    if (
+        not isinstance(rancher_url, str)
+        or is_ip_literal
+        or not RANCHER_HOSTNAME_PATTERN.fullmatch(rancher_url)
+    ):
+        raise SystemExit("env.rancher_url must be a bare fully qualified DNS hostname")
 
     return environment_id
 
@@ -84,11 +105,45 @@ def domain_from_rancher_url(rancher_url):
 
 
 def validate_env_references(env):
+    terraform = require(env, "terraform", "env")
+    backend = require(terraform, "backend", "env.terraform")
+    backend_type = require(backend, "type", "env.terraform.backend")
+    if backend_type != "gitlab":
+        raise SystemExit("env.terraform.backend.type must be 'gitlab'")
+    if "state" in backend:
+        raise SystemExit(
+            "env.terraform.backend.state is no longer supported; state is derived from env.environment.id"
+        )
+    url = require(backend, "url", "env.terraform.backend")
+    parsed_url = urlparse(str(url))
+    if parsed_url.username is not None or parsed_url.password is not None:
+        raise SystemExit("env.terraform.backend.url must not contain credentials")
+    if (
+        not isinstance(url, str)
+        or not url.strip()
+        or parsed_url.scheme not in {"http", "https"}
+        or not parsed_url.hostname
+        or parsed_url.query
+        or parsed_url.fragment
+        or parsed_url.path not in {"", "/"}
+    ):
+        raise SystemExit("env.terraform.backend.url must be a non-empty GitLab base URL")
+    project_id = require(backend, "project_id", "env.terraform.backend")
+    if isinstance(project_id, bool) or not isinstance(project_id, int) or project_id <= 0:
+        raise SystemExit("env.terraform.backend.project_id must be a positive integer")
     infra = require(env, "infra", "env")
+    vsphere = require(infra, "vsphere", "env.infra")
+    if "clone_timeout" in vsphere:
+        clone_timeout = vsphere["clone_timeout"]
+        if isinstance(clone_timeout, bool) or not isinstance(clone_timeout, int) or clone_timeout <= 0:
+            raise SystemExit("env.infra.vsphere.clone_timeout must be a positive integer")
     networks = require(infra, "networks", "env.infra")
     templates = require(infra, "templates", "env.infra")
     local_vlan = require(require(env, "local", "env"), "vlan", "env.local")
     nodes = require(env, "nodes", "env")
+    bastion_nodes = [name for name, node in nodes.items() if node.get("role") == "bastion"]
+    if len(bastion_nodes) != 1:
+        raise SystemExit("schema v1 supports exactly one bastion node")
 
     for node_name, node in nodes.items():
         validate_name_exists(
@@ -145,7 +200,7 @@ def expand_node_pools(env):
     if not rancher_pool:
         return
 
-    prefix = rancher_pool.get("name_prefix", "rancher")
+    prefix = require(rancher_pool, "name_prefix", "env.local.rancher_nodes")
     count = int(require(rancher_pool, "count", "env.local.rancher_nodes"))
     start_host = int(require(rancher_pool, "start_host", "env.local.rancher_nodes"))
     if count < 1:
@@ -169,7 +224,8 @@ def expand_node_pools(env):
 
 
 def load_env(path):
-    with Path(path).open() as stream:
+    config_path = Path(path).resolve()
+    with config_path.open() as stream:
         return expand_env(yaml.safe_load(stream))
 
 
@@ -216,6 +272,18 @@ def expand_env(raw_env):
                 nic["prefix"] = local_vlan["prefix"]
             if nic.get("network") == "management" and nic.get("ip") is not None and node.get("ssh_ip") is None:
                 node["ssh_ip"] = nic["ip"]
+
+    primary_ips = {}
+    for name, node in nodes.items():
+        ip = node.get("ip")
+        if ip is None:
+            continue
+        if ip == local_vlan["gateway"]:
+            raise SystemExit(f"env.nodes.{name}.ip {ip} conflicts with local VLAN gateway")
+        previous_name = primary_ips.get(ip)
+        if previous_name is not None:
+            raise SystemExit(f"env.nodes.{name}.ip {ip} conflicts with env.nodes.{previous_name}.ip")
+        primary_ips[ip] = name
 
     bastion = require(env, "bastion", "env")
     bastion.setdefault("squid_http_port", 3128)
