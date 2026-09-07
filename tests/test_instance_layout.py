@@ -92,7 +92,7 @@ def test_verify_uses_clean_temporary_terraform_data_dir(tmp_path):
     marker = tmp_path / "terraform-data-dir"
     terraform.write_text(
         "#!/bin/sh\n"
-        "if [ -n \"${TF_DATA_DIR:-}\" ]; then printf '%s\\n' \"$TF_DATA_DIR\" >> \"$TERRAFORM_MARKER\"; fi\n"
+        "printf 'ARGS=%s\\nTF_DATA_DIR=%s\\n' \"$*\" \"${TF_DATA_DIR:-}\" >> \"$TERRAFORM_MARKER\"\n"
     )
     terraform.chmod(0o700)
     python = tmp_path / "python"
@@ -125,7 +125,18 @@ def test_verify_uses_clean_temporary_terraform_data_dir(tmp_path):
 
     assert result.returncode == 0, result.stderr
     assert (normal_data_dir / "backend-metadata").exists()
-    assert marker.read_text().strip() != str(normal_data_dir)
+    records = marker.read_text().splitlines()
+    invocations = [
+        dict(zip(("args", "tf_data_dir"), (records[index][5:], records[index + 1][12:])))
+        for index in range(0, len(records), 2)
+    ]
+    init = next(invocation for invocation in invocations if " init " in invocation["args"])
+    validate = next(invocation for invocation in invocations if " validate" in invocation["args"])
+    assert init["tf_data_dir"] != str(normal_data_dir)
+    assert validate["tf_data_dir"] == init["tf_data_dir"]
+    assert "-backend=false" in init["args"]
+    assert "-lockfile=readonly" in init["args"]
+    assert not Path(init["tf_data_dir"]).exists()
 
 
 def test_invalid_instance_config_fails_before_verify_work(tmp_path):
