@@ -41,8 +41,9 @@ including Terraform metadata in `.rinstall/terraform-data/`.
 Production `config.yaml` declares the GitLab backend identity:
 
 Every `schema_version: 1` configuration must declare this GitLab backend
-identity. Only `type: gitlab` is supported. The backend URL, project ID, and
-The state name is derived automatically as `<environment.id>-infra`; local
+identity. Only `type: gitlab` is supported. The backend URL and project ID
+belong in `config.yaml`. The state name is derived automatically as
+`<environment.id>-infra`; local
 Terraform state is not supported for provisioning. Rinstall uses Terraform's
 HTTP backend for GitLab state.
 
