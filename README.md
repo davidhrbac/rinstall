@@ -321,7 +321,7 @@ Set `rancher.bootstrap_password` only in instance configs when you want to contr
 
 `rinstall` installs cert-manager and Rancher only when their Helm releases are absent. An existing release must match the declared chart version; Rancher must also match the declared hostname, proxy, and no-proxy values. Any mismatch fails without an upgrade or downgrade, because Rancher and cert-manager lifecycle changes belong to the separate Rancher Environment repository. Synchronize the DR environment pins after those lifecycle changes.
 
-`make rancher-bootstrap` is a manual maintenance operation for an existing
+`make -f rinstall/Makefile rancher-bootstrap` is a manual maintenance operation for an existing
 instance, not part of normal Day-0 provisioning and not run by
 `provision-all`. Use it for deliberate Rancher runtime changes such as
 changing the Rancher server URL.
