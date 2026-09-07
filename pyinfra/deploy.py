@@ -10,6 +10,9 @@ from io import StringIO
 from lib.ssh_config import build_dir_for_env
 
 
+ENGINE_ROOT = Path(__file__).resolve().parents[1]
+
+
 phase = os.environ.get("PHASE", "bastion")
 config = host.data.env_config
 node = host.data.node_config
@@ -50,7 +53,7 @@ def disable_rke2_repos():
 def configure_asdf():
     files.template(
         name="Render root asdf shell environment",
-        src="pyinfra/templates/asdf.sh.j2",
+        src=str(ENGINE_ROOT / "pyinfra/templates/asdf.sh.j2"),
         dest="/etc/profile.d/asdf.sh",
         mode="0644",
     )
@@ -128,7 +131,7 @@ if phase == "bastion" and role == "bastion":
 
     files.template(
         name="Render /etc/hosts DNS records",
-        src="pyinfra/templates/hosts.j2",
+        src=str(ENGINE_ROOT / "pyinfra/templates/hosts.j2"),
         dest="/etc/hosts",
         mode="0644",
         config=config,
@@ -137,7 +140,7 @@ if phase == "bastion" and role == "bastion":
 
     files.template(
         name="Render dnsmasq local config",
-        src="pyinfra/templates/dnsmasq-local.conf.j2",
+        src=str(ENGINE_ROOT / "pyinfra/templates/dnsmasq-local.conf.j2"),
         dest="/etc/dnsmasq.d/10-rancher-local.conf",
         mode="0644",
         config=config,
@@ -145,7 +148,7 @@ if phase == "bastion" and role == "bastion":
 
     files.template(
         name="Render dnsmasq DHCP config",
-        src="pyinfra/templates/dnsmasq-dhcp.conf.j2",
+        src=str(ENGINE_ROOT / "pyinfra/templates/dnsmasq-dhcp.conf.j2"),
         dest="/etc/dnsmasq.d/20-local-dhcp.conf",
         mode="0644",
         config=config,
@@ -215,7 +218,7 @@ if phase == "node-prep":
 
     files.template(
         name="Render shell prompt",
-        src="pyinfra/templates/prompt.sh.j2",
+                src=str(ENGINE_ROOT / "pyinfra/templates/prompt.sh.j2"),
         dest="/etc/profile.d/prompt.sh",
         mode="0644",
         config=config,
@@ -231,7 +234,7 @@ if phase == "node-prep" and role == "rancher":
 
     files.put(
         name="Copy RKE2 Canal NetworkManager config",
-        src="files/rke2-canal.conf",
+                src=str(ENGINE_ROOT / "files/rke2-canal.conf"),
         dest="/etc/NetworkManager/conf.d/rke2-canal.conf",
         mode="0644",
     )
@@ -254,7 +257,7 @@ if phase == "node-prep" and role == "rancher":
 
     files.template(
         name="Render RKE2 config",
-        src="pyinfra/templates/rke2-config.yaml.j2",
+            src=str(ENGINE_ROOT / "pyinfra/templates/rke2-config.yaml.j2"),
         dest="/etc/rancher/rke2/config.yaml",
         mode="0600",
         config=config,
@@ -264,7 +267,7 @@ if phase == "node-prep" and role == "rancher":
 
     files.template(
         name="Render proxy environment",
-        src="pyinfra/templates/proxy.sh.j2",
+            src=str(ENGINE_ROOT / "pyinfra/templates/proxy.sh.j2"),
         dest="/etc/profile.d/proxy.sh",
         mode="0644",
         config=config,
@@ -272,14 +275,14 @@ if phase == "node-prep" and role == "rancher":
 
     files.template(
         name="Render RKE2 shell environment",
-        src="pyinfra/templates/rke2.sh.j2",
+            src=str(ENGINE_ROOT / "pyinfra/templates/rke2.sh.j2"),
         dest="/etc/profile.d/rke2.sh",
         mode="0644",
     )
 
     files.template(
         name="Render RKE2 service proxy environment",
-        src="pyinfra/templates/rke2-server.env.j2",
+            src=str(ENGINE_ROOT / "pyinfra/templates/rke2-server.env.j2"),
         dest="/etc/default/rke2-server",
         mode="0644",
         config=config,
@@ -288,7 +291,7 @@ if phase == "node-prep" and role == "rancher":
 if phase == "rke2-install-primary" and role == "rancher" and name == config["rke2"]["primary_node"]:
     files.put(
         name="Upload RKE2 install script on primary",
-        src="scripts/install-rke2.sh",
+        src=str(ENGINE_ROOT / "scripts/install-rke2.sh"),
         dest="/tmp/install-rke2.sh",
         mode="0700",
     )
@@ -312,7 +315,7 @@ if phase == "rke2-kubeconfig" and role == "rancher" and name == config["rke2"]["
 if phase == "rke2-install-join" and role == "rancher" and name != config["rke2"]["primary_node"]:
     files.put(
         name="Upload RKE2 install script on join nodes",
-        src="scripts/install-rke2.sh",
+        src=str(ENGINE_ROOT / "scripts/install-rke2.sh"),
         dest="/tmp/install-rke2.sh",
         mode="0700",
     )
@@ -343,7 +346,7 @@ if phase == "rancher-install" and role == "bastion":
 
     files.put(
         name="Upload Rancher install script",
-        src="scripts/install-rancher.sh",
+        src=str(ENGINE_ROOT / "scripts/install-rancher.sh"),
         dest="/tmp/install-rancher.sh",
         mode="0700",
     )
@@ -378,7 +381,7 @@ if phase == "rancher-bootstrap" and role == "bastion":
 
     files.put(
         name="Upload Rancher bootstrap script",
-        src="scripts/bootstrap-rancher.sh",
+        src=str(ENGINE_ROOT / "scripts/bootstrap-rancher.sh"),
         dest="/tmp/bootstrap-rancher.sh",
         mode="0700",
     )

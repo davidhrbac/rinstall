@@ -22,9 +22,27 @@ Hard boundary: a separate Rancher Environment repository manages Rancher upgrade
 Fleet, imported downstream clusters, downstream lifecycle, and Kubernetes upgrades.
 ```
 
-## Operator Flow
+## Production Instance Flow
 
-Run Terraform from the operator workstation, not from `bastion1`. Use a single environment inventory under `envs/`. Start from `envs/example/env.yaml`; generated Terraform var-files go to `build/`.
+Production use is a separate instance repository containing `config.yaml`, a
+`.gitmodules` file, a `.gitignore` entry for `.rinstall/`, and the pinned
+`rinstall` submodule. The sanitized layout fixture is in
+`examples/instance-repository/`. No wrapper Makefile or `.envrc` is required:
+
+```bash
+make -f rinstall/Makefile verify
+make -f rinstall/Makefile infra-plan
+make -f rinstall/Makefile provision-all
+```
+
+Generated runtime files are kept under the ignored `.rinstall/` directory,
+including Terraform metadata in `.rinstall/terraform-data/`.
+
+## Development / Standalone Engine Flow
+
+For engine development and sanitized fixtures, run Terraform from the operator
+workstation, not from `bastion1`. Use `envs/example/env.yaml`; generated files go
+to `build/<environment.id>/`.
 
 ```bash
 make infra-init ENV=envs/example
@@ -52,6 +70,9 @@ Destroy Terraform-managed vSphere VMs from the operator workstation with the sam
 make destroy-commands ENV=envs/example
 ```
 
+From an instance repository, run `make -f rinstall/Makefile destroy-commands`
+instead; its generated paths are under `.rinstall/`.
+
 The helper prints the explicit Terraform commands to run, for example:
 
 ```bash
@@ -73,9 +94,13 @@ export TF_VAR_vsphere_password="change-me"
 
 See `.envrc.example` for the expected variable names. `make render-infra-vars` omits `vsphere_server` and `vsphere_user` when they are not set in `env.yaml`, so Terraform will read `TF_VAR_vsphere_server` and `TF_VAR_vsphere_user` from the operator environment.
 
-The committed scaffold uses Terraform's default local state, so `make infra-init` works without GitLab backend settings. If an environment should use GitLab Terraform state, copy `terraform/infra/backend.tf.example` to the ignored `terraform/infra/backend.tf` and put GitLab HTTP backend settings in `.envrc` or pass them with `TF_BACKEND_CONFIG=<file>`.
+The committed scaffold uses Terraform's default local state, so standalone `make infra-init` works without GitLab backend settings. For an instance using GitLab Terraform state, copy `rinstall/terraform/infra/backend.tf.example` to the ignored `rinstall/terraform/infra/backend.tf` and provide `TF_HTTP_ADDRESS` (plus lock/unlock settings and credentials) in the runtime environment. The Makefile then omits the local-backend-only `path` setting. Alternatively pass an explicit `TF_BACKEND_CONFIG=<file>`.
 
-If local nodes require a separate SSH jump host, configure it in `env.yaml`. pyinfra inventory will generate `build/<environment.id>/ssh_config` with per-host proxy rules. `bastion1` goes through the first jump host; local-only nodes can go through the first jump host and then `bastion1`:
+If local nodes require a separate SSH jump host, configure it in the environment
+config. pyinfra inventory will generate `build/<environment.id>/ssh_config` in
+standalone mode or `.rinstall/ssh_config` in an instance repository. `bastion1`
+goes through the first jump host; local-only nodes can go through the first jump
+host and then `bastion1`:
 
 ```yaml
 ssh:
@@ -89,10 +114,16 @@ ssh:
 
 The jump host alias should be defined in the operator's `~/.ssh/config`; `make ssh-config` generates `build/<environment.id>/ssh_config`, includes that file, and only adds target-node routing. Generated target entries use `ProxyCommand` so both OpenSSH and pyinfra's SSH connector can consume the same config. This keeps real internal hostnames, IPs, and upstream SSH topology out of the repo. Use `ssh_ip` per node only if the desired SSH target cannot be derived from a static management NIC.
 
-For administrator access from an existing admin jump host, run `make admin-ssh-config ENV=envs/private/<env>`. It renders `build/<environment.id>/<environment.id>.conf` with aliases such as `bastion1.<environment.id>` and `prom1.<environment.id>`. Configure that host once to include `~/.ssh/config.d/*.conf`, then upload the fragment explicitly:
+For administrator access from an existing admin jump host, run
+`make -f rinstall/Makefile admin-ssh-config` from an instance repository. It
+renders `.rinstall/<environment.id>.conf` with aliases such as
+`bastion1.<environment.id>` and `prom1.<environment.id>`. In standalone mode,
+pass `ENV=envs/example` and the output is under `build/<environment.id>/`.
+Configure that host once to include `~/.ssh/config.d/*.conf`, then upload the
+fragment explicitly:
 
 ```bash
-make install-admin-ssh-config ENV=envs/private/<env>
+make -f rinstall/Makefile install-admin-ssh-config
 ```
 
 The upload target uses `ssh.jump_host` unless `ADMIN_SSH_HOST=<SSH alias>` overrides it. It creates `/root/.ssh/config.d` and uploads the per-environment fragment with mode `0600`; it never modifies `/root/.ssh/config` or adds its `Include` directive.
@@ -250,15 +281,26 @@ Set `rancher.bootstrap_password` only in private env configs when you want to co
 
 ## Source Of Truth
 
-Edit only `envs/<env>/env.yaml` for environment data. Every config requires `schema_version: 1` and an immutable `environment.id`. The ID is the canonical suffix for shell prompts and administrator SSH aliases, and it names generated artifacts under `build/<environment.id>/`. `make infra-plan` and `make infra-apply` render `build/<environment.id>/infra.tfvars.json` from that YAML before invoking Terraform. Do not edit generated files under `build/`.
+Edit only the committed `config.yaml` in an instance repository, or
+`envs/<env>/env.yaml` in standalone engine mode. Every config requires
+`schema_version: 1` and an immutable `environment.id`. Generated artifacts live
+under `.rinstall/` for instances and `build/<environment.id>/` in standalone
+mode. Do not edit generated files.
 
-Use `envs/example` only for sanitized examples. Put real customer/internal environments under `envs/private/` or another untracked path if hostnames, IPs, or topology names should not be visible in the repo.
+Use `envs/example` only for sanitized engine development fixtures. Real customer
+configuration belongs in the separate instance repository, keeping hostnames,
+IPs, and SSH topology out of this engine repository.
 
 ## Terraform State
 
 The committed infra layer defaults to local Terraform state so the scaffold can be initialized and planned without GitLab backend setup.
 
-For environments that need GitLab Terraform state, create an ignored `terraform/infra/backend.tf` from `terraform/infra/backend.tf.example`, then run `make infra-init` with `TF_HTTP_ADDRESS`/`TF_HTTP_LOCK_ADDRESS` environment variables or `TF_BACKEND_CONFIG=<backend-config-file>`. Do not put GitLab tokens in `env.yaml`; provide backend credentials via Terraform-supported environment variables, for example `TF_HTTP_USERNAME` and `TF_HTTP_PASSWORD`.
+For environments that need GitLab Terraform state, create the ignored
+`rinstall/terraform/infra/backend.tf` from its example, then run
+`make -f rinstall/Makefile infra-init` with `TF_HTTP_ADDRESS` and lock settings,
+or use `TF_BACKEND_CONFIG=<backend-config-file>`. Do not put GitLab tokens in
+`config.yaml`; provide backend credentials via Terraform-supported environment
+variables such as `TF_HTTP_USERNAME` and `TF_HTTP_PASSWORD`.
 
 
 ## Secrets
