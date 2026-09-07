@@ -1,5 +1,5 @@
 from copy import deepcopy
-from ipaddress import ip_interface, ip_network
+from ipaddress import ip_address, ip_interface, ip_network
 from pathlib import Path
 import re
 from urllib.parse import urlparse
@@ -53,7 +53,15 @@ def validate_environment_identity(env):
         )
 
     rancher_url = require(env, "rancher_url", "env")
-    if not isinstance(rancher_url, str) or not RANCHER_HOSTNAME_PATTERN.fullmatch(rancher_url):
+    try:
+        is_ip_literal = isinstance(rancher_url, str) and ip_address(rancher_url) is not None
+    except ValueError:
+        is_ip_literal = False
+    if (
+        not isinstance(rancher_url, str)
+        or is_ip_literal
+        or not RANCHER_HOSTNAME_PATTERN.fullmatch(rancher_url)
+    ):
         raise SystemExit("env.rancher_url must be a bare fully qualified DNS hostname")
 
     return environment_id

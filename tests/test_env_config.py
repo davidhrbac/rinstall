@@ -85,6 +85,8 @@ def test_accepts_bare_rancher_fqdn(rancher_url):
         "rancher.example..internal",
         "-rancher.example.internal",
         "rancher-.example.internal",
+        "192.168.1.10",
+        "2001:db8::10",
     ],
 )
 def test_rejects_non_bare_or_invalid_rancher_fqdn(rancher_url):
