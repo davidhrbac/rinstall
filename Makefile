@@ -193,17 +193,21 @@ provision-all: config-validate
 	  local phase_start=$$SECONDS; \
 	  local phase_number=$$3; \
 	  local command_line; \
+	  local blue=$$'\033[34m'; \
+	  local green=$$'\033[32m'; \
+	  local red=$$'\033[31m'; \
+	  local reset=$$'\033[0m'; \
 	  local command=("$(MAKE)" "-f" "$(ENGINE_ROOT)/Makefile" "$$target" "ENGINE_ROOT=$(ENGINE_ROOT)" "ENV=$(ENV)" "ENV_FILE=$(ENV_FILE)" "ENV_CONFIG=$(ENV_CONFIG)" "RUNTIME_DIR=$(RUNTIME_DIR)" "TF_DATA_DIR=$(TF_DATA_DIR)" "PYTHON=$(PYTHON)" "PYINFRA=$(PYINFRA)" "PYINFRA_PROGRESS=$(PYINFRA_PROGRESS)" "PYINFRA_ARGS=$(PYINFRA_ARGS)" "TERRAFORM=$(TERRAFORM)" "TF_INIT_ARGS=$(TF_INIT_ARGS)" "TF_APPLY_ARGS=$(TF_APPLY_ARGS)" "PROVISION_PHASE=1"); \
-	  log '\n[%s/5] %s started\n' "$$phase_number" "$$label"; \
+	  log '\n%s[%s/5] %s started%s\n' "$$blue" "$$phase_number" "$$label" "$$reset"; \
 	  printf -v command_line '%q ' "$${command[@]}"; \
 	  if script -q -e -f -a -c "$$command_line" "$$run_log"; then \
 	    local duration=$$((SECONDS - phase_start)); \
-	    log '[%s/5] %s completed in %s\n' "$$phase_number" "$$label" "$$(format_duration "$$duration")"; \
+	    log '%s[%s/5] %s completed in %s%s\n' "$$green" "$$phase_number" "$$label" "$$(format_duration "$$duration")" "$$reset"; \
 	    completed_labels+=("$$label"); \
 	    completed_durations+=("$$duration"); \
 	  else \
 	    local duration=$$((SECONDS - phase_start)); \
-	    log '[%s/5] %s failed after %s; see %s\n' "$$phase_number" "$$label" "$$(format_duration "$$duration")" "$$run_log" >&2; \
+	    log '%s[%s/5] %s failed after %s; see %s%s\n' "$$red" "$$phase_number" "$$label" "$$(format_duration "$$duration")" "$$run_log" "$$reset" >&2; \
 	    failed_phase=$$label; \
 	    failed_duration=$$duration; \
 	    return 1; \
