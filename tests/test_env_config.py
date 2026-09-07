@@ -61,6 +61,41 @@ def test_rejects_unsupported_schema_and_invalid_environment_id():
 
 
 @pytest.mark.parametrize(
+    "rancher_url",
+    [
+        "rancher.example.internal",
+        "rancher-1.example.internal",
+        "Rancher.Example.Internal",
+    ],
+)
+def test_accepts_bare_rancher_fqdn(rancher_url):
+    config = raw_example()
+    config["rancher_url"] = rancher_url
+
+    assert expand_env(config)["rancher_url"] == rancher_url
+
+
+@pytest.mark.parametrize(
+    "rancher_url",
+    [
+        "https://rancher.example.internal",
+        "rancher.example.internal:443",
+        "rancher.example.internal/path",
+        "rancher example.internal",
+        "rancher.example..internal",
+        "-rancher.example.internal",
+        "rancher-.example.internal",
+    ],
+)
+def test_rejects_non_bare_or_invalid_rancher_fqdn(rancher_url):
+    config = raw_example()
+    config["rancher_url"] = rancher_url
+
+    with pytest.raises(SystemExit, match="env.rancher_url must be a bare fully qualified DNS hostname"):
+        expand_env(config)
+
+
+@pytest.mark.parametrize(
     ("host", "message"),
     [
         (0, "network address"),

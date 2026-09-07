@@ -22,6 +22,10 @@ DEFAULT_NO_PROXY_NAMES = [
 
 SUPPORTED_SCHEMA_VERSION = 1
 ENVIRONMENT_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9.-]*$")
+RANCHER_HOSTNAME_PATTERN = re.compile(
+    r"^(?=.{1,253}$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+"
+    r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$"
+)
 
 
 def require(mapping, key, context):
@@ -47,6 +51,10 @@ def validate_environment_identity(env):
         raise SystemExit(
             "env.environment.id must contain only lowercase letters, digits, dots, and hyphens"
         )
+
+    rancher_url = require(env, "rancher_url", "env")
+    if not isinstance(rancher_url, str) or not RANCHER_HOSTNAME_PATTERN.fullmatch(rancher_url):
+        raise SystemExit("env.rancher_url must be a bare fully qualified DNS hostname")
 
     return environment_id
 
