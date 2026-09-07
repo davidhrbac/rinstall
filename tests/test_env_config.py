@@ -262,6 +262,29 @@ def test_render_infra_tfvars_uses_configured_clone_timeout(tmp_path):
     assert json.loads(output_path.read_text())["clone_timeout"] == 90
 
 
+def test_clone_timeout_omitted_is_valid():
+    config = raw_example()
+    del config["infra"]["vsphere"]["clone_timeout"]
+
+    assert expand_env(config)["environment"]["id"] == "example"
+
+
+def test_clone_timeout_positive_integer_is_valid():
+    config = raw_example()
+    config["infra"]["vsphere"]["clone_timeout"] = 1
+
+    assert expand_env(config)["environment"]["id"] == "example"
+
+
+@pytest.mark.parametrize("clone_timeout", [0, -1, "60", 60.0, True])
+def test_clone_timeout_rejects_non_positive_or_non_integer_values(clone_timeout):
+    config = raw_example()
+    config["infra"]["vsphere"]["clone_timeout"] = clone_timeout
+
+    with pytest.raises(SystemExit, match="env.infra.vsphere.clone_timeout must be a positive integer"):
+        expand_env(config)
+
+
 def test_render_infra_tfvars_defaults_to_verified_vsphere_tls(tmp_path):
     config = raw_example()
     del config["infra"]["vsphere"]["allow_unverified_ssl"]

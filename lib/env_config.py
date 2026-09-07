@@ -114,6 +114,11 @@ def validate_env_references(env):
     if isinstance(project_id, bool) or not isinstance(project_id, int) or project_id <= 0:
         raise SystemExit("env.terraform.backend.project_id must be a positive integer")
     infra = require(env, "infra", "env")
+    vsphere = require(infra, "vsphere", "env.infra")
+    if "clone_timeout" in vsphere:
+        clone_timeout = vsphere["clone_timeout"]
+        if isinstance(clone_timeout, bool) or not isinstance(clone_timeout, int) or clone_timeout <= 0:
+            raise SystemExit("env.infra.vsphere.clone_timeout must be a positive integer")
     networks = require(infra, "networks", "env.infra")
     templates = require(infra, "templates", "env.infra")
     local_vlan = require(require(env, "local", "env"), "vlan", "env.local")
