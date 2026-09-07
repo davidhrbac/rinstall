@@ -262,6 +262,36 @@ def test_render_infra_tfvars_uses_configured_clone_timeout(tmp_path):
     assert json.loads(output_path.read_text())["clone_timeout"] == 90
 
 
+def test_render_infra_tfvars_defaults_to_verified_vsphere_tls(tmp_path):
+    config = raw_example()
+    del config["infra"]["vsphere"]["allow_unverified_ssl"]
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(yaml.safe_dump(config))
+    output_path = tmp_path / "infra.tfvars.json"
+
+    subprocess.run(
+        [sys.executable, str(TFVARS_HELPER), "--env", str(config_path), "--out", str(output_path)],
+        check=True,
+    )
+
+    assert json.loads(output_path.read_text())["vsphere_allow_unverified_ssl"] is False
+
+
+def test_render_infra_tfvars_preserves_explicit_unverified_vsphere_tls(tmp_path):
+    config = raw_example()
+    config["infra"]["vsphere"]["allow_unverified_ssl"] = True
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(yaml.safe_dump(config))
+    output_path = tmp_path / "infra.tfvars.json"
+
+    subprocess.run(
+        [sys.executable, str(TFVARS_HELPER), "--env", str(config_path), "--out", str(output_path)],
+        check=True,
+    )
+
+    assert json.loads(output_path.read_text())["vsphere_allow_unverified_ssl"] is True
+
+
 @pytest.mark.parametrize("url", ["http://gitlab.example", "https://gitlab.example/"])
 def test_accepts_valid_gitlab_backend_url_and_derives_state(url):
     config = raw_example()

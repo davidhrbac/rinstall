@@ -14,7 +14,7 @@ variable "vsphere_password" {
 
 variable "vsphere_allow_unverified_ssl" {
   type    = bool
-  default = true
+  default = false
 }
 
 variable "clone_timeout" {
