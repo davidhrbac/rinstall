@@ -1,5 +1,13 @@
 # Agent Notes
 
+## Commit Policy
+
+- Use Conventional Commits for every new commit: `<type>(<optional scope>): <description>`.
+- Prefer `feat`, `fix`, `docs`, `test`, `refactor`, `chore`, `ci`, and `build`.
+- Use a meaningful scope such as `ssh`, `terraform`, `config`, `runtime`, or `docs` when useful.
+- Keep each commit to one logical change; do not mix production code, unrelated documentation, and cleanup.
+- Avoid vague commit messages such as `Fix stuff`, `Update SSH`, or `Changes`.
+
 - This repo is a scaffold for manually operated Rancher environment provisioning on vSphere.
 - This repo is a Day-0/DR bootstrap engine only: vSphere infrastructure, bastion, RKE2, and initial Rancher installation.
 - Do not add Rancher API resources, Fleet configuration, downstream cluster lifecycle, or Rancher/Kubernetes upgrades here; manage them outside rinstall in the separate per-environment Rancher Terraform project.
