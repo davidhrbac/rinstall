@@ -406,6 +406,27 @@ def test_accepts_valid_gitlab_backend_url_and_derives_state(url):
     assert expand_env(config)["environment"]["id"] == "example"
 
 
+@pytest.mark.parametrize(
+    ("url", "valid"),
+    [
+        ("https://gitlab.example", True),
+        ("https://user@gitlab.example", False),
+        ("https://user:password@gitlab.example", False),
+    ],
+)
+def test_gitlab_backend_url_credentials_are_rejected(url, valid):
+    config = raw_example()
+    config["terraform"] = {
+        "backend": {"type": "gitlab", "url": url, "project_id": 1234}
+    }
+
+    if valid:
+        assert expand_env(config)["environment"]["id"] == "example"
+    else:
+        with pytest.raises(SystemExit, match="env.terraform.backend.url must not contain credentials"):
+            expand_env(config)
+
+
 @pytest.mark.parametrize("backend", [
     {"type": "s3"},
     {"type": "gitlab", "url": "", "project_id": 1},

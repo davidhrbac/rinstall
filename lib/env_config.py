@@ -100,6 +100,8 @@ def validate_env_references(env):
         )
     url = require(backend, "url", "env.terraform.backend")
     parsed_url = urlparse(str(url))
+    if parsed_url.username is not None or parsed_url.password is not None:
+        raise SystemExit("env.terraform.backend.url must not contain credentials")
     if (
         not isinstance(url, str)
         or not url.strip()
