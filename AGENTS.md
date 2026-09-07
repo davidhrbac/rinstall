@@ -47,9 +47,9 @@
 - In the sanitized example, use VM template 1 for `bastion1` and `prom1`; use VM template 2 for local Rancher/RKE2 VMs and downstream cluster VMs.
 - vSphere VM object names must be unique; Terraform appends a stable random suffix as `<node>-xxxxx-xxxxx`, while guest hostname/DNS/SSH aliases stay as the unsuffixed node key.
 - The configured bastion's primary interface is on the customer VLAN and has a static IP; its secondary interface is on the management VLAN and gets DHCP.
-- `nodes[ b astion.service_node ].dns_servers` is required management/vSphere DNS for bastion OS, Squid, and clone customization. Local nodes default to `local.vlan.dns_nodes`, normally the configured bastion; `bastion.dnsmasq_upstream_servers` is a separate required list rendered as dnsmasq `server=` entries with `no-resolv`, so local clients do not inherit bastion management DNS.
+- `nodes[bastion.service_node].dns_servers` is required management/vSphere DNS for bastion OS, Squid, and clone customization. Local nodes default to `local.vlan.dns_nodes`, normally the configured bastion; `bastion.dnsmasq_upstream_servers` is a separate required list rendered as dnsmasq `server=` entries with `no-resolv`, so local clients do not inherit bastion management DNS.
 - Set static IPs for the configured bastion, Prometheus node, and Rancher nodes with Terraform/vSphere clone customization; do not require DHCP or cloud-init for these fixed local customer-VLAN addresses.
-- Keep bastion customer-facing `service_ip` explicit because `dnsmasq` and `squid` should use it, not the dynamic management address.
+- `bastion.service_ip` defaults to the configured bastion's primary/customer IP; set it explicitly only when a different service address is needed so `dnsmasq` and `squid` do not use the dynamic management address.
 - The configured bastion runs `dnsmasq` for DHCP/DNS and `squid` so Rancher/local nodes can reach vSphere.
 - Optionally use `bastion.network_connection_names` to rename NetworkManager profiles on bastion, for example `ens192: local` and `ens224: mgmt`; downstream VLAN profiles can stay named `vlanXXX`.
 - Add the vSphere route on bastion from `bastion.vsphere_route` using `bastion.vsphere_route_connection`; this may be a NetworkManager connection profile name or device name. Keep real route values in instance config, not committed examples.

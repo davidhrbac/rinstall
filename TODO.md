@@ -21,6 +21,20 @@
   - Keep generated host keys outside global `~/.ssh/known_hosts` so redeploying VMs at the same IP does not block SSH.
   - Add an explicit reset operation for that environment-only known-hosts file.
 
+- Add proxy-aware bootstrap/tool downloads.
+
+- Add vCenter CA bootstrap for Linux and Windows.
+
+- Add recovery for partial vSphere creates and orphan VMs.
+
+- Harden GitLab `project_id` and backend identity handling.
+
+- Run `make verify` in CI.
+
+- Add supply-chain hardening for bootstrap and provisioning dependencies.
+
+- Add multi-bastion/HA bastion support in a future schema; this remains outside schema v1 and v0.2.
+
 - Add `make bastion-verify`.
   - Verify hostname, `/etc/hosts`, `dnsmasq`, `squid`, vSphere route, and Rancher URL round-robin DNS from bastion.
 
