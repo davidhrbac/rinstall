@@ -310,6 +310,41 @@ def test_operator_targets_include_instance_context_banner(tmp_path, target):
     assert "print-instance-context.py --env" in result.stdout
 
 
+def test_destroy_command_resets_ssh_trust_only_after_successful_destroy(tmp_path):
+    instance_root = tmp_path / "customer-a-prod-infra"
+    instance_root.mkdir()
+    config = yaml.safe_load(EXAMPLE_ENV.read_text())
+    config["terraform"] = {
+        "backend": {
+            "type": "gitlab",
+            "url": "https://gitlab.example",
+            "project_id": 1234,
+        }
+    }
+    (instance_root / "config.yaml").write_text(yaml.safe_dump(config))
+    (instance_root / "rinstall").symlink_to(ENGINE_ROOT, target_is_directory=True)
+
+    result = subprocess.run(
+        ["make", "-f", "rinstall/Makefile", "destroy-commands", f"PYTHON={sys.executable}"],
+        cwd=instance_root,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    output = result.stdout
+    plan = "  plan -destroy"
+    destroy = "  destroy"
+    reset = "-var-file=" + str(instance_root / ".rinstall/infra.tfvars.json") + " && make -f rinstall/Makefile ssh-hostkeys-reset"
+    assert reset in output
+    assert output.index(destroy) < output.index(reset)
+    assert output.index(plan) < output.index(destroy)
+    plan_section = output[output.index("1. Review plan:") : output.index("2. Destroy only after review:")]
+    assert "ssh-hostkeys-reset" not in plan_section
+    assert "A successful full destroy automatically clears instance-local SSH trust." in output
+    assert "If Terraform destroy fails, the instance-local SSH trust is preserved." in output
+
+
 def test_provision_all_banner_is_complete_and_logged(tmp_path):
     instance_root = tmp_path / "customer-a-prod-infra"
     instance_root.mkdir()

@@ -145,10 +145,10 @@ destroy-commands: instance-context
 	@printf '%s %s\n' 'terraform' '\'
 	@printf '%s %s\n' '  -chdir=$(TF_INFRA_DIR)' '\'
 	@printf '%s %s\n' '  destroy' '\'
-	@printf '%s\n' '  -var-file=$(INFRA_TFVARS)'
+	@printf '%s\n' '  -var-file=$(INFRA_TFVARS) && make -f rinstall/Makefile ssh-hostkeys-reset'
 	@printf '%s\n' '============================================================'
-	@printf '%s\n' 'After a successful full destroy, reset only this instance SSH trust with:'
-	@printf '%s\n' '  make -f rinstall/Makefile ssh-hostkeys-reset'
+	@printf '%s\n' 'A successful full destroy automatically clears instance-local SSH trust.'
+	@printf '%s\n' 'If Terraform destroy fails, the instance-local SSH trust is preserved.'
 
 bastion-configure:
 	ENV_CONFIG=$(ENV_CONFIG) RUNTIME_DIR=$(RUNTIME_DIR) PHASE=bastion PYINFRA_PROGRESS=$(PYINFRA_PROGRESS) $(PYINFRA) $(PYINFRA_ARGS) $(ENGINE_ROOT)/pyinfra/inventory.py $(ENGINE_ROOT)/pyinfra/deploy.py
