@@ -120,6 +120,16 @@ Always confirm the instance repository, Terraform backend/state, and destroy pla
 
 `make -f rinstall/Makefile destroy-commands` prints a header with the selected instance config, runtime directory, Terraform directory, tfvars path, vSphere server/user when available from environment variables, backend/init settings, and then the explicit review/destroy commands. It never prints the vSphere password.
 
+After a successful full infrastructure destroy, remove the obsolete VM host
+keys for that instance with:
+
+```bash
+make -f rinstall/Makefile ssh-hostkeys-reset
+```
+
+This removes only `.rinstall/known_hosts`; it does not change the operator's
+`~/.ssh/known_hosts` and is not run automatically by the destroy workflow.
+
 Keep vCenter connection details out of `env.yaml` unless there is a specific reason to pin them there. Terraform accepts them through environment variables, which can be loaded by `direnv` from an ignored `.envrc`:
 
 ```bash
@@ -151,6 +161,25 @@ ssh:
 ```
 
 The jump host alias should be defined in the operator's `~/.ssh/config`; `make ssh-config` generates `build/<environment.id>/ssh_config`, includes that file, and only adds target-node routing. Generated target entries use `ProxyCommand` so both OpenSSH and pyinfra's SSH connector can consume the same config. This keeps real internal hostnames, IPs, and upstream SSH topology out of the repo. Use `ssh_ip` per node only if the desired SSH target cannot be derived from a static management NIC.
+
+rinstall-managed target VM keys are stored in `.rinstall/known_hosts` in an
+instance repository, or alongside the generated standalone SSH config under
+`build/<environment.id>/`. Both direct and proxied pyinfra target connections
+use this file with `StrictHostKeyChecking accept-new`: a first connection adds
+the key, while a changed key is rejected. External admin and jump hosts retain
+the operator's normal SSH config and global trust handling.
+
+After intentionally replacing one VM, remove only that node's old entry before
+connecting to the replacement:
+
+```bash
+make -f rinstall/Makefile ssh-hostkey-reset NODE=<configured-node-name>
+```
+
+The command validates the node against the expanded environment config and
+does not modify `~/.ssh/known_hosts`. The generated administrator SSH fragment
+and admin-host-to-VM host-key lifecycle remain unchanged and are outside this
+instance-local workstation trust handling.
 
 For administrator access from an existing admin jump host, run
 `make -f rinstall/Makefile admin-ssh-config` from an instance repository. It
