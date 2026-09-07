@@ -12,8 +12,9 @@ def main():
     parser.add_argument("--env", required=True)
     parser.add_argument("--format", choices=["shell", "multiline"], default="shell")
     args = parser.parse_args()
-    backend = load_env(args.env)["terraform"]["backend"]
-    address = gitlab_backend_state_address(backend)
+    env = load_env(args.env)
+    backend = env["terraform"]["backend"]
+    address = gitlab_backend_state_address(backend, env["environment"]["id"])
     values = {
         "TF_HTTP_ADDRESS": address,
         "TF_HTTP_LOCK_ADDRESS": f"{address}/lock",

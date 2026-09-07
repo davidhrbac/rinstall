@@ -224,7 +224,7 @@ def test_instance_context_prints_resolved_identity_without_credentials(tmp_path)
 
     assert "rinstall :: example\n\n" in result.stdout
     assert "Rancher: rancher.example.internal" in result.stdout
-    assert "State:   https://gitlab.example/api/v4/projects/1234/terraform/state/infra" in result.stdout
+    assert "State:   https://gitlab.example/api/v4/projects/1234/terraform/state/example-infra" in result.stdout
     assert f"Config:  {instance_root / 'config.yaml'}" in result.stdout
     assert all(secret not in result.stdout for secret in SECRET_VALUES)
     assert "vsphere-password-secret" not in result.stdout
@@ -320,7 +320,7 @@ def test_provision_all_banner_is_complete_and_logged(tmp_path):
     assert output.count("rinstall :: provision-all\n\n") == 1
     assert "Environment ID:       example" in output
     assert "Rancher:              rancher.example.internal" in output
-    assert "State:                https://gitlab.example/api/v4/projects/1234/terraform/state/infra" in output
+    assert "State:                https://gitlab.example/api/v4/projects/1234/terraform/state/example-infra" in output
     assert f"Config:               {instance_root / 'config.yaml'}" in output
     assert f"Runtime dir:          {instance_root / '.rinstall'}" in output
     assert f"Terraform:            {instance_root / 'rinstall/terraform/infra'}" in output
@@ -346,7 +346,7 @@ def test_provision_all_banner_is_complete_and_logged(tmp_path):
     log = log_path.read_text()
     assert "rinstall :: provision-all\n\n" in log
     assert "Environment ID:       example" in log
-    assert "State:                https://gitlab.example/api/v4/projects/1234/terraform/state/infra" in log
+    assert "State:                https://gitlab.example/api/v4/projects/1234/terraform/state/example-infra" in log
     assert log.count("rinstall :: provision-all\n\n") == 1
     assert all(secret not in log for secret in SECRET_VALUES)
     assert "vsphere-password-secret" not in log

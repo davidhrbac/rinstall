@@ -22,7 +22,6 @@ DEFAULT_NO_PROXY_NAMES = [
 
 SUPPORTED_SCHEMA_VERSION = 1
 ENVIRONMENT_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9.-]*$")
-TERRAFORM_STATE_PATTERN = re.compile(r"^[A-Za-z0-9._-]+$")
 
 
 def require(mapping, key, context):
@@ -31,8 +30,8 @@ def require(mapping, key, context):
     return mapping[key]
 
 
-def gitlab_backend_state_address(backend):
-    return f"{backend['url'].rstrip('/')}/api/v4/projects/{backend['project_id']}/terraform/state/{backend['state']}"
+def gitlab_backend_state_address(backend, environment_id):
+    return f"{backend['url'].rstrip('/')}/api/v4/projects/{backend['project_id']}/terraform/state/{environment_id}-infra"
 
 
 def validate_environment_identity(env):
@@ -110,12 +109,6 @@ def validate_env_references(env):
     project_id = require(backend, "project_id", "env.terraform.backend")
     if isinstance(project_id, bool) or not isinstance(project_id, int) or project_id <= 0:
         raise SystemExit("env.terraform.backend.project_id must be a positive integer")
-    state = require(backend, "state", "env.terraform.backend")
-    if not isinstance(state, str) or not TERRAFORM_STATE_PATTERN.fullmatch(state):
-        raise SystemExit(
-            "env.terraform.backend.state must contain only letters, digits, dots, hyphens, and underscores"
-        )
-
     infra = require(env, "infra", "env")
     networks = require(infra, "networks", "env.infra")
     templates = require(infra, "templates", "env.infra")

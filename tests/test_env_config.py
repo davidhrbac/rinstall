@@ -177,7 +177,7 @@ def test_validates_gitlab_backend_without_credentials():
     assert expand_env(config)["terraform"]["backend"]["project_id"] == 1234
 
 
-@pytest.mark.parametrize("missing", ["terraform", "backend", "type", "url", "project_id", "state"])
+@pytest.mark.parametrize("missing", ["terraform", "backend", "type", "url", "project_id"])
 def test_rejects_missing_required_gitlab_backend_configuration(missing):
     config = raw_example()
     config["terraform"] = {"backend": {"type": "gitlab", "url": "https://gitlab.example", "project_id": 1234, "state": "infra"}}
@@ -252,13 +252,12 @@ def test_render_infra_tfvars_uses_configured_clone_timeout(tmp_path):
 
 
 @pytest.mark.parametrize("url", ["http://gitlab.example", "https://gitlab.example/"])
-@pytest.mark.parametrize("state", ["infra", "prod_state-1.v2"])
-def test_accepts_valid_gitlab_backend_url_and_state(url, state):
+def test_accepts_valid_gitlab_backend_url_and_derives_state(url):
     config = raw_example()
     config["terraform"] = {
-        "backend": {"type": "gitlab", "url": url, "project_id": 1234, "state": state}
+        "backend": {"type": "gitlab", "url": url, "project_id": 1234}
     }
-    assert expand_env(config)["terraform"]["backend"]["state"] == state
+    assert expand_env(config)["environment"]["id"] == "example"
 
 
 @pytest.mark.parametrize("backend", [
@@ -266,15 +265,11 @@ def test_accepts_valid_gitlab_backend_url_and_state(url, state):
     {"type": "gitlab", "url": "", "project_id": 1, "state": "infra"},
     {"type": "gitlab", "url": "https://gitlab.example", "state": "infra"},
     {"type": "gitlab", "url": "https://gitlab.example", "project_id": "bad", "state": "infra"},
-    {"type": "gitlab", "url": "https://gitlab.example", "project_id": 1, "state": ""},
     {"type": "gitlab", "url": "ftp://gitlab.example", "project_id": 1, "state": "infra"},
     {"type": "gitlab", "url": "https:///missing-host", "project_id": 1, "state": "infra"},
     {"type": "gitlab", "url": "https://gitlab.example?project=1", "project_id": 1, "state": "infra"},
     {"type": "gitlab", "url": "https://gitlab.example#state", "project_id": 1, "state": "infra"},
     {"type": "gitlab", "url": "https://gitlab.example/gitlab", "project_id": 1, "state": "infra"},
-    {"type": "gitlab", "url": "https://gitlab.example", "project_id": 1, "state": "/"},
-    {"type": "gitlab", "url": "https://gitlab.example", "project_id": 1, "state": "prod/state"},
-    {"type": "gitlab", "url": "https://gitlab.example", "project_id": 1, "state": "prod state"},
 ])
 def test_rejects_invalid_gitlab_backend(backend):
     config = raw_example()
@@ -290,7 +285,6 @@ def test_derives_gitlab_backend_values_without_credentials(tmp_path):
             "type": "gitlab",
             "url": "https://gitlab.example",
             "project_id": 1234,
-            "state": "infra",
         }
     }
     config_path = tmp_path / "config.yaml"
@@ -311,9 +305,9 @@ def test_derives_gitlab_backend_values_without_credentials(tmp_path):
     )
 
     assert result.stdout.strip().split() == [
-        "TF_HTTP_ADDRESS=https://gitlab.example/api/v4/projects/1234/terraform/state/infra",
-        "TF_HTTP_LOCK_ADDRESS=https://gitlab.example/api/v4/projects/1234/terraform/state/infra/lock",
-        "TF_HTTP_UNLOCK_ADDRESS=https://gitlab.example/api/v4/projects/1234/terraform/state/infra/lock",
+        "TF_HTTP_ADDRESS=https://gitlab.example/api/v4/projects/1234/terraform/state/example-infra",
+        "TF_HTTP_LOCK_ADDRESS=https://gitlab.example/api/v4/projects/1234/terraform/state/example-infra/lock",
+        "TF_HTTP_UNLOCK_ADDRESS=https://gitlab.example/api/v4/projects/1234/terraform/state/example-infra/lock",
         "TF_HTTP_LOCK_METHOD=POST",
         "TF_HTTP_UNLOCK_METHOD=DELETE",
         "TF_HTTP_RETRY_WAIT_MIN=5",
