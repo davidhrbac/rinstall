@@ -110,6 +110,38 @@ def test_expands_rancher_pool_with_configured_name_prefix():
     assert resolved["rke2"]["primary_node"] == "control1"
 
 
+def test_accepts_single_non_default_bastion_service_node():
+    config = raw_example()
+    config["nodes"]["bastion2"] = config["nodes"].pop("bastion1")
+    config["bastion"]["service_node"] = "bastion2"
+
+    assert expand_env(config)["bastion"]["service_node"] == "bastion2"
+
+
+def test_rejects_zero_bastion_nodes():
+    config = raw_example()
+    config["nodes"]["bastion1"]["role"] = "prometheus"
+
+    with pytest.raises(SystemExit, match="schema v1 supports exactly one bastion node"):
+        expand_env(config)
+
+
+def test_rejects_multiple_bastion_nodes():
+    config = raw_example()
+    config["nodes"]["prom1"]["role"] = "bastion"
+
+    with pytest.raises(SystemExit, match="schema v1 supports exactly one bastion node"):
+        expand_env(config)
+
+
+def test_rejects_service_node_that_is_not_bastion():
+    config = raw_example()
+    config["bastion"]["service_node"] = "prom1"
+
+    with pytest.raises(SystemExit, match="env.bastion.service_node references prom1 with role 'prometheus'"):
+        expand_env(config)
+
+
 def test_rejects_unknown_network_template_and_primary_node_role():
     unknown_network = raw_example()
     unknown_network["nodes"]["prom1"]["nics"][0]["network"] = "missing"
@@ -304,6 +336,15 @@ def test_clone_timeout_rejects_non_positive_or_non_integer_values(clone_timeout)
 
     with pytest.raises(SystemExit, match="env.infra.vsphere.clone_timeout must be a positive integer"):
         expand_env(config)
+
+
+def test_terraform_clone_timeout_wiring_is_preserved():
+    terraform_root = EXAMPLE_ENV.parents[2] / "terraform/infra"
+    root_module = (terraform_root / "main.tf").read_text()
+    vm_module = (terraform_root / "modules/vsphere-vm/main.tf").read_text()
+
+    assert "clone_timeout    = var.clone_timeout" in root_module
+    assert "timeout       = var.clone_timeout" in vm_module
 
 
 def test_render_infra_tfvars_defaults_to_verified_vsphere_tls(tmp_path):

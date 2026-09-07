@@ -123,6 +123,9 @@ def validate_env_references(env):
     templates = require(infra, "templates", "env.infra")
     local_vlan = require(require(env, "local", "env"), "vlan", "env.local")
     nodes = require(env, "nodes", "env")
+    bastion_nodes = [name for name, node in nodes.items() if node.get("role") == "bastion"]
+    if len(bastion_nodes) != 1:
+        raise SystemExit("schema v1 supports exactly one bastion node")
 
     for node_name, node in nodes.items():
         validate_name_exists(
