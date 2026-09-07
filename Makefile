@@ -279,7 +279,7 @@ provision-all: config-validate
 	if ((status == 0)); then run_phase 'Rancher install' rancher-install 5 || status=1; fi; \
 	total_duration=$$((SECONDS - total_start)); \
 	log '\nDeployment summary for environment file=%s\n' "$(ENV_CONFIG)"; \
-	if ((status == 0)); then log 'Status: succeeded\n'; else log 'Status: failed\n'; fi; \
+	if ((status == 0)); then log 'Status: %ssucceeded%s\n' "$$green" "$$reset"; else log 'Status: %sfailed%s\n' "$$red" "$$reset"; fi; \
 	for index in "$${!completed_labels[@]}"; do \
 	  log '  %-20s %s\n' "$${completed_labels[$$index]}" "$$(format_duration "$${completed_durations[$$index]}")"; \
 	done; \
