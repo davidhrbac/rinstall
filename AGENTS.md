@@ -8,6 +8,7 @@
 - `.rinstall/` contains only per-instance runtime and generated data, including `infra.tfvars.json`, SSH artifacts, kubeconfigs, logs, and Terraform's `TF_DATA_DIR` under `.rinstall/terraform-data`.
 - `envs/example` is only a development/test/rendering fixture; it is not a standalone production provisioning environment. Keep real customer/internal hostnames, IPs, and SSH topology names in the separate instance repository.
 - Names such as `bastion1`, `prom1`, and `rancher1` are example topology names only; never hardcode them in runtime code or general operational instructions. Use `bastion.service_node`, node roles, and configured node names.
+- Schema v1 supports exactly one bastion node; multi-bastion/HA bastion support is deferred. `bastion.service_node` identifies that node.
 - Prefer `ssh.jump_host: <existing SSH config alias>` in instance configs; keep upstream SSH details in the operator's `~/.ssh/config`, not in this repo.
 - Use `make ssh-config ENV=<env>` to generate `build/<environment.id>/ssh_config` without running pyinfra.
 - Use `make admin-ssh-config ENV=<env>` to generate `build/<environment.id>/<environment.id>.conf` for an admin jump host. `make install-admin-ssh-config ENV=<env>` may upload that fragment to `/root/.ssh/config.d/` through `ssh.jump_host`, but must never modify `/root/.ssh/config` or add its `Include` directive.
@@ -42,8 +43,8 @@
 ## Rancher Environment Workflow
 
 - Inputs normally known before provisioning: customer VLAN, datastore, resource pool, VM folder, Rancher URL, bastion/prom template, and local Rancher/RKE2 VM template.
-- Local cluster VLAN is usually `/28`: `.1` gateway, `.4` `bastion1`, `.5` reserved, `.6` `prom1`, `.11` `rancher1`, `.12` `rancher2`, `.13` `rancher3`.
-- Use VM template 1 for `bastion1` and `prom1`; use VM template 2 for local Rancher/RKE2 VMs and downstream cluster VMs.
+- The sanitized example local cluster VLAN is usually `/28`: `.1` gateway, `.4` `bastion1`, `.5` reserved, `.6` `prom1`, `.11` `rancher1`, `.12` `rancher2`, `.13` `rancher3`.
+- In the sanitized example, use VM template 1 for `bastion1` and `prom1`; use VM template 2 for local Rancher/RKE2 VMs and downstream cluster VMs.
 - vSphere VM object names must be unique; Terraform appends a stable random suffix as `<node>-xxxxx-xxxxx`, while guest hostname/DNS/SSH aliases stay as the unsuffixed node key.
 - The configured bastion's primary interface is on the customer VLAN and has a static IP; its secondary interface is on the management VLAN and gets DHCP.
 - `nodes[ b astion.service_node ].dns_servers` is required management/vSphere DNS for bastion OS, Squid, and clone customization. Local nodes default to `local.vlan.dns_nodes`, normally the configured bastion; `bastion.dnsmasq_upstream_servers` is a separate required list rendered as dnsmasq `server=` entries with `no-resolv`, so local clients do not inherit bastion management DNS.
@@ -59,7 +60,7 @@
 - `make node-prep` copies `files/rke2-canal.conf` to `/etc/NetworkManager/conf.d/`, renders `/etc/default/rke2-server`, `/etc/profile.d/proxy.sh`, and `/etc/rancher/rke2/config.yaml`.
 - `make node-prep` renders `/etc/profile.d/rke2.sh` on Rancher nodes so root shells get RKE2 `PATH`, `KUBECONFIG`, `CRI_CONFIG_FILE`, `k` alias, and kubectl/crictl Bash completion.
 - If `rke2.token` is present in `env.yaml`, `make node-prep` writes it to `rke2.token_file`; use only dummy tokens in committed examples and prefer secret-source population for production.
-- RKE2 config uses `token-file`, `selinux: true`, `tls-san` defaulted from `rancher_url`; only non-primary Rancher nodes get `server: https://<rancher1-ip>:9345`.
+- RKE2 config uses `token-file`, `selinux: true`, `tls-san` defaulted from `rancher_url`; only non-primary Rancher nodes get `server: https://<primary-node-ip>:9345`.
 - `rke2.version` is required and passed to `get.rke2.io` as `INSTALL_RKE2_VERSION`. Existing nodes must already match the pin; this repo does not use reruns to upgrade or downgrade RKE2.
 - `make rke2-install` runs two pyinfra phases: install/enable `rke2-server --now` on `rke2.primary_node` first, then on all other Rancher join nodes.
 - RKE2 install disables Rancher RKE2 package repositories after installation because RKE2 is not upgraded through OS package updates.

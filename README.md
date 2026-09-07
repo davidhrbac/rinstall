@@ -186,7 +186,7 @@ The local cluster VLAN is normally a `/28`:
 
 The example defines three Rancher nodes through `local.rancher_nodes`; increase `count` for larger local clusters. If you need `rancher1-5`, use a subnet large enough for the selected host offsets; in `/28`, `.15` is broadcast, so `.11-.15` is not valid.
 
-`bastion1` has a static IP on its primary/customer NIC and should use a static IP on the secondary management NIC for SSH. `prom1` and Rancher nodes also use static customer VLAN IPs. Terraform sets static IPs with vSphere clone customization, not cloud-init. DNS records are generated into dnsmasq from the same inventory; DHCP does not need to learn fixed Rancher nodes from leases.
+The configured bastion has a static IP on its primary/customer NIC and should use a static IP on the secondary management NIC for SSH. The Prometheus node and Rancher nodes also use static customer VLAN IPs. Terraform sets static IPs with vSphere clone customization, not cloud-init. DNS records are generated into dnsmasq from the same inventory; DHCP does not need to learn fixed Rancher nodes from leases.
 
 Set `infra.vsphere.clone_timeout` to control the vSphere VM clone timeout in
 minutes. It defaults to `60` and is passed to Terraform's `clone.timeout`; it
@@ -204,7 +204,7 @@ nodes:
         cidr: 192.0.2.10/24
 ```
 
-The loader expands that NIC to `ip`/`prefix` for Terraform and uses the same IP as the generated SSH target for `bastion1`, without repeating it as `ssh_ip`.
+The loader expands that NIC to `ip`/`prefix` for Terraform and uses the same IP as the generated SSH target for the configured bastion, without repeating it as `ssh_ip`.
 
 vSphere clone customization applies static NIC addressing during VM clone/provisioning. Adding or changing `nics[].cidr` on an already-created VM may update Terraform/vSphere customization metadata but does not reliably reconfigure the guest OS network. For existing VMs, either recreate the VM or adjust the NetworkManager profile in the guest manually/through pyinfra, then keep `env.yaml` aligned for the next redeploy.
 
@@ -242,7 +242,7 @@ bastion:
   service_node: bastion1
 ```
 
-The shared env loader derives `domain` from `rancher_url`, defaults `local.vlan.dns_nodes` to `bastion.service_node`, expands the Rancher node pool into concrete nodes like `rancher1`, `rancher2`, and `rancher3`, then expands host offsets into concrete IPs for both Terraform and pyinfra.
+The shared env loader derives `domain` from `rancher_url`, defaults `local.vlan.dns_nodes` to `bastion.service_node`, expands the Rancher node pool using its configured `name_prefix`, then expands host offsets into concrete IPs for both Terraform and pyinfra.
 Host offsets are validated against the CIDR and may not resolve to the network or broadcast address.
 Named references are validated too: node templates must exist, NIC networks must exist, `local.vlan.dns_nodes` must exist if explicitly set, `bastion.service_node` must have `role: bastion`, and `rke2.primary_node` must have `role: rancher`.
 
@@ -268,7 +268,7 @@ Proxy files follow the production pattern: `HTTP_PROXY`/`HTTPS_PROXY` point at `
 
 ## Hostnames
 
-`make node-prep` sets local node hostnames to `<node>.<rancher_url>`, including `bastion1`, `prom1`, and all Rancher nodes.
+`make node-prep` sets local node hostnames to `<node>.<rancher_url>`, including the configured bastion, the Prometheus node, and all Rancher nodes.
 
 It also renders `/etc/profile.d/prompt.sh`. The prompt suffix is always `environment.id`; prompt colors have defaults and are the only prompt-specific settings:
 
@@ -293,7 +293,7 @@ For Rancher nodes, `make node-prep` renders these managed files:
 /etc/rancher/rke2/config.yaml
 ```
 
-The primary node defaults to the first expanded Rancher node and gets a config without `server`; join nodes get `server: https://<rancher1-ip>:9345`. `rke2.token_file` defaults to `/etc/rancher/rke2/token`, `selinux` defaults to `true`, and `make rke2-install` runs the primary node phase first, then the join-node phase.
+The primary node defaults to the first expanded Rancher node and gets a config without `server`; join nodes get `server: https://<primary-node-ip>:9345`. `rke2.token_file` defaults to `/etc/rancher/rke2/token`, `selinux` defaults to `true`, and `make rke2-install` runs the primary node phase first, then the join-node phase.
 
 ## Rancher Edition
 
