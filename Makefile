@@ -24,8 +24,9 @@ PYINFRA_ARGS ?=
 PROVISION_PHASE ?= 0
 ADMIN_SSH_HOST ?=
 ADMIN_SSH_CONFIG = $(BUILD_ENV_DIR)/$(ENV_ID).conf
+SSH_KNOWN_HOSTS = $(BUILD_ENV_DIR)/known_hosts
 
-.PHONY: help config-validate render-infra-vars instance-context ssh-config admin-ssh-config install-admin-ssh-config infra-init infra-fmt infra-validate infra-plan infra-apply infra-output destroy-commands bastion-configure node-prep rke2-install rke2-kubeconfig rancher-install rancher-install-run rancher-bootstrap-password-command rancher-bootstrap rancher-bootstrap-run provision-all provision-all-yes verify
+.PHONY: help config-validate render-infra-vars instance-context ssh-config ssh-hostkey-reset ssh-hostkeys-reset admin-ssh-config install-admin-ssh-config infra-init infra-fmt infra-validate infra-plan infra-apply infra-output destroy-commands bastion-configure node-prep rke2-install rke2-kubeconfig rancher-install rancher-install-run rancher-bootstrap-password-command rancher-bootstrap rancher-bootstrap-run provision-all provision-all-yes verify
 
 help:
 	@printf '%s\n' 'Targets:'
@@ -38,6 +39,8 @@ help:
 	@printf '\033[3m%s\033[0m\n' '  render-infra-vars   render runtime/infra.tfvars.json from config.yaml'
 	@printf '\033[3m%s\033[0m\n' '  instance-context    show the selected instance and Terraform state'
 	@printf '\033[3m%s\033[0m\n' '  ssh-config          render runtime/ssh_config from config.yaml'
+	@printf '\033[3m%s\033[0m\n' '  ssh-hostkey-reset  remove one node from the instance known_hosts file'
+	@printf '\033[3m%s\033[0m\n' '  ssh-hostkeys-reset remove the instance known_hosts file'
 	@printf '\033[3m%s\033[0m\n' '  admin-ssh-config    render admin jump-host SSH fragment from config.yaml'
 	@printf '\033[3m%s\033[0m\n' '  install-admin-ssh-config  upload the admin SSH fragment to the configured jump host'
 	@printf '%s\n' '  infra-init          terraform init for infra layer'
@@ -68,6 +71,13 @@ instance-context: config-validate
 ssh-config: config-validate
 	install -d -m 700 $(BUILD_ENV_DIR)
 	RUNTIME_DIR=$(RUNTIME_DIR) $(PYTHON) $(ENGINE_ROOT)/scripts/render-ssh-config.py --env $(ENV_CONFIG) --out $(BUILD_ENV_DIR)/ssh_config
+
+ssh-hostkey-reset: config-validate
+	@if [[ -z "$(NODE)" ]]; then printf '%s\n' 'NODE is required, for example: make -f rinstall/Makefile ssh-hostkey-reset NODE=rancher1' >&2; exit 2; fi
+	@$(PYTHON) $(ENGINE_ROOT)/scripts/reset-ssh-hostkeys.py --env $(ENV_CONFIG) --known-hosts $(SSH_KNOWN_HOSTS) --node "$(NODE)"
+
+ssh-hostkeys-reset:
+	@$(PYTHON) $(ENGINE_ROOT)/scripts/reset-ssh-hostkeys.py --env $(ENV_CONFIG) --known-hosts $(SSH_KNOWN_HOSTS) --all
 
 admin-ssh-config: config-validate
 	install -d -m 700 $(BUILD_ENV_DIR)
@@ -135,8 +145,10 @@ destroy-commands: instance-context
 	@printf '%s %s\n' 'terraform' '\'
 	@printf '%s %s\n' '  -chdir=$(TF_INFRA_DIR)' '\'
 	@printf '%s %s\n' '  destroy' '\'
-	@printf '%s\n' '  -var-file=$(INFRA_TFVARS)'
+	@printf '%s\n' '  -var-file=$(INFRA_TFVARS) && make -f rinstall/Makefile ssh-hostkeys-reset'
 	@printf '%s\n' '============================================================'
+	@printf '%s\n' 'A successful full destroy automatically clears instance-local SSH trust.'
+	@printf '%s\n' 'If Terraform destroy fails, the instance-local SSH trust is preserved.'
 
 bastion-configure:
 	ENV_CONFIG=$(ENV_CONFIG) RUNTIME_DIR=$(RUNTIME_DIR) PHASE=bastion PYINFRA_PROGRESS=$(PYINFRA_PROGRESS) $(PYINFRA) $(PYINFRA_ARGS) $(ENGINE_ROOT)/pyinfra/inventory.py $(ENGINE_ROOT)/pyinfra/deploy.py
@@ -293,7 +305,7 @@ provision-all-yes:
 
 verify: config-validate
 	cd $(ENGINE_ROOT) && $(PYTHON) -m pytest
-	$(PYTHON) -m py_compile $(ENGINE_ROOT)/lib/env_config.py $(ENGINE_ROOT)/lib/ssh_config.py $(ENGINE_ROOT)/pyinfra/inventory.py $(ENGINE_ROOT)/pyinfra/deploy.py $(ENGINE_ROOT)/scripts/admin-jump-host.py $(ENGINE_ROOT)/scripts/environment-id.py $(ENGINE_ROOT)/scripts/print-instance-context.py $(ENGINE_ROOT)/scripts/print-rancher-bootstrap-password-command.py $(ENGINE_ROOT)/scripts/render-admin-ssh-config.py $(ENGINE_ROOT)/scripts/render-infra-tfvars.py $(ENGINE_ROOT)/scripts/render-ssh-config.py $(ENGINE_ROOT)/scripts/prepare-rke2-kubeconfig.py $(ENGINE_ROOT)/scripts/terraform-backend-env.py $(ENGINE_ROOT)/scripts/validate-config.py
+	$(PYTHON) -m py_compile $(ENGINE_ROOT)/lib/env_config.py $(ENGINE_ROOT)/lib/ssh_config.py $(ENGINE_ROOT)/pyinfra/inventory.py $(ENGINE_ROOT)/pyinfra/deploy.py $(ENGINE_ROOT)/scripts/admin-jump-host.py $(ENGINE_ROOT)/scripts/environment-id.py $(ENGINE_ROOT)/scripts/print-instance-context.py $(ENGINE_ROOT)/scripts/print-rancher-bootstrap-password-command.py $(ENGINE_ROOT)/scripts/render-admin-ssh-config.py $(ENGINE_ROOT)/scripts/render-infra-tfvars.py $(ENGINE_ROOT)/scripts/render-ssh-config.py $(ENGINE_ROOT)/scripts/reset-ssh-hostkeys.py $(ENGINE_ROOT)/scripts/prepare-rke2-kubeconfig.py $(ENGINE_ROOT)/scripts/terraform-backend-env.py $(ENGINE_ROOT)/scripts/validate-config.py
 	bash -n $(ENGINE_ROOT)/scripts/install-rke2.sh $(ENGINE_ROOT)/scripts/install-rancher.sh $(ENGINE_ROOT)/scripts/bootstrap-rancher.sh
 	$(PYTHON) $(ENGINE_ROOT)/scripts/render-infra-tfvars.py --env $(ENV_CONFIG) --out $(INFRA_TFVARS)
 	RUNTIME_DIR=$(RUNTIME_DIR) $(PYTHON) $(ENGINE_ROOT)/scripts/render-ssh-config.py --env $(ENV_CONFIG) --out $(BUILD_ENV_DIR)/ssh_config

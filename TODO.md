@@ -17,10 +17,6 @@
   - Ensure Helm satisfies the configured Rancher release requirements without maintaining an independent historical pin unless DR policy requires it.
   - Replace minimum-version Python dependencies with exact pins or a lockfile.
 
-- Add per-environment SSH known-hosts handling for DR.
-  - Keep generated host keys outside global `~/.ssh/known_hosts` so redeploying VMs at the same IP does not block SSH.
-  - Add an explicit reset operation for that environment-only known-hosts file.
-
 - Add proxy-aware bootstrap/tool downloads.
 
 - Add vCenter CA bootstrap for Linux and Windows.
