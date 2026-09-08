@@ -118,6 +118,17 @@ def validate_no_downstream_removal(rendered, existing_outputs):
             + ", ".join(sorted(reordered))
         )
 
+    moved = [
+        name
+        for name in existing
+        if existing[name].get("vmware_network") != desired[name]["vmware_network"]
+    ]
+    if moved:
+        raise SystemExit(
+            "changing an existing downstream VMware network is not supported in v0.3.0: "
+            + ", ".join(sorted(moved))
+        )
+
 
 def main():
     parser = argparse.ArgumentParser(description="Render Terraform infra variables from env.yaml")

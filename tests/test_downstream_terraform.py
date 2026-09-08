@@ -83,6 +83,11 @@ def test_rejects_downstream_removal_and_attachment_reorder():
             existing,
         )
 
+    moved = render_with(downstream_network(121), downstream_network(122))
+    moved["networks"]["__downstream_vlan_121"] = "MOVED_NETWORK"
+    with pytest.raises(SystemExit, match="changing an existing downstream VMware network"):
+        RENDERER.validate_no_downstream_removal(moved, existing)
+
 
 def test_terraform_output_exposes_provider_network_and_mac_identity():
     output_source = (ROOT / "terraform/infra/outputs.tf").read_text()

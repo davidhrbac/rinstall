@@ -175,6 +175,11 @@ def test_rejects_duplicate_vlan_and_vmware_network():
         resolved_with(downstream_network(), downstream_network(vlan=122, vmware_network="DOWNSTREAM_VLAN_121"))
 
 
+def test_rejects_vmware_network_already_attached_to_bastion():
+    with pytest.raises(SystemExit, match="conflicts with an existing bastion NIC"):
+        resolved_with(downstream_network(vmware_network="CUSTOMER_VLAN_PORTGROUP"))
+
+
 def test_rejects_overlapping_downstream_subnets():
     with pytest.raises(SystemExit, match="overlaps downstream subnet"):
         resolved_with(
@@ -186,6 +191,27 @@ def test_rejects_overlapping_downstream_subnets():
 def test_rejects_overlap_with_local_vlan():
     with pytest.raises(SystemExit, match="overlaps local VLAN"):
         resolved_with(downstream_network(subnet="10.14.17.0/28"))
+
+
+def test_rejects_overlap_with_vsphere_route_or_static_bastion_nic():
+    with pytest.raises(SystemExit, match="overlaps env.bastion.vsphere_route"):
+        resolved_with(downstream_network(subnet="192.0.2.128/27"))
+
+    config = raw_example()
+    config["nodes"]["bastion1"]["nics"][1]["cidr"] = "192.0.2.10/24"
+    config["bastion"]["downstream_networks"] = [downstream_network(subnet="192.0.2.64/27")]
+    with pytest.raises(SystemExit, match="overlaps an existing bastion NIC network"):
+        expand_env(config)
+
+
+def test_rejects_more_than_ten_bastion_nics():
+    networks = [
+        downstream_network(vlan=100 + index, subnet=f"10.20.{100 + index}.32/27")
+        for index in range(9)
+    ]
+
+    with pytest.raises(SystemExit, match="more than 10 VMware NICs"):
+        resolved_with(*networks)
 
 
 def test_reusable_resolver_counts_from_both_ends():

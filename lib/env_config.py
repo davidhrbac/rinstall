@@ -7,6 +7,8 @@ from uuid import NAMESPACE_URL, uuid5
 
 import yaml
 
+from lib.bastion_network import normalize_ipv4_route
+
 
 DEFAULT_NO_PROXY_CIDRS = [
     "127.0.0.0/8",
@@ -368,6 +370,19 @@ def expand_env(raw_env):
 
     bastion = require(env, "bastion", "env")
     resolve_downstream_networks(bastion, network, environment_id)
+    bastion_name = require(bastion, "service_node", "env.bastion")
+    base_vmware_networks = {
+        env["infra"]["networks"][nic["network"]]
+        for nic in env["nodes"][bastion_name]["nics"]
+    }
+    for downstream in bastion["downstream_networks"]:
+        if downstream["vmware_network"] in base_vmware_networks:
+            raise SystemExit(
+                "env.bastion.downstream_networks VMware network conflicts with an existing bastion NIC: "
+                f"{downstream['vmware_network']}"
+            )
+    if len(env["nodes"][bastion_name]["nics"]) + len(bastion["downstream_networks"]) > 10:
+        raise SystemExit("the configured bastion cannot have more than 10 VMware NICs")
 
     local_vlan["prefix"] = network.prefixlen
     local_vlan["gateway"] = address_from_host(
@@ -414,7 +429,29 @@ def expand_env(raw_env):
         primary_ips[ip] = name
 
     bastion.setdefault("squid_http_port", 3128)
-    bastion_name = require(bastion, "service_node", "env.bastion")
+    bastion["vsphere_route"] = normalize_ipv4_route(
+        require(bastion, "vsphere_route", "env.bastion"),
+        "env.bastion.vsphere_route",
+    )
+    vsphere_route_network = ip_network(bastion["vsphere_route"].split()[0])
+    bastion_nic_networks = [
+        ip_interface(f"{nic['ip']}/{nic['prefix']}").network
+        for nic in nodes[bastion_name]["nics"]
+        if nic.get("ip") is not None
+    ]
+    for downstream in bastion["downstream_networks"]:
+        downstream_subnet = ip_network(downstream["subnet"])
+        if downstream_subnet.overlaps(vsphere_route_network):
+            raise SystemExit(
+                "env.bastion.downstream_networks subnet overlaps env.bastion.vsphere_route: "
+                f"{downstream_subnet}"
+            )
+        for nic_network in bastion_nic_networks:
+            if downstream_subnet.overlaps(nic_network):
+                raise SystemExit(
+                    "env.bastion.downstream_networks subnet overlaps an existing bastion NIC network: "
+                    f"{downstream_subnet}"
+                )
     route_connection = require(bastion, "vsphere_route_connection", "env.bastion")
     management_interfaces = [
         source

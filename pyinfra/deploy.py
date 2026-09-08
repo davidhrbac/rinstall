@@ -1,12 +1,19 @@
 import os
 import shlex
+from io import StringIO
 from pathlib import Path
 
 from pyinfra import host
 from pyinfra.facts.server import Command
 from pyinfra.operations import dnf, files, server, systemd
-from io import StringIO
+from pyinfra.operations.util import any_changed
 
+from lib.bastion_network import (
+    downstream_connection_needs_activation,
+    profile_rename_needed,
+    reconcile_ipv4_routes,
+    route_needs_replacement,
+)
 from lib.ssh_config import build_dir_for_env
 
 
@@ -38,6 +45,32 @@ def local_kubeconfig_path():
 
 def shell_env(values):
     return " ".join(f"{key}={shlex.quote(str(value))}" for key, value in values.items())
+
+
+def command_output(command):
+    return host.get_fact(Command, command=command) or ""
+
+
+def connection_uuid(connection_name):
+    quoted = shlex.quote(connection_name)
+    return command_output(
+        f"nmcli -g UUID connection show {quoted} 2>/dev/null || "
+        f"nmcli -g GENERAL.CON-UUID device show {quoted} 2>/dev/null || true"
+    ).strip()
+
+
+def device_for_mac(mac_address):
+    command = (
+        f"wanted={shlex.quote(mac_address)}; found=''; "
+        "for path in /sys/class/net/*; do "
+        "actual=$(tr '[:upper:]' '[:lower:]' < \"$path/address\"); "
+        "if [ \"$actual\" = \"$wanted\" ]; then "
+        "[ -z \"$found\" ] || { printf 'MAC %s matched multiple devices\\n' \"$wanted\" >&2; exit 1; }; "
+        "found=${path##*/}; fi; done; "
+        "[ -n \"$found\" ] || { printf 'No device found for provider MAC %s\\n' \"$wanted\" >&2; exit 1; }; "
+        "printf '%s' \"$found\""
+    )
+    return command_output(command).strip()
 
 
 def disable_rke2_repos():
@@ -109,27 +142,29 @@ def configure_asdf():
     )
 
 
-if phase == "bastion" and role == "bastion":
+if phase == "bastion-packages" and role == "bastion":
     dnf.packages(
         name="Install bastion services",
         packages=["dnsmasq", "squid", "NetworkManager"],
         present=True,
     )
 
+
+if phase == "bastion" and role == "bastion":
     files.directory(
         name="Ensure dnsmasq config dir exists",
         path="/etc/dnsmasq.d",
         present=True,
     )
 
-    files.line(
+    dnsmasq_binding = files.line(
         name="Disable mutually exclusive dnsmasq static binding",
         path="/etc/dnsmasq.conf",
         line="bind-interfaces",
         present=False,
     )
 
-    files.template(
+    hosts_config = files.template(
         name="Render /etc/hosts DNS records",
         src=str(ENGINE_ROOT / "pyinfra/templates/hosts.j2"),
         dest="/etc/hosts",
@@ -138,7 +173,7 @@ if phase == "bastion" and role == "bastion":
         rancher_nodes=rancher_nodes(),
     )
 
-    files.template(
+    dnsmasq_local_config = files.template(
         name="Render dnsmasq local config",
         src=str(ENGINE_ROOT / "pyinfra/templates/dnsmasq-local.conf.j2"),
         dest="/etc/dnsmasq.d/10-rancher-local.conf",
@@ -146,7 +181,7 @@ if phase == "bastion" and role == "bastion":
         config=config,
     )
 
-    files.template(
+    dnsmasq_dhcp_config = files.template(
         name="Render dnsmasq DHCP config",
         src=str(ENGINE_ROOT / "pyinfra/templates/dnsmasq-dhcp.conf.j2"),
         dest="/etc/dnsmasq.d/20-local-dhcp.conf",
@@ -154,53 +189,159 @@ if phase == "bastion" and role == "bastion":
         config=config,
     )
 
+    if config["bastion"]["downstream_networks"]:
+        files.directory(
+            name="Ensure persistent network naming directory exists",
+            path="/etc/systemd/network",
+            present=True,
+        )
+        files.directory(
+            name="Ensure NetworkManager system connection directory exists",
+            path="/etc/NetworkManager/system-connections",
+            mode="0700",
+            present=True,
+        )
+
+    downstream_links = []
+    downstream_profiles = []
+    downstream_devices = {}
+    for downstream in config["bastion"]["downstream_networks"]:
+        interface_name = downstream["interface_name"]
+        mac_address = host.data.downstream_network_output[interface_name]["mac_address"]
+        device = device_for_mac(mac_address)
+        downstream_devices[interface_name] = device
+
+        link = files.template(
+            name=f"Persist kernel interface name {interface_name}",
+            src=str(ENGINE_ROOT / "pyinfra/templates/downstream-network.link.j2"),
+            dest=f"/etc/systemd/network/10-rinstall-{interface_name}.link",
+            mode="0644",
+            mac_address=mac_address,
+            interface_name=interface_name,
+        )
+        downstream_links.append(link)
+
+        profile = files.template(
+            name=f"Render NetworkManager profile {interface_name}",
+            src=str(ENGINE_ROOT / "pyinfra/templates/downstream-network.nmconnection.j2"),
+            dest=f"/etc/NetworkManager/system-connections/rinstall-{interface_name}.nmconnection",
+            mode="0600",
+            downstream=downstream,
+            mac_address=mac_address,
+        )
+        downstream_profiles.append(profile)
+
+    if downstream_links:
+        server.shell(
+            name="Reload persistent network naming rules",
+            commands=["udevadm control --reload"],
+            _if=any_changed(*downstream_links),
+        )
+
+    for index, downstream in enumerate(config["bastion"]["downstream_networks"]):
+        interface_name = downstream["interface_name"]
+        device = downstream_devices[interface_name]
+        mac_address = host.data.downstream_network_output[interface_name]["mac_address"]
+        rename = server.shell(
+            name=f"Set kernel interface name {interface_name}",
+            commands=[
+                "if [ -e {target_path} ] && [ \"$(cat {target_path}/address)\" != {mac} ]; then "
+                "printf 'Interface %s already belongs to another MAC\\n' {target} >&2; exit 1; fi; "
+                "nmcli device disconnect {source} >/dev/null 2>&1 || true; "
+                "ip link set dev {source} down; ip link set dev {source} name {target}".format(
+                    target_path=shlex.quote(f"/sys/class/net/{interface_name}"),
+                    mac=shlex.quote(mac_address),
+                    source=shlex.quote(device),
+                    target=shlex.quote(interface_name),
+                )
+            ],
+            _if=lambda device=device, interface_name=interface_name: device != interface_name,
+        )
+
+        current_uuid = command_output(
+            f"nmcli -g GENERAL.CON-UUID device show {shlex.quote(interface_name)} 2>/dev/null || true"
+        ).strip()
+        current_addresses = command_output(
+            f"ip -4 -o address show dev {shlex.quote(interface_name)} 2>/dev/null || true"
+        )
+        activation_needed = downstream_connection_needs_activation(
+            current_uuid,
+            current_addresses,
+            downstream,
+        )
+        profile = downstream_profiles[index]
+        profile_path = f"/etc/NetworkManager/system-connections/rinstall-{interface_name}.nmconnection"
+        server.shell(
+            name=f"Activate downstream network {interface_name}",
+            commands=[
+                f"restorecon -F {shlex.quote(profile_path)} 2>/dev/null || true; "
+                f"nmcli connection load {shlex.quote(profile_path)}; "
+                f"nmcli connection up uuid {shlex.quote(downstream['connection_uuid'])} ifname {shlex.quote(interface_name)}"
+            ],
+            _if=lambda profile=profile, rename=rename, activation_needed=activation_needed: (
+                profile.did_change() or rename.did_change() or activation_needed
+            ),
+        )
+
     for source_name, target_name in config["bastion"].get("network_connection_names", {}).items():
+        source_uuid = connection_uuid(source_name)
+        target_uuid = connection_uuid(target_name)
+        rename_needed = profile_rename_needed(source_uuid, target_uuid, source_name, target_name)
         server.shell(
             name=f"Rename NetworkManager connection {source_name} to {target_name}",
             commands=[
-                "target='{target}'; source='{source}'; "
-                "if nmcli -t -f NAME con show \"$target\" >/dev/null 2>&1; then "
-                "exit 0; "
-                "fi; "
-                "if nmcli -t -f NAME con show \"$source\" >/dev/null 2>&1; then "
-                "connection=\"$source\"; "
-                "else "
-                "connection=$(nmcli -g GENERAL.CONNECTION device show \"$source\"); "
-                "fi; "
-                "nmcli con mod \"$connection\" connection.id \"$target\"".format(
-                    source=source_name,
-                    target=target_name,
-                )
+                f"nmcli connection modify uuid {shlex.quote(source_uuid)} connection.id {shlex.quote(target_name)}"
             ],
+            _if=lambda rename_needed=rename_needed: rename_needed,
         )
 
+    route_connection_name = config["bastion"]["vsphere_route_connection"]
+    route_source_names = [
+        source
+        for source, target in config["bastion"].get("network_connection_names", {}).items()
+        if target == route_connection_name
+    ]
+    route_connection_uuid = connection_uuid(route_connection_name)
+    if not route_connection_uuid and route_source_names:
+        route_connection_uuid = connection_uuid(route_source_names[0])
+    if not route_connection_uuid:
+        raise SystemExit(f"cannot resolve NetworkManager route connection {route_connection_name!r}")
+    desired_route = config["bastion"]["vsphere_route"]
+    current_route = command_output(
+        f"nmcli -g ipv4.routes connection show uuid {shlex.quote(route_connection_uuid)} 2>/dev/null || true"
+    )
+    replacement_routes = reconcile_ipv4_routes(current_route, desired_route)
     server.shell(
-        name="Add vSphere route",
+        name="Configure vSphere route",
         commands=[
-            "connection='{connection}'; route='{route}'; "
-            "if ! nmcli -t -f NAME con show \"$connection\" >/dev/null 2>&1; then "
-            "connection=$(nmcli -g GENERAL.CONNECTION device show \"$connection\"); "
-            "fi; "
-            "if ! nmcli -g ipv4.routes con show \"$connection\" | grep -F -- \"$route\" >/dev/null; then "
-            "nmcli con mod \"$connection\" +ipv4.routes \"$route\"; "
-            "fi".format(
-                connection=config["bastion"]["vsphere_route_connection"],
-                route=config["bastion"]["vsphere_route"],
-            )
+            f"nmcli connection modify uuid {shlex.quote(route_connection_uuid)} ipv4.routes {shlex.quote(replacement_routes)}; "
+            f"device=$(nmcli -g GENERAL.DEVICES connection show uuid {shlex.quote(route_connection_uuid)}); "
+            "if [ -n \"$device\" ] && [ \"$device\" != '--' ]; then "
+            "nmcli device reapply \"$device\"; else "
+            f"nmcli connection up uuid {shlex.quote(route_connection_uuid)}; fi"
         ],
+        _if=lambda: route_needs_replacement(current_route, desired_route),
     )
 
-    server.shell(
-        name="Validate dnsmasq configuration",
+    dnsmasq_validation = server.shell(
+        name="Validate changed dnsmasq configuration",
         commands=["dnsmasq --test"],
+        _if=any_changed(dnsmasq_binding, hosts_config, dnsmasq_local_config, dnsmasq_dhcp_config),
     )
 
     systemd.service(
-        name="Enable and restart dnsmasq",
+        name="Enable and start dnsmasq",
+        service="dnsmasq",
+        running=True,
+        enabled=True,
+    )
+
+    systemd.service(
+        name="Restart dnsmasq after validated configuration change",
         service="dnsmasq",
         running=True,
         restarted=True,
-        enabled=True,
+        _if=lambda: dnsmasq_validation.did_change(),
     )
 
     systemd.service(
