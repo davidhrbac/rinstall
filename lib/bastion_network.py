@@ -2,7 +2,6 @@ import json
 from ipaddress import ip_address, ip_network
 from pathlib import Path
 import re
-import time
 
 
 MAC_ADDRESS_PATTERN = re.compile(r"^(?:[0-9a-f]{2}:){5}[0-9a-f]{2}$")
@@ -26,26 +25,24 @@ def normalize_ipv4_route(value, context="route"):
     return f"{destination} {next_hop}"
 
 
-def wait_for_device(mac_address, visible_devices, timeout=60, interval=1, sleep=time.sleep):
-    wanted = mac_address.lower()
-    deadline = time.monotonic() + timeout
-    while True:
-        matches = [name for name, mac in visible_devices() if mac.lower() == wanted]
-        if len(matches) > 1:
-            raise SystemExit(f"MAC {mac_address} matched multiple devices: {', '.join(matches)}")
-        if matches:
-            return matches[0]
-        if time.monotonic() >= deadline:
-            visible = ", ".join(f"{name} ({mac})" for name, mac in visible_devices()) or "(none)"
-            raise SystemExit(
-                f"Timed out after {timeout}s waiting for provider MAC {mac_address}; "
-                f"visible interfaces: {visible}"
-            )
-        sleep(interval)
-
-
 def route_device_is_active(device):
     return bool(device and device.strip() and device.strip() != "--")
+
+
+def dhcp_excluded_interfaces(device_status, downstream_devices):
+    downstream_devices = set(downstream_devices)
+    excluded = set()
+    for line in device_status.splitlines():
+        if ":" not in line:
+            continue
+        device, device_type = line.split(":", 1)
+        if (
+            device_type in {"ethernet", "802-3-ethernet"}
+            and device not in downstream_devices
+            and device not in {"", "--"}
+        ):
+            excluded.add(device)
+    return sorted(excluded)
 
 
 def downstream_profile_actions(profiles, managed_uuid, expected_mac, device_names):

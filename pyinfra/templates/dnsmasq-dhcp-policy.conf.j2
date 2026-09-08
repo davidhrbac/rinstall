@@ -1,0 +1,5 @@
+bind-dynamic
+dhcp-authoritative
+{% for interface in excluded_interfaces %}
+no-dhcp-interface={{ interface }}
+{% endfor %}

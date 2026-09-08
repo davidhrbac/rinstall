@@ -5,6 +5,7 @@ import pytest
 import yaml
 
 from lib.bastion_network import (
+    dhcp_excluded_interfaces,
     downstream_profile_actions,
     downstream_connection_needs_activation,
     load_downstream_network_output,
@@ -12,7 +13,6 @@ from lib.bastion_network import (
     profile_rename_needed,
     route_device_is_active,
     route_needs_replacement,
-    wait_for_device,
 )
 from lib.env_config import expand_env
 
@@ -111,21 +111,23 @@ def test_renders_complete_networkmanager_profile_without_gateway():
     assert "gateway=" not in rendered
 
 
-def test_renders_interface_scoped_dhcp_without_dns_option():
+def test_renders_tagged_dhcp_range_without_dns_option():
     config = config_with(downstream_network())
     network = config["bastion"]["downstream_networks"][0]
     network["device_name"] = "ens256"
     rendered = render_template("dnsmasq-dhcp.conf.j2", config=config, network=network)
 
-    assert "dhcp-authoritative" in rendered
-    assert "dhcp-range=ens256,10.20.121.36,10.20.121.61,255.255.255.224,12h" in rendered
-    assert "dhcp-option=ens256,option:router,10.20.121.33" in rendered
+    assert "dhcp-range=set:vlan121,10.20.121.36,10.20.121.61,255.255.255.224,12h" in rendered
+    assert "dhcp-option=tag:vlan121,option:router,10.20.121.33" in rendered
+    assert "bind-dynamic" not in rendered
+    assert "dhcp-authoritative" not in rendered
+    assert "no-dhcp-interface" not in rendered
     assert "option:dns-server" not in rendered
     assert "option:6" not in rendered
     assert "dhcp-ignore=" not in rendered
 
 
-def test_multiple_downstream_dhcp_files_use_their_resolved_devices():
+def test_multiple_downstream_dhcp_files_use_logical_vlan_tags():
     config = config_with(downstream_network(121), downstream_network(122))
     networks = config["bastion"]["downstream_networks"]
     networks[0]["device_name"] = "ens256"
@@ -134,10 +136,47 @@ def test_multiple_downstream_dhcp_files_use_their_resolved_devices():
     first = render_template("dnsmasq-dhcp.conf.j2", config=config, network=networks[0])
     second = render_template("dnsmasq-dhcp.conf.j2", config=config, network=networks[1])
 
-    assert "dhcp-range=ens256," in first
-    assert "dhcp-range=ens257," in second
-    assert "ens257" not in first
-    assert "ens256" not in second
+    assert "dhcp-range=set:vlan121," in first
+    assert "dhcp-range=set:vlan122," in second
+    assert "vlan122" not in first
+    assert "vlan121" not in second
+    assert "ens256" not in first
+    assert "ens257" not in second
+
+
+def test_renders_common_dhcp_policy_for_non_downstream_interfaces():
+    rendered = render_template(
+        "dnsmasq-dhcp-policy.conf.j2",
+        excluded_interfaces=["ens192", "ens224"],
+    )
+
+    assert "bind-dynamic" in rendered
+    assert "dhcp-authoritative" in rendered
+    assert "no-dhcp-interface=ens192" in rendered
+    assert "no-dhcp-interface=ens224" in rendered
+
+
+def test_excludes_base_and_management_interfaces_without_hard_coded_names():
+    assert dhcp_excluded_interfaces(
+        "customer0:ethernet\nmgmt0:802-3-ethernet\nens256:ethernet\nvlan565:vlan\n",
+        ["ens256"],
+    ) == ["customer0", "mgmt0"]
+
+
+def test_project_owned_dnsmasq_files_are_separate_from_manual_files():
+    deploy = (ROOT / "pyinfra/deploy.py").read_text()
+
+    assert "/etc/dnsmasq.d/20-rinstall-dhcp.conf" in deploy
+    assert "dnsmasq-vlan*.conf" in deploy
+    assert "dnsmasq-ens256.conf" not in deploy
+    assert deploy.count("/etc/dnsmasq.d/20-rinstall-dhcp.conf") >= 2
+
+
+def test_common_dhcp_policy_is_rendered_once_for_multiple_vlans():
+    deploy = (ROOT / "pyinfra/deploy.py").read_text()
+
+    assert deploy.count('name="Render common dnsmasq DHCP policy"') == 1
+    assert deploy.count("src=str(ENGINE_ROOT / \"pyinfra/templates/dnsmasq-dhcp-policy.conf.j2\")") == 1
 
 
 def test_downstream_runtime_keeps_real_device_names_without_kernel_rename():
@@ -166,46 +205,6 @@ def test_route_comparison_skips_equal_normalized_route_and_replaces_changed_rout
     assert route_needs_replacement("  192.0.2.128/26   192.0.2.1\n", desired) is False
     assert route_needs_replacement("192.0.2.192/26 192.0.2.1", desired) is True
     assert route_needs_replacement("", desired) is True
-
-
-def test_wait_for_device_discovers_immediately_without_sleeping():
-    sleeps = []
-
-    assert wait_for_device(
-        "AA:BB:CC:DD:EE:FF",
-        lambda: [("ens256", "aa:bb:cc:dd:ee:ff")],
-        sleep=sleeps.append,
-    ) == "ens256"
-    assert sleeps == []
-
-
-def test_wait_for_device_discovers_after_retries():
-    snapshots = [[], [("ens256", "00:11:22:33:44:55")]]
-    sleeps = []
-
-    assert wait_for_device(
-        "00:11:22:33:44:55",
-        lambda: snapshots.pop(0),
-        sleep=sleeps.append,
-    ) == "ens256"
-    assert sleeps == [1]
-
-
-def test_wait_for_device_timeout_includes_visible_interfaces():
-    with pytest.raises(SystemExit, match=r"visible interfaces: ens224 \(00:11:22:33:44:55\)"):
-        wait_for_device(
-            "00:11:22:33:44:66",
-            lambda: [("ens224", "00:11:22:33:44:55")],
-            timeout=0,
-        )
-
-
-def test_wait_for_device_rejects_duplicate_mac():
-    with pytest.raises(SystemExit, match="matched multiple devices"):
-        wait_for_device(
-            "00:11:22:33:44:55",
-            lambda: [("ens224", "00:11:22:33:44:55"), ("ens256", "00:11:22:33:44:55")],
-        )
 
 
 def test_active_autogenerated_profile_on_same_device_is_disabled_and_deactivated():

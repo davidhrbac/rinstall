@@ -1,5 +1,2 @@
-bind-dynamic
-no-dhcp-interface={{ config.bastion.management_interface }}
-dhcp-authoritative
-dhcp-range={{ network.device_name }},{{ network.dhcp.start }},{{ network.dhcp.end }},{{ network.netmask }},{{ network.dhcp.lease_time }}
-dhcp-option={{ network.device_name }},option:router,{{ network.gateway }}
+dhcp-range=set:{{ network.interface_name }},{{ network.dhcp.start }},{{ network.dhcp.end }},{{ network.netmask }},{{ network.dhcp.lease_time }}
+dhcp-option=tag:{{ network.interface_name }},option:router,{{ network.gateway }}

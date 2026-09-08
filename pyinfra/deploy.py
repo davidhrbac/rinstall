@@ -9,6 +9,7 @@ from pyinfra.operations import dnf, files, server, systemd
 from pyinfra.operations.util import any_changed
 
 from lib.bastion_network import (
+    dhcp_excluded_interfaces,
     downstream_profile_actions,
     downstream_connection_needs_activation,
     profile_rename_needed,
@@ -200,19 +201,21 @@ if phase == "bastion" and role == "bastion":
 
     dnsmasq_backup_dir = "/run/rinstall-dnsmasq-backup"
     dnsmasq_dhcp_configs = []
+    obsolete_dhcp_configs = []
     dnsmasq_backup = server.shell(
         name="Back up project-owned dnsmasq configuration",
         commands=[
             f"rm -rf {dnsmasq_backup_dir}; mkdir -p {dnsmasq_backup_dir}/dhcp; "
             "for path in /etc/dnsmasq.conf /etc/hosts "
-            "/etc/dnsmasq.d/10-rancher-local.conf /etc/dnsmasq.d/20-local-dhcp.conf; do "
+            "/etc/dnsmasq.d/10-rancher-local.conf /etc/dnsmasq.d/20-local-dhcp.conf "
+            "/etc/dnsmasq.d/20-rinstall-dhcp.conf; do "
             f"name=$(basename \"$path\"); if [ -e \"$path\" ]; then cp -a \"$path\" {dnsmasq_backup_dir}/$name; "
             f"else : > {dnsmasq_backup_dir}/$name.absent; fi; done; "
             "for path in /etc/dnsmasq.d/dnsmasq-vlan*.conf; do "
             f"[ -e \"$path\" ] || continue; cp -a \"$path\" {dnsmasq_backup_dir}/dhcp/$(basename \"$path\"); done"
         ],
         _if=lambda: any_changed(
-            dnsmasq_binding, hosts_config, dnsmasq_local_config, legacy_dhcp_config, *dnsmasq_dhcp_configs
+            dnsmasq_binding, hosts_config, dnsmasq_local_config, *obsolete_dhcp_configs, *dnsmasq_dhcp_configs
         ),
     )
 
@@ -240,10 +243,19 @@ if phase == "bastion" and role == "bastion":
         config=config,
     )
 
-    legacy_dhcp_config = files.file(
-        name="Remove obsolete aggregate dnsmasq DHCP config",
-        path="/etc/dnsmasq.d/20-local-dhcp.conf",
-        present=False,
+    obsolete_dhcp_configs.extend(
+        [
+            files.file(
+                name="Remove obsolete aggregate dnsmasq DHCP config",
+                path="/etc/dnsmasq.d/20-local-dhcp.conf",
+                present=False,
+            ),
+            files.file(
+                name="Remove obsolete common dnsmasq DHCP config",
+                path="/etc/dnsmasq.d/20-rinstall-dhcp.conf",
+                present=False,
+            ),
+        ]
     )
 
     if config["bastion"]["downstream_networks"]:
@@ -324,6 +336,20 @@ if phase == "bastion" and role == "bastion":
                 mode="0644",
                 config=config,
                 network=downstream,
+            )
+        )
+
+    if config["bastion"]["downstream_networks"]:
+        excluded_interfaces = dhcp_excluded_interfaces(
+            command_output("nmcli -t -f DEVICE,TYPE device status"), downstream_devices.values()
+        )
+        dnsmasq_dhcp_configs.append(
+            files.template(
+                name="Render common dnsmasq DHCP policy",
+                src=str(ENGINE_ROOT / "pyinfra/templates/dnsmasq-dhcp-policy.conf.j2"),
+                dest="/etc/dnsmasq.d/20-rinstall-dhcp.conf",
+                mode="0644",
+                excluded_interfaces=excluded_interfaces,
             )
         )
 
@@ -411,7 +437,8 @@ if phase == "bastion" and role == "bastion":
             "dnsmasq --test; status=$?; "
             f"if [ \"$status\" -eq 0 ]; then rm -rf {dnsmasq_backup_dir}; exit 0; fi; "
             "for path in /etc/dnsmasq.conf /etc/hosts "
-            "/etc/dnsmasq.d/10-rancher-local.conf /etc/dnsmasq.d/20-local-dhcp.conf; do "
+            "/etc/dnsmasq.d/10-rancher-local.conf /etc/dnsmasq.d/20-local-dhcp.conf "
+            "/etc/dnsmasq.d/20-rinstall-dhcp.conf; do "
             f"name=$(basename \"$path\"); if [ -e {dnsmasq_backup_dir}/$name.absent ]; then rm -f \"$path\"; "
             f"elif [ -e {dnsmasq_backup_dir}/$name ]; then cp -a {dnsmasq_backup_dir}/$name \"$path\"; fi; done; "
             f"rm -f /etc/dnsmasq.d/dnsmasq-vlan*.conf; "
@@ -420,7 +447,7 @@ if phase == "bastion" and role == "bastion":
             "printf 'dnsmasq validation failed; previous project-owned configuration restored\\n' >&2; exit $status"
         ],
         _if=lambda: any_changed(
-            dnsmasq_binding, hosts_config, dnsmasq_local_config, legacy_dhcp_config, *dnsmasq_dhcp_configs
+            dnsmasq_binding, hosts_config, dnsmasq_local_config, *obsolete_dhcp_configs, *dnsmasq_dhcp_configs
         ),
     )
 
