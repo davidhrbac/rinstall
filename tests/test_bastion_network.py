@@ -382,11 +382,24 @@ def test_dnsmasq_real_change_sources_drive_validation():
     effective_changes = deploy[deploy.index("dnsmasq_effective_changes.extend") : deploy.index("dnsmasq_validation =")]
 
     assert "dnsmasq_binding" in effective_changes
+    assert "dnsmasq_loopback_interface" in effective_changes
     assert "hosts_config" in effective_changes
     assert "dnsmasq_local_config" in effective_changes
     assert "obsolete_dhcp_configs" in effective_changes
     assert "dnsmasq_dhcp_configs" in effective_changes
     assert deploy.count("dnsmasq_effective_config_changed(dnsmasq_effective_changes)") == 1
+
+
+def test_dnsmasq_normalizes_only_the_exact_loopback_interface_directive():
+    deploy = (ROOT / "pyinfra/deploy.py").read_text()
+    normalization = deploy[deploy.index("dnsmasq_binding =") : deploy.index("hosts_config =")]
+
+    assert 'line="bind-interfaces"' in normalization
+    assert 'line="interface=lo"' in normalization
+    assert normalization.count("present=False") == 2
+    assert "interface=eth0" not in normalization
+    assert "except-interface" not in normalization
+    assert "listen-address" not in normalization
 
 
 def test_dnsmasq_change_detection_is_only_evaluated_after_operations_execute():

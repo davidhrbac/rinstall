@@ -231,6 +231,13 @@ if phase == "bastion" and role == "bastion":
         present=False,
     )
 
+    dnsmasq_loopback_interface = files.line(
+        name="Disable loopback-only dnsmasq interface restriction",
+        path="/etc/dnsmasq.conf",
+        line="interface=lo",
+        present=False,
+    )
+
     hosts_config = files.template(
         name="Render /etc/hosts DNS records",
         src=str(ENGINE_ROOT / "pyinfra/templates/hosts.j2"),
@@ -352,7 +359,14 @@ if phase == "bastion" and role == "bastion":
         )
 
     dnsmasq_effective_changes.extend(
-        [dnsmasq_binding, hosts_config, dnsmasq_local_config, *obsolete_dhcp_configs, *dnsmasq_dhcp_configs]
+        [
+            dnsmasq_binding,
+            dnsmasq_loopback_interface,
+            hosts_config,
+            dnsmasq_local_config,
+            *obsolete_dhcp_configs,
+            *dnsmasq_dhcp_configs,
+        ]
     )
 
     for index, downstream in enumerate(config["bastion"]["downstream_networks"]):
