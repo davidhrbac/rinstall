@@ -80,6 +80,95 @@ def test_makefile_derives_instance_paths(tmp_path):
     assert f"{instance_root}/.rinstall/terraform " not in init_result.stdout
     assert "-lockfile=readonly" in init_result.stdout
 
+
+def test_standalone_bastion_configure_refreshes_output_before_pyinfra(tmp_path):
+    instance_root = tmp_path / "customer-a-prod-infra"
+    instance_root.mkdir()
+    config = yaml.safe_load(EXAMPLE_ENV.read_text())
+    config["bastion"]["downstream_networks"] = [
+        {
+            "vlan": 565,
+            "vmware_network": "DOWNSTREAM_VLAN_565",
+            "subnet": "10.124.101.32/27",
+            "bastion_address": 2,
+            "gateway": 1,
+            "dhcp": {"start": 4, "end": -2, "lease_time": "12h"},
+        }
+    ]
+    (instance_root / "config.yaml").write_text(yaml.safe_dump(config))
+    (instance_root / "rinstall").symlink_to(ENGINE_ROOT, target_is_directory=True)
+
+    result = subprocess.run(
+        ["make", "-f", "rinstall/Makefile", "-n", "bastion-configure", f"PYTHON={sys.executable}"],
+        cwd=instance_root,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    output = result.stdout
+    assert "output -json" in output
+    assert output.index("output -json") < output.index("PHASE=bastion-packages")
+    assert "terraform -chdir=" in output
+    assert " apply " not in output
+
+
+def test_bastion_configure_skips_output_refresh_without_downstream_networks(tmp_path):
+    instance_root = tmp_path / "customer-a-prod-infra"
+    instance_root.mkdir()
+    config = yaml.safe_load(EXAMPLE_ENV.read_text())
+    (instance_root / "config.yaml").write_text(yaml.safe_dump(config))
+    (instance_root / "rinstall").symlink_to(ENGINE_ROOT, target_is_directory=True)
+
+    result = subprocess.run(
+        ["make", "-f", "rinstall/Makefile", "-n", "bastion-configure", f"PYTHON={sys.executable}"],
+        cwd=instance_root,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert "output -json" not in result.stdout
+    assert "PHASE=bastion-packages" in result.stdout
+
+
+def test_provision_bastion_configure_uses_already_refreshed_output(tmp_path):
+    instance_root = tmp_path / "customer-a-prod-infra"
+    instance_root.mkdir()
+    config = yaml.safe_load(EXAMPLE_ENV.read_text())
+    config["bastion"]["downstream_networks"] = [
+        {
+            "vlan": 565,
+            "vmware_network": "DOWNSTREAM_VLAN_565",
+            "subnet": "10.124.101.32/27",
+            "bastion_address": 2,
+            "gateway": 1,
+            "dhcp": {"start": 4, "end": -2, "lease_time": "12h"},
+        }
+    ]
+    (instance_root / "config.yaml").write_text(yaml.safe_dump(config))
+    (instance_root / "rinstall").symlink_to(ENGINE_ROOT, target_is_directory=True)
+
+    result = subprocess.run(
+        [
+            "make",
+            "-f",
+            "rinstall/Makefile",
+            "-n",
+            "bastion-configure",
+            "PROVISION_PHASE=1",
+            f"PYTHON={sys.executable}",
+        ],
+        cwd=instance_root,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert "output -json" not in result.stdout
+    assert "PHASE=bastion-packages" in result.stdout
+
+
 def test_verify_uses_clean_temporary_terraform_data_dir(tmp_path):
     instance_root = tmp_path / "customer-a-prod-infra"
     instance_root.mkdir()
