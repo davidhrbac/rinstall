@@ -62,6 +62,36 @@ def route_device_is_active(device):
     return bool(device and device.strip() and device.strip() != "--")
 
 
+def downstream_profile_actions(profiles, managed_uuid, expected_mac, device_names):
+    managed_uuid = managed_uuid.strip()
+    expected_mac = expected_mac.lower()
+    device_names = set(device_names)
+    disable = []
+    deactivate = []
+    for profile in profiles:
+        uuid = profile.get("uuid", "").strip()
+        if not uuid or uuid == managed_uuid or profile.get("type", "").lower() not in {
+            "ethernet",
+            "802-3-ethernet",
+        }:
+            continue
+        profile_mac = profile.get("mac_address", "").strip().lower()
+        if profile_mac == "--":
+            profile_mac = ""
+        device = profile.get("device", "").strip()
+        if device == "--":
+            device = ""
+        if profile_mac and profile_mac != expected_mac:
+            continue
+        if not profile_mac and device not in device_names:
+            continue
+        if profile.get("autoconnect", "").strip().lower() in {"yes", "true", "on"}:
+            disable.append(uuid)
+        if device in device_names:
+            deactivate.append(uuid)
+    return {"disable": disable, "deactivate": deactivate}
+
+
 def split_nmcli_routes(value):
     return [entry.strip() for entry in re.split(r",\s*(?=[0-9])|[\r\n]+", value) if entry.strip()]
 

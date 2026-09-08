@@ -9,6 +9,7 @@ from pyinfra.operations import dnf, files, server, systemd
 from pyinfra.operations.util import any_changed
 
 from lib.bastion_network import (
+    downstream_profile_actions,
     downstream_connection_needs_activation,
     profile_rename_needed,
     reconcile_ipv4_routes,
@@ -58,6 +59,29 @@ def connection_uuid(connection_name):
         f"nmcli -g UUID connection show {quoted} 2>/dev/null || "
         f"nmcli -g GENERAL.CON-UUID device show {quoted} 2>/dev/null || true"
     ).strip()
+
+
+def connection_profiles():
+    profiles = []
+    for line in command_output("nmcli -t -f UUID,TYPE,DEVICE connection show").splitlines():
+        fields = line.split(":", 2)
+        if len(fields) != 3:
+            continue
+        uuid, profile_type, device = fields
+        profiles.append(
+            {
+                "uuid": uuid,
+                "type": profile_type,
+                "device": device,
+                "mac_address": command_output(
+                    f"nmcli -g 802-3-ethernet.mac-address connection show uuid {shlex.quote(uuid)} 2>/dev/null || true"
+                ),
+                "autoconnect": command_output(
+                    f"nmcli -g connection.autoconnect connection show uuid {shlex.quote(uuid)} 2>/dev/null || true"
+                ),
+            }
+        )
+    return profiles
 
 
 def device_for_mac(mac_address):
@@ -239,6 +263,12 @@ if phase == "bastion" and role == "bastion":
         mac_address = host.data.downstream_network_output[interface_name]["mac_address"]
         device = device_for_mac(mac_address)
         downstream_devices[interface_name] = device
+        competing_profiles = downstream_profile_actions(
+            connection_profiles(),
+            downstream["connection_uuid"],
+            mac_address,
+            [device, interface_name],
+        )
 
         link = files.template(
             name=f"Persist kernel interface name {interface_name}",
@@ -249,6 +279,20 @@ if phase == "bastion" and role == "bastion":
             interface_name=interface_name,
         )
         downstream_links.append(link)
+
+        competitor_reconciliation = None
+        competitor_commands = [
+            f"nmcli connection modify uuid {shlex.quote(uuid)} connection.autoconnect no"
+            for uuid in competing_profiles["disable"]
+        ] + [
+            f"nmcli connection down uuid {shlex.quote(uuid)}"
+            for uuid in competing_profiles["deactivate"]
+        ]
+        if competitor_commands:
+            competitor_reconciliation = server.shell(
+                name=f"Reconcile competing NetworkManager profiles for {interface_name}",
+                commands=competitor_commands,
+            )
 
         profile = files.template(
             name=f"Render NetworkManager profile {interface_name}",
@@ -323,8 +367,10 @@ if phase == "bastion" and role == "bastion":
                 f"nmcli connection load {shlex.quote(profile_path)}; "
                 f"nmcli connection up uuid {shlex.quote(downstream['connection_uuid'])} ifname {shlex.quote(interface_name)}"
             ],
-            _if=lambda profile=profile, rename=rename, rename_wait=rename_wait, activation_needed=activation_needed: (
-                profile.did_change() or rename.did_change() or rename_wait.did_change() or activation_needed
+            _if=lambda profile=profile, rename=rename, rename_wait=rename_wait, competitor_reconciliation=competitor_reconciliation, activation_needed=activation_needed: (
+                profile.did_change() or rename.did_change() or rename_wait.did_change()
+                or (competitor_reconciliation is not None and competitor_reconciliation.did_change())
+                or activation_needed
             ),
         )
 
