@@ -67,6 +67,7 @@ locals {
     try(data.vsphere_virtual_machine.bastion_fresh[0].network_interfaces[index].mac_address, null)
     if try(nic.downstream_vlan, null) != null
   ]
+  bastion_mac_addresses = length(local.bastion_downstream_nics) > 0 ? data.vsphere_virtual_machine.bastion_fresh[0].network_interfaces[*].mac_address : module.vm[var.bastion_service_node].mac_addresses
 }
 
 module "vm" {

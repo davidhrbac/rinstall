@@ -6,7 +6,7 @@ output "nodes" {
       role               = var.nodes[name].role
       static_ip          = local.node_static_ips[name]
       default_ip_address = vm.default_ip_address
-      mac_addresses      = vm.mac_addresses
+      mac_addresses      = name == var.bastion_service_node ? local.bastion_mac_addresses : vm.mac_addresses
     }
   }
 }

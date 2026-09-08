@@ -117,3 +117,12 @@ def test_fresh_bastion_output_guards_missing_mac_and_keeps_no_networks_path():
     assert "precondition" in output_source
     assert "fresh bastion vSphere data has no MAC address" in output_source
     assert "bastion_downstream_macs" in output_source
+
+
+def test_nodes_output_reuses_fresh_bastion_macs_only_when_downstream_exists():
+    main_source = (ROOT / "terraform/infra/main.tf").read_text()
+    output_source = (ROOT / "terraform/infra/outputs.tf").read_text()
+
+    assert "bastion_mac_addresses = length(local.bastion_downstream_nics) > 0 ? data.vsphere_virtual_machine.bastion_fresh[0].network_interfaces[*].mac_address : module.vm[var.bastion_service_node].mac_addresses" in main_source
+    assert "mac_addresses      = name == var.bastion_service_node ? local.bastion_mac_addresses : vm.mac_addresses" in output_source
+    assert "for index, nic in var.nodes[var.bastion_service_node].nics" in output_source
