@@ -172,6 +172,31 @@ def test_project_owned_dnsmasq_files_are_separate_from_manual_files():
     assert deploy.count("/etc/dnsmasq.d/20-rinstall-dhcp.conf") >= 2
 
 
+def test_current_common_policy_is_not_an_obsolete_cleanup_target():
+    deploy = (ROOT / "pyinfra/deploy.py").read_text()
+    cleanup = deploy[
+        deploy.index("obsolete_dhcp_configs.append") : deploy.index(
+            "if config[\"bastion\"][\"downstream_networks\"]:"
+        )
+    ]
+
+    assert "/etc/dnsmasq.d/20-local-dhcp.conf" in cleanup
+    assert "/etc/dnsmasq.d/20-rinstall-dhcp.conf" not in cleanup
+
+
+def test_rendering_same_common_policy_twice_is_byte_identical():
+    first = render_template(
+        "dnsmasq-dhcp-policy.conf.j2",
+        excluded_interfaces=["customer0", "mgmt0"],
+    )
+    second = render_template(
+        "dnsmasq-dhcp-policy.conf.j2",
+        excluded_interfaces=["customer0", "mgmt0"],
+    )
+
+    assert first == second
+
+
 def test_common_dhcp_policy_is_rendered_once_for_multiple_vlans():
     deploy = (ROOT / "pyinfra/deploy.py").read_text()
 

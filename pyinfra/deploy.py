@@ -243,19 +243,12 @@ if phase == "bastion" and role == "bastion":
         config=config,
     )
 
-    obsolete_dhcp_configs.extend(
-        [
-            files.file(
-                name="Remove obsolete aggregate dnsmasq DHCP config",
-                path="/etc/dnsmasq.d/20-local-dhcp.conf",
-                present=False,
-            ),
-            files.file(
-                name="Remove obsolete common dnsmasq DHCP config",
-                path="/etc/dnsmasq.d/20-rinstall-dhcp.conf",
-                present=False,
-            ),
-        ]
+    obsolete_dhcp_configs.append(
+        files.file(
+            name="Remove obsolete aggregate dnsmasq DHCP config",
+            path="/etc/dnsmasq.d/20-local-dhcp.conf",
+            present=False,
+        )
     )
 
     if config["bastion"]["downstream_networks"]:
