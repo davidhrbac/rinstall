@@ -94,5 +94,26 @@ def test_terraform_output_exposes_provider_network_and_mac_identity():
 
     assert 'output "bastion_downstream_networks"' in output_source
     assert "vmware_network_id = data.vsphere_network.this[nic.network].id" in output_source
-    assert "mac_address       = module.vm[var.bastion_service_node].mac_addresses[index]" in output_source
+    assert "mac_address       = try(data.vsphere_virtual_machine.bastion_fresh[0].network_interfaces[index].mac_address, null)" in output_source
     assert "nic_index         = index" in output_source
+
+
+def test_fresh_bastion_view_waits_for_vm_update_and_topology_changes():
+    main_source = (ROOT / "terraform/infra/main.tf").read_text()
+
+    assert 'resource "time_sleep" "bastion_nic_settle"' in main_source
+    assert 'create_duration = "5s"' in main_source
+    assert "downstream_nic_topology = jsonencode" in main_source
+    assert "depends_on = [module.vm]" in main_source
+    assert 'data "vsphere_virtual_machine" "bastion_fresh"' in main_source
+    assert "depends_on = [time_sleep.bastion_nic_settle]" in main_source
+
+
+def test_fresh_bastion_output_guards_missing_mac_and_keeps_no_networks_path():
+    main_source = (ROOT / "terraform/infra/main.tf").read_text()
+    output_source = (ROOT / "terraform/infra/outputs.tf").read_text()
+
+    assert "count = length(local.bastion_downstream_nics) > 0 ? 1 : 0" in main_source
+    assert "precondition" in output_source
+    assert "fresh bastion vSphere data has no MAC address" in output_source
+    assert "bastion_downstream_macs" in output_source

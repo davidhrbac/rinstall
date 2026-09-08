@@ -21,11 +21,16 @@ output "bastion_downstream_networks" {
       vlan              = nic.downstream_vlan
       vmware_network    = var.networks[nic.network]
       vmware_network_id = data.vsphere_network.this[nic.network].id
-      mac_address       = module.vm[var.bastion_service_node].mac_addresses[index]
+      mac_address       = try(data.vsphere_virtual_machine.bastion_fresh[0].network_interfaces[index].mac_address, null)
       nic_index         = index
       attachment_order  = index + 1
     }
     if try(nic.downstream_vlan, null) != null
+  }
+
+  precondition {
+    condition     = alltrue([for mac in local.bastion_downstream_macs : mac != null && mac != ""])
+    error_message = "fresh bastion vSphere data has no MAC address for a configured downstream NIC"
   }
 }
 
