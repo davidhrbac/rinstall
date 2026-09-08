@@ -361,6 +361,30 @@ def test_dnsmasq_restart_only_follows_successful_validation():
     assert "_if=lambda: dnsmasq_validation.did_change()" in deploy
 
 
+def test_dnsmasq_backup_is_not_an_effective_configuration_change():
+    deploy = (ROOT / "pyinfra/deploy.py").read_text()
+    effective_changes = deploy[deploy.index("dnsmasq_effective_changes.extend") : deploy.index("dnsmasq_validation =")]
+
+    assert "dnsmasq_backup" not in effective_changes
+    assert "dnsmasq_binding" in effective_changes
+    assert "dnsmasq_local_config" in effective_changes
+    assert "obsolete_dhcp_configs" in effective_changes
+    assert "dnsmasq_dhcp_configs" in effective_changes
+    assert "_if=dnsmasq_config_changed" in deploy
+
+
+def test_dnsmasq_real_change_sources_drive_validation():
+    deploy = (ROOT / "pyinfra/deploy.py").read_text()
+    effective_changes = deploy[deploy.index("dnsmasq_effective_changes.extend") : deploy.index("dnsmasq_validation =")]
+
+    assert "dnsmasq_binding" in effective_changes
+    assert "hosts_config" in effective_changes
+    assert "dnsmasq_local_config" in effective_changes
+    assert "obsolete_dhcp_configs" in effective_changes
+    assert "dnsmasq_dhcp_configs" in effective_changes
+    assert deploy.count("_if=dnsmasq_config_changed") == 2
+
+
 def test_route_replacement_preserves_unrelated_static_routes():
     from lib.bastion_network import reconcile_ipv4_routes
 

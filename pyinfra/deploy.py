@@ -6,7 +6,6 @@ from pathlib import Path
 from pyinfra import host
 from pyinfra.facts.server import Command
 from pyinfra.operations import dnf, files, server, systemd
-from pyinfra.operations.util import any_changed
 
 from lib.bastion_network import (
     dhcp_excluded_interfaces,
@@ -202,6 +201,11 @@ if phase == "bastion" and role == "bastion":
     dnsmasq_backup_dir = "/run/rinstall-dnsmasq-backup"
     dnsmasq_dhcp_configs = []
     obsolete_dhcp_configs = []
+    dnsmasq_effective_changes = []
+
+    def dnsmasq_config_changed():
+        return any(operation.did_change() for operation in dnsmasq_effective_changes)
+
     dnsmasq_backup = server.shell(
         name="Back up project-owned dnsmasq configuration",
         commands=[
@@ -214,9 +218,7 @@ if phase == "bastion" and role == "bastion":
             "for path in /etc/dnsmasq.d/dnsmasq-vlan*.conf; do "
             f"[ -e \"$path\" ] || continue; cp -a \"$path\" {dnsmasq_backup_dir}/dhcp/$(basename \"$path\"); done"
         ],
-        _if=lambda: any_changed(
-            dnsmasq_binding, hosts_config, dnsmasq_local_config, *obsolete_dhcp_configs, *dnsmasq_dhcp_configs
-        ),
+        _if=dnsmasq_config_changed,
     )
 
     dnsmasq_binding = files.line(
@@ -346,6 +348,10 @@ if phase == "bastion" and role == "bastion":
             )
         )
 
+    dnsmasq_effective_changes.extend(
+        [dnsmasq_binding, hosts_config, dnsmasq_local_config, *obsolete_dhcp_configs, *dnsmasq_dhcp_configs]
+    )
+
     for index, downstream in enumerate(config["bastion"]["downstream_networks"]):
         interface_name = downstream["interface_name"]
         device = downstream_devices[interface_name]
@@ -439,9 +445,7 @@ if phase == "bastion" and role == "bastion":
             f"rm -rf {dnsmasq_backup_dir}; "
             "printf 'dnsmasq validation failed; previous project-owned configuration restored\\n' >&2; exit $status"
         ],
-        _if=lambda: any_changed(
-            dnsmasq_binding, hosts_config, dnsmasq_local_config, *obsolete_dhcp_configs, *dnsmasq_dhcp_configs
-        ),
+        _if=dnsmasq_config_changed,
     )
 
     systemd.service(
