@@ -100,21 +100,29 @@ def test_terraform_output_exposes_provider_network_and_mac_identity():
 
 def test_fresh_bastion_view_waits_for_vm_update_and_topology_changes():
     main_source = (ROOT / "terraform/infra/main.tf").read_text()
+    module_source = (ROOT / "terraform/infra/modules/vsphere-vm/main.tf").read_text()
+    module_variables = (ROOT / "terraform/infra/modules/vsphere-vm/variables.tf").read_text()
 
-    assert 'resource "time_sleep" "bastion_nic_settle"' in main_source
-    assert 'create_duration = "5s"' in main_source
-    assert "downstream_nic_topology = jsonencode" in main_source
-    assert "depends_on = [module.vm]" in main_source
+    assert 'resource "time_sleep" "nic_settle"' in module_source
+    assert 'create_duration = "5s"' in module_source
+    assert "replace_triggered_by = [vsphere_virtual_machine.this]" in module_source
+    assert "depends_on = [vsphere_virtual_machine.this]" in module_source
+    assert 'variable "settle_after_change"' in module_variables
+    assert "settle_after_change = each.key == var.bastion_service_node" in main_source
     assert 'data "vsphere_virtual_machine" "bastion_fresh"' in main_source
-    assert "bastion_vm_mac_topology = jsonencode(module.vm[var.bastion_service_node].mac_addresses)" in main_source
-    assert "depends_on = [module.vm, time_sleep.bastion_nic_settle]" in main_source
+    assert "depends_on = [module.vm]" in main_source
+    assert 'resource "time_sleep"' not in main_source
+    assert "bastion_vm_mac_topology" not in main_source
+    assert "change_version" not in main_source
 
 
 def test_fresh_bastion_output_guards_missing_mac_and_keeps_no_networks_path():
     main_source = (ROOT / "terraform/infra/main.tf").read_text()
+    module_source = (ROOT / "terraform/infra/modules/vsphere-vm/main.tf").read_text()
     output_source = (ROOT / "terraform/infra/outputs.tf").read_text()
 
-    assert "count = length(local.bastion_downstream_nics) > 0 ? 1 : 0" in main_source
+    assert "count = var.settle_after_change ? 1 : 0" in module_source
+    assert "count         = length(local.bastion_downstream_nics) > 0 ? 1 : 0" in main_source
     assert "precondition" in output_source
     assert "fresh bastion vSphere data has no matching MAC/network" in output_source
 

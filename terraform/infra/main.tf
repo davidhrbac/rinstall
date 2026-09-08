@@ -97,23 +97,7 @@ module "vm" {
     ipv4_netmask = try(nic.prefix, null)
     customize    = coalesce(try(nic.customize, null), try(nic.ip, null) != null)
   }]
-}
-
-resource "time_sleep" "bastion_nic_settle" {
-  count = length(local.bastion_downstream_nics) > 0 ? 1 : 0
-
-  create_duration = "5s"
-  triggers = {
-    downstream_nic_topology = jsonencode([
-      for nic in local.bastion_downstream_nics : {
-        network         = nic.network
-        downstream_vlan = nic.downstream_vlan
-      }
-    ])
-    bastion_vm_mac_topology = jsonencode(module.vm[var.bastion_service_node].mac_addresses)
-  }
-
-  depends_on = [module.vm]
+  settle_after_change = each.key == var.bastion_service_node && length(local.bastion_downstream_nics) > 0
 }
 
 data "vsphere_virtual_machine" "bastion_fresh" {
@@ -121,5 +105,5 @@ data "vsphere_virtual_machine" "bastion_fresh" {
   name          = module.vm[var.bastion_service_node].name
   datacenter_id = data.vsphere_datacenter.this.id
 
-  depends_on = [module.vm, time_sleep.bastion_nic_settle]
+  depends_on = [module.vm]
 }

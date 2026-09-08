@@ -68,3 +68,8 @@ variable "nics" {
     customize    = bool
   }))
 }
+
+variable "settle_after_change" {
+  type    = bool
+  default = false
+}

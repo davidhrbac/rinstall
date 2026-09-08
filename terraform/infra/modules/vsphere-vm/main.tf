@@ -49,3 +49,15 @@ resource "vsphere_virtual_machine" "this" {
     }
   }
 }
+
+resource "time_sleep" "nic_settle" {
+  count = var.settle_after_change ? 1 : 0
+
+  create_duration = "5s"
+
+  depends_on = [vsphere_virtual_machine.this]
+
+  lifecycle {
+    replace_triggered_by = [vsphere_virtual_machine.this]
+  }
+}
