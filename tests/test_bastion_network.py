@@ -7,8 +7,12 @@ import yaml
 from lib.bastion_network import (
     downstream_connection_needs_activation,
     load_downstream_network_output,
+    normalize_ipv4_route,
     profile_rename_needed,
+    route_device_is_active,
     route_needs_replacement,
+    wait_for_device,
+    wait_for_interface,
 )
 from lib.env_config import expand_env
 
@@ -142,6 +146,101 @@ def test_route_comparison_skips_equal_normalized_route_and_replaces_changed_rout
     assert route_needs_replacement("  192.0.2.128/26   192.0.2.1\n", desired) is False
     assert route_needs_replacement("192.0.2.192/26 192.0.2.1", desired) is True
     assert route_needs_replacement("", desired) is True
+
+
+def test_wait_for_device_discovers_immediately_without_sleeping():
+    sleeps = []
+
+    assert wait_for_device(
+        "AA:BB:CC:DD:EE:FF",
+        lambda: [("ens256", "aa:bb:cc:dd:ee:ff")],
+        sleep=sleeps.append,
+    ) == "ens256"
+    assert sleeps == []
+
+
+def test_wait_for_device_discovers_after_retries():
+    snapshots = [[], [("ens256", "00:11:22:33:44:55")]]
+    sleeps = []
+
+    assert wait_for_device(
+        "00:11:22:33:44:55",
+        lambda: snapshots.pop(0),
+        sleep=sleeps.append,
+    ) == "ens256"
+    assert sleeps == [1]
+
+
+def test_wait_for_device_timeout_includes_visible_interfaces():
+    with pytest.raises(SystemExit, match=r"visible interfaces: ens224 \(00:11:22:33:44:55\)"):
+        wait_for_device(
+            "00:11:22:33:44:66",
+            lambda: [("ens224", "00:11:22:33:44:55")],
+            timeout=0,
+        )
+
+
+def test_wait_for_device_rejects_duplicate_mac():
+    with pytest.raises(SystemExit, match="matched multiple devices"):
+        wait_for_device(
+            "00:11:22:33:44:55",
+            lambda: [("ens224", "00:11:22:33:44:55"), ("ens256", "00:11:22:33:44:55")],
+        )
+
+
+def test_wait_for_interface_retries_until_sysfs_and_networkmanager_match():
+    states = [(None, False), (("00:11:22:33:44:55", False),), (("00:11:22:33:44:55", True),)]
+    sleeps = []
+
+    def state(_name):
+        value = states.pop(0)
+        return value[0] if isinstance(value, tuple) and len(value) == 1 else value
+
+    wait_for_interface("vlan121", "00:11:22:33:44:55", state, sleep=sleeps.append)
+    assert sleeps == [1, 1]
+
+
+def test_wait_for_interface_timeout_is_clear():
+    with pytest.raises(SystemExit, match="NetworkManager to recognize vlan121"):
+        wait_for_interface("vlan121", "00:11:22:33:44:55", lambda _name: None, timeout=0)
+
+
+def test_correct_interface_state_is_immediate_no_op():
+    sleeps = []
+    wait_for_interface(
+        "vlan121",
+        "00:11:22:33:44:55",
+        lambda _name: ("00:11:22:33:44:55", True),
+        sleep=sleeps.append,
+    )
+    assert sleeps == []
+
+
+def test_route_helpers_require_active_device_and_reject_default_route():
+    assert route_device_is_active("ens224") is True
+    assert route_device_is_active("--") is False
+    assert route_device_is_active("") is False
+    with pytest.raises(SystemExit, match="must not be a default route"):
+        normalize_ipv4_route("0.0.0.0/0 192.0.2.1", "env.bastion.vsphere_route")
+
+
+def test_dnsmasq_validation_is_after_backup_and_restores_on_failure():
+    deploy = (ROOT / "pyinfra/deploy.py").read_text()
+    backup = deploy.index("Back up project-owned dnsmasq configuration")
+    validation = deploy.index("Validate changed dnsmasq configuration")
+
+    assert backup < validation
+    assert "dnsmasq --test; status=$?;" in deploy
+    assert "previous project-owned configuration restored" in deploy
+
+
+def test_dnsmasq_restart_only_follows_successful_validation():
+    deploy = (ROOT / "pyinfra/deploy.py").read_text()
+    validation = deploy.index("Validate changed dnsmasq configuration")
+    restart = deploy.index("Restart dnsmasq after validated configuration change")
+
+    assert validation < restart
+    assert "_if=lambda: dnsmasq_validation.did_change()" in deploy
 
 
 def test_route_replacement_preserves_unrelated_static_routes():

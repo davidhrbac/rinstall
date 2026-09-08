@@ -12,6 +12,7 @@ from lib.bastion_network import (
     downstream_connection_needs_activation,
     profile_rename_needed,
     reconcile_ipv4_routes,
+    route_device_is_active,
     route_needs_replacement,
 )
 from lib.ssh_config import build_dir_for_env
@@ -61,14 +62,21 @@ def connection_uuid(connection_name):
 
 def device_for_mac(mac_address):
     command = (
-        f"wanted={shlex.quote(mac_address)}; found=''; "
-        "for path in /sys/class/net/*; do "
+        f"wanted=$(printf '%s' {shlex.quote(mac_address)} | tr '[:upper:]' '[:lower:]'); "
+        "udevadm settle >/dev/null 2>&1 || true; "
+        "for attempt in $(seq 1 60); do found=''; duplicate=''; "
+        "for path in /sys/class/net/*; do [ -e \"$path/address\" ] || continue; "
         "actual=$(tr '[:upper:]' '[:lower:]' < \"$path/address\"); "
         "if [ \"$actual\" = \"$wanted\" ]; then "
-        "[ -z \"$found\" ] || { printf 'MAC %s matched multiple devices\\n' \"$wanted\" >&2; exit 1; }; "
-        "found=${path##*/}; fi; done; "
-        "[ -n \"$found\" ] || { printf 'No device found for provider MAC %s\\n' \"$wanted\" >&2; exit 1; }; "
-        "printf '%s' \"$found\""
+        "[ -z \"$found\" ] || duplicate=${path##*/}; found=${path##*/}; fi; done; "
+        "if [ -n \"$duplicate\" ]; then printf 'MAC %s matched multiple devices\\n' \"$wanted\" >&2; exit 1; fi; "
+        "if [ -n \"$found\" ]; then printf '%s' \"$found\"; exit 0; fi; "
+        "[ \"$attempt\" -eq 60 ] || sleep 1; done; "
+        "printf 'Timed out after 60s waiting for provider MAC %s; visible interfaces: ' \"$wanted\" >&2; "
+        "first=1; for path in /sys/class/net/*; do [ -e \"$path/address\" ] || continue; "
+        "[ \"$first\" -eq 1 ] || printf ', ' >&2; first=0; "
+        "printf '%s (%s)' \"${path##*/}\" \"$(tr '[:upper:]' '[:lower:]' < \"$path/address\")\" >&2; done; "
+        "printf '\\n' >&2; exit 1"
     )
     return command_output(command).strip()
 
@@ -148,6 +156,12 @@ if phase == "bastion-packages" and role == "bastion":
         packages=["dnsmasq", "squid", "NetworkManager"],
         present=True,
     )
+    systemd.service(
+        name="Enable and start NetworkManager",
+        service="NetworkManager",
+        running=True,
+        enabled=True,
+    )
 
 
 if phase == "bastion" and role == "bastion":
@@ -155,6 +169,21 @@ if phase == "bastion" and role == "bastion":
         name="Ensure dnsmasq config dir exists",
         path="/etc/dnsmasq.d",
         present=True,
+    )
+
+    dnsmasq_backup_dir = "/run/rinstall-dnsmasq-backup"
+    dnsmasq_backup = server.shell(
+        name="Back up project-owned dnsmasq configuration",
+        commands=[
+            f"rm -rf {dnsmasq_backup_dir}; mkdir -p {dnsmasq_backup_dir}; "
+            "for path in /etc/dnsmasq.conf /etc/hosts "
+            "/etc/dnsmasq.d/10-rancher-local.conf /etc/dnsmasq.d/20-local-dhcp.conf; do "
+            f"name=$(basename \"$path\"); if [ -e \"$path\" ]; then cp -a \"$path\" {dnsmasq_backup_dir}/$name; "
+            f"else : > {dnsmasq_backup_dir}/$name.absent; fi; done"
+        ],
+        _if=lambda: any_changed(
+            dnsmasq_binding, hosts_config, dnsmasq_local_config, dnsmasq_dhcp_config
+        ),
     )
 
     dnsmasq_binding = files.line(
@@ -258,6 +287,22 @@ if phase == "bastion" and role == "bastion":
             _if=lambda device=device, interface_name=interface_name: device != interface_name,
         )
 
+        rename_wait = server.shell(
+            name=f"Wait for NetworkManager to recognize {interface_name}",
+            commands=[
+                "for attempt in $(seq 1 60); do "
+                "if [ -e {target_path} ] && [ \"$(tr '[:upper:]' '[:lower:]' < {target_path}/address)\" = {mac} ] && "
+                "[ \"$(nmcli -g GENERAL.HWADDR device show {target} 2>/dev/null | tr '[:upper:]' '[:lower:]')\" = {mac} ]; then exit 0; fi; "
+                "[ \"$attempt\" -eq 60 ] || sleep 1; done; "
+                "printf 'Timed out after 60s waiting for NetworkManager to recognize {target} with MAC {mac}\\n' >&2; exit 1".format(
+                    target_path=shlex.quote(f"/sys/class/net/{interface_name}"),
+                    mac=shlex.quote(mac_address.lower()),
+                    target=shlex.quote(interface_name),
+                )
+            ],
+            _if=rename.did_change,
+        )
+
         current_uuid = command_output(
             f"nmcli -g GENERAL.CON-UUID device show {shlex.quote(interface_name)} 2>/dev/null || true"
         ).strip()
@@ -278,8 +323,8 @@ if phase == "bastion" and role == "bastion":
                 f"nmcli connection load {shlex.quote(profile_path)}; "
                 f"nmcli connection up uuid {shlex.quote(downstream['connection_uuid'])} ifname {shlex.quote(interface_name)}"
             ],
-            _if=lambda profile=profile, rename=rename, activation_needed=activation_needed: (
-                profile.did_change() or rename.did_change() or activation_needed
+            _if=lambda profile=profile, rename=rename, rename_wait=rename_wait, activation_needed=activation_needed: (
+                profile.did_change() or rename.did_change() or rename_wait.did_change() or activation_needed
             ),
         )
 
@@ -306,6 +351,13 @@ if phase == "bastion" and role == "bastion":
         route_connection_uuid = connection_uuid(route_source_names[0])
     if not route_connection_uuid:
         raise SystemExit(f"cannot resolve NetworkManager route connection {route_connection_name!r}")
+    route_device = command_output(
+        f"nmcli -g GENERAL.DEVICES connection show uuid {shlex.quote(route_connection_uuid)} 2>/dev/null || true"
+    ).strip()
+    if not route_device_is_active(route_device):
+        raise SystemExit(
+            f"NetworkManager route connection {route_connection_name!r} is not active; refusing to activate it"
+        )
     desired_route = config["bastion"]["vsphere_route"]
     current_route = command_output(
         f"nmcli -g ipv4.routes connection show uuid {shlex.quote(route_connection_uuid)} 2>/dev/null || true"
@@ -316,17 +368,28 @@ if phase == "bastion" and role == "bastion":
         commands=[
             f"nmcli connection modify uuid {shlex.quote(route_connection_uuid)} ipv4.routes {shlex.quote(replacement_routes)}; "
             f"device=$(nmcli -g GENERAL.DEVICES connection show uuid {shlex.quote(route_connection_uuid)}); "
-            "if [ -n \"$device\" ] && [ \"$device\" != '--' ]; then "
-            "nmcli device reapply \"$device\"; else "
-            f"nmcli connection up uuid {shlex.quote(route_connection_uuid)}; fi"
+            "[ -n \"$device\" ] && [ \"$device\" != '--' ] || "
+            "{ printf 'Route connection became inactive; refusing to activate it\\n' >&2; exit 1; }; "
+            "nmcli device reapply \"$device\""
         ],
         _if=lambda: route_needs_replacement(current_route, desired_route),
     )
 
     dnsmasq_validation = server.shell(
         name="Validate changed dnsmasq configuration",
-        commands=["dnsmasq --test"],
-        _if=any_changed(dnsmasq_binding, hosts_config, dnsmasq_local_config, dnsmasq_dhcp_config),
+        commands=[
+            "dnsmasq --test; status=$?; "
+            f"if [ \"$status\" -eq 0 ]; then rm -rf {dnsmasq_backup_dir}; exit 0; fi; "
+            "for path in /etc/dnsmasq.conf /etc/hosts "
+            "/etc/dnsmasq.d/10-rancher-local.conf /etc/dnsmasq.d/20-local-dhcp.conf; do "
+            f"name=$(basename \"$path\"); if [ -e {dnsmasq_backup_dir}/$name.absent ]; then rm -f \"$path\"; "
+            f"elif [ -e {dnsmasq_backup_dir}/$name ]; then cp -a {dnsmasq_backup_dir}/$name \"$path\"; fi; done; "
+            f"rm -rf {dnsmasq_backup_dir}; "
+            "printf 'dnsmasq validation failed; previous project-owned configuration restored\\n' >&2; exit $status"
+        ],
+        _if=lambda: any_changed(
+            dnsmasq_binding, hosts_config, dnsmasq_local_config, dnsmasq_dhcp_config
+        ),
     )
 
     systemd.service(

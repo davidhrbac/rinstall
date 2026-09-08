@@ -2,6 +2,7 @@ import json
 from ipaddress import ip_address, ip_network
 from pathlib import Path
 import re
+import time
 
 
 MAC_ADDRESS_PATTERN = re.compile(r"^(?:[0-9a-f]{2}:){5}[0-9a-f]{2}$")
@@ -20,7 +21,45 @@ def normalize_ipv4_route(value, context="route"):
         raise SystemExit(f"{context} is invalid: {error}") from None
     if destination.version != 4 or next_hop.version != 4:
         raise SystemExit(f"{context} must contain an IPv4 destination and next hop")
+    if destination.prefixlen == 0:
+        raise SystemExit(f"{context} must not be a default route")
     return f"{destination} {next_hop}"
+
+
+def wait_for_device(mac_address, visible_devices, timeout=60, interval=1, sleep=time.sleep):
+    wanted = mac_address.lower()
+    deadline = time.monotonic() + timeout
+    while True:
+        matches = [name for name, mac in visible_devices() if mac.lower() == wanted]
+        if len(matches) > 1:
+            raise SystemExit(f"MAC {mac_address} matched multiple devices: {', '.join(matches)}")
+        if matches:
+            return matches[0]
+        if time.monotonic() >= deadline:
+            visible = ", ".join(f"{name} ({mac})" for name, mac in visible_devices()) or "(none)"
+            raise SystemExit(
+                f"Timed out after {timeout}s waiting for provider MAC {mac_address}; "
+                f"visible interfaces: {visible}"
+            )
+        sleep(interval)
+
+
+def wait_for_interface(interface_name, expected_mac, interface_state, timeout=60, interval=1, sleep=time.sleep):
+    deadline = time.monotonic() + timeout
+    while True:
+        state = interface_state(interface_name)
+        if state and state[0] and state[0].lower() == expected_mac.lower() and state[1]:
+            return
+        if time.monotonic() >= deadline:
+            raise SystemExit(
+                f"Timed out after {timeout}s waiting for NetworkManager to recognize "
+                f"{interface_name} with MAC {expected_mac}"
+            )
+        sleep(interval)
+
+
+def route_device_is_active(device):
+    return bool(device and device.strip() and device.strip() != "--")
 
 
 def split_nmcli_routes(value):
