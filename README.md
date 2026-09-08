@@ -247,6 +247,30 @@ dnsmasq uses `no-dhcp-interface=<management-device>` and `bind-dynamic`, so it m
 
 vSphere clone customization gives local nodes DNS servers derived from `local.vlan.dns_nodes`, normally the configured bastion. `nodes[bastion.service_node].dns_servers` is required and supplies the separate management/vSphere DNS used by the bastion OS and Squid. Set `bastion.dnsmasq_upstream_servers` to the DNS resolvers that local clients may use through dnsmasq. dnsmasq renders `no-resolv` and explicit `server=` entries, so it never exposes the bastion's `/etc/resolv.conf` DNS to local clients.
 
+The bastion can also provide DHCP and DNS on dedicated VMware networks used by downstream clusters:
+
+```yaml
+bastion:
+  downstream_networks:
+    - vlan: 121
+      vmware_network: DOWNSTREAM_VLAN_121
+      subnet: 10.20.121.32/27
+      bastion_address: 2
+      gateway: 1
+      dhcp:
+        start: 4
+        end: -2
+        lease_time: 12h
+```
+
+Each entry appends one untagged bastion vNIC connected to the named VMware portgroup. VMware owns VLAN membership; Linux does not create an 802.1Q subinterface. Terraform reports the provider-assigned MAC, and pyinfra uses it to persist the kernel interface name as `vlan<VLAN>` and render a complete NetworkManager profile with `bastion_address/prefix` and no default route.
+
+Address integers count usable hosts: `1` is the first usable address, `-1` is the last, and zero is invalid. Absolute IPv4 strings are also accepted. For `10.20.121.32/27`, the example resolves the external gateway to `10.20.121.33`, the bastion address to `10.20.121.34`, and the DHCP pool to `10.20.121.36-10.20.121.61`.
+
+The configured `gateway` is advertised to clients with the DHCP router option. It is not configured as a bastion route or default gateway. rinstall does not enable forwarding, NAT, masquerading, or forwarding firewall rules for downstream networks. dnsmasq does not emit DHCP option 6, so its normal behavior advertises the bastion address on the downstream interface as DNS.
+
+Keep existing entries in their original order and append new entries at the end. Terraform refreshes `.rinstall/infra-output.json` before guarded rendering and after apply. Removing, reordering, renaming a VLAN, or moving an existing entry to another VMware network is refused in this release because downstream VMs are owned by a separate Terraform workflow and rinstall cannot determine whether a network remains in use.
+
 vSphere VM object names are made globally unique by Terraform with a stable random suffix: `<node>-xxxxx-xxxxx`. The node key still stays the operational hostname, so guest hostnames, SSH aliases, DNS records, and pyinfra groups retain the configured node names. Terraform outputs include `vsphere_name` for mapping the operational node name to the actual vSphere object name.
 
 Do not repeat the first octets of local IPs in every node. Define the local VLAN once, then use host offsets:

@@ -79,15 +79,16 @@
 - Optional `rancher.bootstrap_password` is a one-time initial admin password; keep real values in instance configs only. Install passes it to Helm only when the Rancher release does not exist yet, never on repeat upgrades. If omitted, every successful Rancher install prints a command that retrieves the generated password from `cattle-system/bootstrap-secret` if the release was newly installed.
 - Cert-manager and Rancher use Day-0 Helm semantics: install only if absent, no-op only when the declared version matches, and fail on version mismatch. Rancher also fails when hostname/proxy/noProxy values differ; this repo never upgrades, downgrades, or reconfigures existing releases.
 
-## Future Bastion Service Networks
+## Bastion Downstream Networks
 
-- Do not implement this section until the environment schema is agreed; candidate names are `bastion.service_networks` and `bastion.downstream_networks`.
-- A service-network config must define a logical network name, VLAN ID, vSphere portgroup, CIDR, gateway host offset, and DHCP range. It defines bastion network service, not a downstream cluster.
-- Terraform must append the corresponding bastion vNIC and output the logical network-to-MAC mapping for pyinfra. Keep existing primary NIC ordering fixed and reject unsafe reorder/removal plans.
-- pyinfra must discover the guest device by its Terraform-provided MAC, then render a stable NetworkManager profile, gateway address, and dnsmasq DHCP configuration. Never persist MACs, guest interface names, VM UUIDs, or vSphere MoRefs in `env.yaml`.
+- `bastion.downstream_networks` defines dedicated VMware networks on which the configured bastion provides DHCP and DNS for separately managed downstream clusters.
+- Each entry requires `vlan`, `vmware_network`, `subnet`, `bastion_address`, external `gateway`, and explicit DHCP start/end/lease time. Integer addresses count usable hosts from the beginning or end; absolute IPv4 strings are also accepted.
+- Terraform appends the corresponding bastion vNIC and outputs the VLAN/network-to-MAC mapping for pyinfra. Keep existing primary NIC ordering fixed, append new downstream entries, and reject reorder, portgroup change, or removal.
+- pyinfra discovers the guest device by its Terraform-provided MAC, persists `vlan<VLAN>` as the kernel name, and renders a complete NetworkManager profile with the bastion address and no default route. Never persist MACs, guest interface names, VM UUIDs, or vSphere MoRefs in `config.yaml`.
 - Render NetworkManager and dnsmasq configuration declaratively as complete managed files, not append/patch operations.
 - DHCP ranges must be scoped to explicit service interfaces; never use `interface=*` or serve DHCP on the management interface. Enable `dhcp-authoritative` only when dnsmasq serves DHCP exclusively on explicit service interfaces. Omit DHCP option 6 so dnsmasq advertises its own address in the matching VLAN.
-- Removing a configured service network must require an explicit safety acknowledgement because it can disconnect existing downstream clusters.
+- The configured downstream gateway is advertised only to DHCP clients. The bastion is not the downstream router; do not configure forwarding, NAT, masquerading, or forwarding firewall rules.
+- Removing a configured downstream network is unsupported in v0.3.0 and must fail safely. Downstream VMs belong to a separate Terraform workflow, so rinstall cannot infer that a network is unused.
 - Instance repositories consume this engine as a pinned `rinstall` Git submodule; generated runtime artifacts remain in the instance repository's `.rinstall/` directory.
 
 ## Rancher DNS/TLS

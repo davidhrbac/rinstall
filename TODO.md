@@ -39,12 +39,9 @@
 
 ## Later
 
-- Add declarative bastion service-network support for downstream VLANs.
-  - Define a stable logical network `id`, append-only attachment `slot`, VLAN ID, vSphere portgroup, CIDR, gateway host offset, and DHCP range in env config.
-  - Terraform must preserve base NIC ordering, append service NICs by slot, and expose logical network-to-MAC output for pyinfra.
-  - pyinfra must resolve the guest interface by MAC, configure NetworkManager/dnsmasq declaratively, and never depend on `ens*` names or NIC ordering.
-  - Render DHCP ranges only for explicit service interfaces; enable `dhcp-authoritative` only when dnsmasq serves those interfaces exclusively, and omit DHCP option 6 so clients receive the local dnsmasq address.
-  - Support additions and DHCP changes first; refuse removal by default. Any removal requires an explicit safety acknowledgement because it can disconnect downstream clusters.
+- Add a conservative downstream-network removal workflow after v0.3.0.
+  - Coordinate with the separate downstream-cluster Terraform because rinstall cannot determine whether a VMware network is still in use.
+  - Require explicit acknowledgement, remove guest DHCP/NetworkManager state before detaching the vNIC, and prevent attachment-order shifts for retained NICs.
 
 - Split environment loading into parse, validate, and resolve stages when the config model grows.
 
@@ -59,5 +56,4 @@
 ## Questions
 
 - Which secret source should own the RKE2 token in production?
-- Should the bastion VLAN section be named `bastion.service_networks` or `bastion.downstream_networks`?
 - Should GitLab issues be created from the stable items in this file after the first real dry-run?
