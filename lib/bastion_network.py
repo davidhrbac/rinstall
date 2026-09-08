@@ -45,6 +45,10 @@ def dhcp_excluded_interfaces(device_status, downstream_devices):
     return sorted(excluded)
 
 
+def dnsmasq_effective_config_changed(operations):
+    return any(operation.did_change() for operation in operations)
+
+
 def downstream_profile_actions(profiles, managed_uuid, expected_mac, device_names):
     managed_uuid = managed_uuid.strip()
     expected_mac = expected_mac.lower()

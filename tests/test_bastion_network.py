@@ -1,3 +1,4 @@
+import ast
 from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
@@ -8,6 +9,7 @@ from lib.bastion_network import (
     dhcp_excluded_interfaces,
     downstream_profile_actions,
     downstream_connection_needs_activation,
+    dnsmasq_effective_config_changed,
     load_downstream_network_output,
     normalize_ipv4_route,
     profile_rename_needed,
@@ -364,13 +366,15 @@ def test_dnsmasq_restart_only_follows_successful_validation():
 def test_dnsmasq_backup_is_not_an_effective_configuration_change():
     deploy = (ROOT / "pyinfra/deploy.py").read_text()
     effective_changes = deploy[deploy.index("dnsmasq_effective_changes.extend") : deploy.index("dnsmasq_validation =")]
+    backup = deploy[deploy.index("dnsmasq_backup =") : deploy.index("dnsmasq_binding =")]
 
+    assert "_if" not in backup
     assert "dnsmasq_backup" not in effective_changes
     assert "dnsmasq_binding" in effective_changes
     assert "dnsmasq_local_config" in effective_changes
     assert "obsolete_dhcp_configs" in effective_changes
     assert "dnsmasq_dhcp_configs" in effective_changes
-    assert "_if=dnsmasq_config_changed" in deploy
+    assert "dnsmasq_effective_config_changed(dnsmasq_effective_changes)" in deploy
 
 
 def test_dnsmasq_real_change_sources_drive_validation():
@@ -382,7 +386,49 @@ def test_dnsmasq_real_change_sources_drive_validation():
     assert "dnsmasq_local_config" in effective_changes
     assert "obsolete_dhcp_configs" in effective_changes
     assert "dnsmasq_dhcp_configs" in effective_changes
-    assert deploy.count("_if=dnsmasq_config_changed") == 2
+    assert deploy.count("dnsmasq_effective_config_changed(dnsmasq_effective_changes)") == 1
+
+
+def test_dnsmasq_change_detection_is_only_evaluated_after_operations_execute():
+    deploy = ast.parse((ROOT / "pyinfra/deploy.py").read_text())
+    backup_assignment = next(
+        node
+        for node in ast.walk(deploy)
+        if isinstance(node, ast.Assign) and ast.unparse(node.targets[0]) == "dnsmasq_backup"
+    )
+    backup_call = backup_assignment.value
+
+    assert isinstance(backup_call, ast.Call)
+    assert not any(keyword.arg == "_if" for keyword in backup_call.keywords)
+
+    class Operation:
+        def __init__(self, changed):
+            self.changed = changed
+            self.executed = False
+
+        def did_change(self):
+            assert self.executed
+            return self.changed
+
+    common = Operation(False)
+    vlan = Operation(True)
+
+    # The pre-change backup runs before these operations, so their result is incomplete.
+    common.executed = True
+    vlan.executed = True
+    assert dnsmasq_effective_config_changed([common, vlan]) is True
+
+
+def test_dnsmasq_change_detection_does_not_treat_backup_as_effective_change():
+    class Backup:
+        def did_change(self):
+            raise AssertionError("backup must not be inspected")
+
+    class Managed:
+        def did_change(self):
+            return False
+
+    assert dnsmasq_effective_config_changed([Managed()]) is False
 
 
 def test_route_replacement_preserves_unrelated_static_routes():

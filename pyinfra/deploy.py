@@ -9,6 +9,7 @@ from pyinfra.operations import dnf, files, server, systemd
 
 from lib.bastion_network import (
     dhcp_excluded_interfaces,
+    dnsmasq_effective_config_changed,
     downstream_profile_actions,
     downstream_connection_needs_activation,
     profile_rename_needed,
@@ -203,9 +204,6 @@ if phase == "bastion" and role == "bastion":
     obsolete_dhcp_configs = []
     dnsmasq_effective_changes = []
 
-    def dnsmasq_config_changed():
-        return any(operation.did_change() for operation in dnsmasq_effective_changes)
-
     dnsmasq_backup = server.shell(
         name="Back up project-owned dnsmasq configuration",
         commands=[
@@ -218,7 +216,6 @@ if phase == "bastion" and role == "bastion":
             "for path in /etc/dnsmasq.d/dnsmasq-vlan*.conf; do "
             f"[ -e \"$path\" ] || continue; cp -a \"$path\" {dnsmasq_backup_dir}/dhcp/$(basename \"$path\"); done"
         ],
-        _if=dnsmasq_config_changed,
     )
 
     dnsmasq_binding = files.line(
@@ -445,7 +442,7 @@ if phase == "bastion" and role == "bastion":
             f"rm -rf {dnsmasq_backup_dir}; "
             "printf 'dnsmasq validation failed; previous project-owned configuration restored\\n' >&2; exit $status"
         ],
-        _if=dnsmasq_config_changed,
+        _if=lambda: dnsmasq_effective_config_changed(dnsmasq_effective_changes),
     )
 
     systemd.service(
