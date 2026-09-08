@@ -73,6 +73,9 @@ def connection_profiles():
                 "uuid": uuid,
                 "type": profile_type,
                 "device": device,
+                "interface_name": command_output(
+                    f"nmcli -g connection.interface-name connection show uuid {shlex.quote(uuid)} 2>/dev/null || true"
+                ),
                 "mac_address": command_output(
                     f"nmcli -g 802-3-ethernet.mac-address connection show uuid {shlex.quote(uuid)} 2>/dev/null || true"
                 ),

@@ -81,9 +81,12 @@ def downstream_profile_actions(profiles, managed_uuid, expected_mac, device_name
         device = profile.get("device", "").strip()
         if device == "--":
             device = ""
+        interface_name = profile.get("interface_name", "").strip()
+        if interface_name == "--":
+            interface_name = ""
         if profile_mac and profile_mac != expected_mac:
             continue
-        if not profile_mac and device not in device_names:
+        if not profile_mac and device not in device_names and interface_name not in device_names:
             continue
         if profile.get("autoconnect", "").strip().lower() in {"yes", "true", "on"}:
             disable.append(uuid)

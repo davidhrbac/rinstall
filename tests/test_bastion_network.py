@@ -253,6 +253,28 @@ def test_placeholder_metadata_still_uses_current_device_association():
     assert actions == {"disable": ["auto"], "deactivate": ["auto"]}
 
 
+def test_disconnected_profile_with_matching_interface_name_is_selected():
+    actions = downstream_profile_actions(
+        [{"uuid": "auto", "type": "802-3-ethernet", "device": "--", "interface_name": "ens256", "mac_address": "--", "autoconnect": "yes"}],
+        "managed",
+        "00:11:22:33:44:55",
+        ["ens256", "vlan565"],
+    )
+
+    assert actions == {"disable": ["auto"], "deactivate": []}
+
+
+def test_interface_name_for_another_device_is_not_an_association():
+    actions = downstream_profile_actions(
+        [{"uuid": "auto", "type": "ethernet", "device": "--", "interface_name": "ens224", "mac_address": "--", "autoconnect": "yes"}],
+        "managed",
+        "00:11:22:33:44:55",
+        ["ens256", "vlan565"],
+    )
+
+    assert actions == {"disable": [], "deactivate": []}
+
+
 def test_already_disabled_competitor_is_not_modified_again():
     actions = downstream_profile_actions(
         [{"uuid": "auto", "type": "ethernet", "device": "--", "mac_address": "00:11:22:33:44:55", "autoconnect": "no"}],
