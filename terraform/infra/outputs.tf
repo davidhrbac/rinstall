@@ -29,8 +29,11 @@ output "bastion_downstream_networks" {
   }
 
   precondition {
-    condition     = alltrue([for mac in local.bastion_downstream_macs : mac != null && mac != ""])
-    error_message = "fresh bastion vSphere data has no MAC address for a configured downstream NIC"
+    condition = alltrue([
+      for network in local.bastion_downstream_fresh :
+      network.mac_address != null && network.mac_address != "" && network.network_id == network.expected_network_id
+    ])
+    error_message = "fresh bastion vSphere data has no matching MAC/network for a configured downstream NIC"
   }
 }
 
