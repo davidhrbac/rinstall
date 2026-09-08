@@ -263,7 +263,7 @@ bastion:
         lease_time: 12h
 ```
 
-Each entry appends one untagged bastion vNIC connected to the named VMware portgroup. VMware owns VLAN membership; Linux does not create an 802.1Q subinterface. Terraform reports the provider-assigned MAC, and pyinfra uses it to persist the kernel interface name as `vlan<VLAN>` and render a complete NetworkManager profile with `bastion_address/prefix` and no default route.
+Each entry appends one untagged bastion vNIC connected to the named VMware portgroup. VMware owns VLAN membership; Linux does not create an 802.1Q subinterface. Terraform reports the provider-assigned MAC, and pyinfra uses it to resolve the current Linux device, bind the project-owned `vlan<VLAN>` NetworkManager profile to that device, and configure `bastion_address/prefix` with no default route.
 
 Address integers count usable hosts: `1` is the first usable address, `-1` is the last, and zero is invalid. Absolute IPv4 strings are also accepted. For `10.20.121.32/27`, the example resolves the external gateway to `10.20.121.33`, the bastion address to `10.20.121.34`, and the DHCP pool to `10.20.121.36-10.20.121.61`.
 

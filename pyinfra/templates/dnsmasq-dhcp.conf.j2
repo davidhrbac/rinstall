@@ -1,10 +1,5 @@
 bind-dynamic
 no-dhcp-interface={{ config.bastion.management_interface }}
-{% if config.bastion.downstream_networks %}
 dhcp-authoritative
-dhcp-ignore={% for network in config.bastion.downstream_networks %}tag:!{{ network.interface_name }}{% if not loop.last %},{% endif %}{% endfor %}
-{% for network in config.bastion.downstream_networks %}
-dhcp-range=tag:{{ network.interface_name }},{{ network.dhcp.start }},{{ network.dhcp.end }},{{ network.netmask }},{{ network.dhcp.lease_time }}
-dhcp-option=tag:{{ network.interface_name }},option:router,{{ network.gateway }}
-{% endfor %}
-{% endif %}
+dhcp-range={{ network.device_name }},{{ network.dhcp.start }},{{ network.dhcp.end }},{{ network.netmask }},{{ network.dhcp.lease_time }}
+dhcp-option={{ network.device_name }},option:router,{{ network.gateway }}

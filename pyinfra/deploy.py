@@ -199,17 +199,20 @@ if phase == "bastion" and role == "bastion":
     )
 
     dnsmasq_backup_dir = "/run/rinstall-dnsmasq-backup"
+    dnsmasq_dhcp_configs = []
     dnsmasq_backup = server.shell(
         name="Back up project-owned dnsmasq configuration",
         commands=[
-            f"rm -rf {dnsmasq_backup_dir}; mkdir -p {dnsmasq_backup_dir}; "
+            f"rm -rf {dnsmasq_backup_dir}; mkdir -p {dnsmasq_backup_dir}/dhcp; "
             "for path in /etc/dnsmasq.conf /etc/hosts "
             "/etc/dnsmasq.d/10-rancher-local.conf /etc/dnsmasq.d/20-local-dhcp.conf; do "
             f"name=$(basename \"$path\"); if [ -e \"$path\" ]; then cp -a \"$path\" {dnsmasq_backup_dir}/$name; "
-            f"else : > {dnsmasq_backup_dir}/$name.absent; fi; done"
+            f"else : > {dnsmasq_backup_dir}/$name.absent; fi; done; "
+            "for path in /etc/dnsmasq.d/dnsmasq-vlan*.conf; do "
+            f"[ -e \"$path\" ] || continue; cp -a \"$path\" {dnsmasq_backup_dir}/dhcp/$(basename \"$path\"); done"
         ],
         _if=lambda: any_changed(
-            dnsmasq_binding, hosts_config, dnsmasq_local_config, dnsmasq_dhcp_config
+            dnsmasq_binding, hosts_config, dnsmasq_local_config, legacy_dhcp_config, *dnsmasq_dhcp_configs
         ),
     )
 
@@ -237,28 +240,37 @@ if phase == "bastion" and role == "bastion":
         config=config,
     )
 
-    dnsmasq_dhcp_config = files.template(
-        name="Render dnsmasq DHCP config",
-        src=str(ENGINE_ROOT / "pyinfra/templates/dnsmasq-dhcp.conf.j2"),
-        dest="/etc/dnsmasq.d/20-local-dhcp.conf",
-        mode="0644",
-        config=config,
+    legacy_dhcp_config = files.file(
+        name="Remove obsolete aggregate dnsmasq DHCP config",
+        path="/etc/dnsmasq.d/20-local-dhcp.conf",
+        present=False,
     )
 
     if config["bastion"]["downstream_networks"]:
-        files.directory(
-            name="Ensure persistent network naming directory exists",
-            path="/etc/systemd/network",
-            present=True,
-        )
         files.directory(
             name="Ensure NetworkManager system connection directory exists",
             path="/etc/NetworkManager/system-connections",
             mode="0700",
             present=True,
         )
+        files.directory(
+            name="Ensure NetworkManager configuration directory exists",
+            path="/etc/NetworkManager/conf.d",
+            present=True,
+        )
 
-    downstream_links = []
+        no_auto_default = files.put(
+            name="Disable NetworkManager automatic Ethernet profiles",
+            src=StringIO("[main]\nno-auto-default=*\n"),
+            dest="/etc/NetworkManager/conf.d/10-rinstall-no-auto-default.conf",
+            mode="0644",
+        )
+        server.shell(
+            name="Reload NetworkManager configuration",
+            commands=["nmcli general reload conf"],
+            _if=no_auto_default.did_change,
+        )
+
     downstream_profiles = []
     downstream_devices = {}
     for downstream in config["bastion"]["downstream_networks"]:
@@ -266,22 +278,13 @@ if phase == "bastion" and role == "bastion":
         mac_address = host.data.downstream_network_output[interface_name]["mac_address"]
         device = device_for_mac(mac_address)
         downstream_devices[interface_name] = device
+        downstream["device_name"] = device
         competing_profiles = downstream_profile_actions(
             connection_profiles(),
             downstream["connection_uuid"],
             mac_address,
-            [device, interface_name],
+            [device],
         )
-
-        link = files.template(
-            name=f"Persist kernel interface name {interface_name}",
-            src=str(ENGINE_ROOT / "pyinfra/templates/downstream-network.link.j2"),
-            dest=f"/etc/systemd/network/10-rinstall-{interface_name}.link",
-            mode="0644",
-            mac_address=mac_address,
-            interface_name=interface_name,
-        )
-        downstream_links.append(link)
 
         competitor_reconciliation = None
         competitor_commands = [
@@ -297,6 +300,12 @@ if phase == "bastion" and role == "bastion":
                 commands=competitor_commands,
             )
 
+        files.file(
+            name=f"Remove obsolete downstream interface naming rule {interface_name}",
+            path=f"/etc/systemd/network/10-rinstall-{interface_name}.link",
+            present=False,
+        )
+
         profile = files.template(
             name=f"Render NetworkManager profile {interface_name}",
             src=str(ENGINE_ROOT / "pyinfra/templates/downstream-network.nmconnection.j2"),
@@ -304,57 +313,29 @@ if phase == "bastion" and role == "bastion":
             mode="0600",
             downstream=downstream,
             mac_address=mac_address,
+            device_name=device,
         )
         downstream_profiles.append(profile)
-
-    if downstream_links:
-        server.shell(
-            name="Reload persistent network naming rules",
-            commands=["udevadm control --reload"],
-            _if=any_changed(*downstream_links),
+        dnsmasq_dhcp_configs.append(
+            files.template(
+                name=f"Render dnsmasq DHCP config {interface_name}",
+                src=str(ENGINE_ROOT / "pyinfra/templates/dnsmasq-dhcp.conf.j2"),
+                dest=f"/etc/dnsmasq.d/dnsmasq-{interface_name}.conf",
+                mode="0644",
+                config=config,
+                network=downstream,
+            )
         )
 
     for index, downstream in enumerate(config["bastion"]["downstream_networks"]):
         interface_name = downstream["interface_name"]
         device = downstream_devices[interface_name]
         mac_address = host.data.downstream_network_output[interface_name]["mac_address"]
-        rename = server.shell(
-            name=f"Set kernel interface name {interface_name}",
-            commands=[
-                "if [ -e {target_path} ] && [ \"$(cat {target_path}/address)\" != {mac} ]; then "
-                "printf 'Interface %s already belongs to another MAC\\n' {target} >&2; exit 1; fi; "
-                "nmcli device disconnect {source} >/dev/null 2>&1 || true; "
-                "ip link set dev {source} down; ip link set dev {source} name {target}".format(
-                    target_path=shlex.quote(f"/sys/class/net/{interface_name}"),
-                    mac=shlex.quote(mac_address),
-                    source=shlex.quote(device),
-                    target=shlex.quote(interface_name),
-                )
-            ],
-            _if=lambda device=device, interface_name=interface_name: device != interface_name,
-        )
-
-        rename_wait = server.shell(
-            name=f"Wait for NetworkManager to recognize {interface_name}",
-            commands=[
-                "for attempt in $(seq 1 60); do "
-                "if [ -e {target_path} ] && [ \"$(tr '[:upper:]' '[:lower:]' < {target_path}/address)\" = {mac} ] && "
-                "[ \"$(nmcli -g GENERAL.HWADDR device show {target} 2>/dev/null | tr '[:upper:]' '[:lower:]')\" = {mac} ]; then exit 0; fi; "
-                "[ \"$attempt\" -eq 60 ] || sleep 1; done; "
-                "printf 'Timed out after 60s waiting for NetworkManager to recognize {target} with MAC {mac}\\n' >&2; exit 1".format(
-                    target_path=shlex.quote(f"/sys/class/net/{interface_name}"),
-                    mac=shlex.quote(mac_address.lower()),
-                    target=shlex.quote(interface_name),
-                )
-            ],
-            _if=rename.did_change,
-        )
-
         current_uuid = command_output(
-            f"nmcli -g GENERAL.CON-UUID device show {shlex.quote(interface_name)} 2>/dev/null || true"
+            f"nmcli -g GENERAL.CON-UUID device show {shlex.quote(device)} 2>/dev/null || true"
         ).strip()
         current_addresses = command_output(
-            f"ip -4 -o address show dev {shlex.quote(interface_name)} 2>/dev/null || true"
+            f"ip -4 -o address show dev {shlex.quote(device)} 2>/dev/null || true"
         )
         activation_needed = downstream_connection_needs_activation(
             current_uuid,
@@ -368,10 +349,10 @@ if phase == "bastion" and role == "bastion":
             commands=[
                 f"restorecon -F {shlex.quote(profile_path)} 2>/dev/null || true; "
                 f"nmcli connection load {shlex.quote(profile_path)}; "
-                f"nmcli connection up uuid {shlex.quote(downstream['connection_uuid'])} ifname {shlex.quote(interface_name)}"
+                f"nmcli connection up uuid {shlex.quote(downstream['connection_uuid'])} ifname {shlex.quote(device)}"
             ],
-            _if=lambda profile=profile, rename=rename, rename_wait=rename_wait, competitor_reconciliation=competitor_reconciliation, activation_needed=activation_needed: (
-                profile.did_change() or rename.did_change() or rename_wait.did_change()
+            _if=lambda profile=profile, competitor_reconciliation=competitor_reconciliation, activation_needed=activation_needed: (
+                profile.did_change()
                 or (competitor_reconciliation is not None and competitor_reconciliation.did_change())
                 or activation_needed
             ),
@@ -433,11 +414,13 @@ if phase == "bastion" and role == "bastion":
             "/etc/dnsmasq.d/10-rancher-local.conf /etc/dnsmasq.d/20-local-dhcp.conf; do "
             f"name=$(basename \"$path\"); if [ -e {dnsmasq_backup_dir}/$name.absent ]; then rm -f \"$path\"; "
             f"elif [ -e {dnsmasq_backup_dir}/$name ]; then cp -a {dnsmasq_backup_dir}/$name \"$path\"; fi; done; "
+            f"rm -f /etc/dnsmasq.d/dnsmasq-vlan*.conf; "
+            f"for path in {dnsmasq_backup_dir}/dhcp/*.conf; do [ -e \"$path\" ] || continue; cp -a \"$path\" /etc/dnsmasq.d/; done; "
             f"rm -rf {dnsmasq_backup_dir}; "
             "printf 'dnsmasq validation failed; previous project-owned configuration restored\\n' >&2; exit $status"
         ],
         _if=lambda: any_changed(
-            dnsmasq_binding, hosts_config, dnsmasq_local_config, dnsmasq_dhcp_config
+            dnsmasq_binding, hosts_config, dnsmasq_local_config, legacy_dhcp_config, *dnsmasq_dhcp_configs
         ),
     )
 

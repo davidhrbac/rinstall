@@ -44,20 +44,6 @@ def wait_for_device(mac_address, visible_devices, timeout=60, interval=1, sleep=
         sleep(interval)
 
 
-def wait_for_interface(interface_name, expected_mac, interface_state, timeout=60, interval=1, sleep=time.sleep):
-    deadline = time.monotonic() + timeout
-    while True:
-        state = interface_state(interface_name)
-        if state and state[0] and state[0].lower() == expected_mac.lower() and state[1]:
-            return
-        if time.monotonic() >= deadline:
-            raise SystemExit(
-                f"Timed out after {timeout}s waiting for NetworkManager to recognize "
-                f"{interface_name} with MAC {expected_mac}"
-            )
-        sleep(interval)
-
-
 def route_device_is_active(device):
     return bool(device and device.strip() and device.strip() != "--")
 

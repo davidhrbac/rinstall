@@ -13,7 +13,6 @@ from lib.bastion_network import (
     route_device_is_active,
     route_needs_replacement,
     wait_for_device,
-    wait_for_interface,
 )
 from lib.env_config import expand_env
 
@@ -94,27 +93,18 @@ def test_rejects_missing_or_removed_network_output(tmp_path):
         load_downstream_network_output(output_path, [])
 
 
-def test_renders_persistent_mac_matched_kernel_name():
-    rendered = render_template(
-        "downstream-network.link.j2",
-        mac_address="00:50:56:aa:bb:cc",
-        interface_name="vlan121",
-    )
-
-    assert "MACAddress=00:50:56:aa:bb:cc" in rendered
-    assert "Name=vlan121" in rendered
-
-
 def test_renders_complete_networkmanager_profile_without_gateway():
     downstream = config_with(downstream_network())["bastion"]["downstream_networks"][0]
     rendered = render_template(
         "downstream-network.nmconnection.j2",
         downstream=downstream,
         mac_address="00:50:56:aa:bb:cc",
+        device_name="ens256",
     )
 
     assert "type=ethernet" in rendered
-    assert "interface-name=vlan121" in rendered
+    assert "id=vlan121" in rendered
+    assert "interface-name=ens256" in rendered
     assert "mac-address=00:50:56:aa:bb:cc" in rendered
     assert "address1=10.20.121.34/27" in rendered
     assert "never-default=true" in rendered
@@ -123,22 +113,51 @@ def test_renders_complete_networkmanager_profile_without_gateway():
 
 def test_renders_interface_scoped_dhcp_without_dns_option():
     config = config_with(downstream_network())
-    rendered = render_template("dnsmasq-dhcp.conf.j2", config=config)
+    network = config["bastion"]["downstream_networks"][0]
+    network["device_name"] = "ens256"
+    rendered = render_template("dnsmasq-dhcp.conf.j2", config=config, network=network)
 
     assert "dhcp-authoritative" in rendered
-    assert "dhcp-ignore=tag:!vlan121" in rendered
-    assert "dhcp-range=tag:vlan121,10.20.121.36,10.20.121.61,255.255.255.224,12h" in rendered
-    assert "dhcp-option=tag:vlan121,option:router,10.20.121.33" in rendered
+    assert "dhcp-range=ens256,10.20.121.36,10.20.121.61,255.255.255.224,12h" in rendered
+    assert "dhcp-option=ens256,option:router,10.20.121.33" in rendered
     assert "option:dns-server" not in rendered
     assert "option:6" not in rendered
-    assert "interface=*" not in rendered
+    assert "dhcp-ignore=" not in rendered
 
 
-def test_omits_authoritative_dhcp_without_downstream_networks():
-    rendered = render_template("dnsmasq-dhcp.conf.j2", config=config_with())
+def test_multiple_downstream_dhcp_files_use_their_resolved_devices():
+    config = config_with(downstream_network(121), downstream_network(122))
+    networks = config["bastion"]["downstream_networks"]
+    networks[0]["device_name"] = "ens256"
+    networks[1]["device_name"] = "ens257"
 
-    assert "dhcp-authoritative" not in rendered
-    assert "dhcp-range=" not in rendered
+    first = render_template("dnsmasq-dhcp.conf.j2", config=config, network=networks[0])
+    second = render_template("dnsmasq-dhcp.conf.j2", config=config, network=networks[1])
+
+    assert "dhcp-range=ens256," in first
+    assert "dhcp-range=ens257," in second
+    assert "ens257" not in first
+    assert "ens256" not in second
+
+
+def test_downstream_runtime_keeps_real_device_names_without_kernel_rename():
+    deploy = (ROOT / "pyinfra/deploy.py").read_text()
+
+    assert not (ROOT / "pyinfra/templates/downstream-network.link.j2").exists()
+    assert "ip link set" not in deploy
+    assert "udevadm control --reload" not in deploy
+    assert "Set kernel interface name" not in deploy
+    assert "Wait for NetworkManager to recognize" not in deploy
+    assert "ifname {shlex.quote(device)}" in deploy
+
+
+def test_downstream_networkmanager_no_auto_default_is_reloaded_idempotently():
+    deploy = (ROOT / "pyinfra/deploy.py").read_text()
+
+    assert "no-auto-default=*" in deploy
+    assert "/etc/NetworkManager/conf.d/10-rinstall-no-auto-default.conf" in deploy
+    assert "nmcli general reload conf" in deploy
+    assert "_if=no_auto_default.did_change" in deploy
 
 
 def test_route_comparison_skips_equal_normalized_route_and_replaces_changed_route():
@@ -187,34 +206,6 @@ def test_wait_for_device_rejects_duplicate_mac():
             "00:11:22:33:44:55",
             lambda: [("ens224", "00:11:22:33:44:55"), ("ens256", "00:11:22:33:44:55")],
         )
-
-
-def test_wait_for_interface_retries_until_sysfs_and_networkmanager_match():
-    states = [(None, False), (("00:11:22:33:44:55", False),), (("00:11:22:33:44:55", True),)]
-    sleeps = []
-
-    def state(_name):
-        value = states.pop(0)
-        return value[0] if isinstance(value, tuple) and len(value) == 1 else value
-
-    wait_for_interface("vlan121", "00:11:22:33:44:55", state, sleep=sleeps.append)
-    assert sleeps == [1, 1]
-
-
-def test_wait_for_interface_timeout_is_clear():
-    with pytest.raises(SystemExit, match="NetworkManager to recognize vlan121"):
-        wait_for_interface("vlan121", "00:11:22:33:44:55", lambda _name: None, timeout=0)
-
-
-def test_correct_interface_state_is_immediate_no_op():
-    sleeps = []
-    wait_for_interface(
-        "vlan121",
-        "00:11:22:33:44:55",
-        lambda _name: ("00:11:22:33:44:55", True),
-        sleep=sleeps.append,
-    )
-    assert sleeps == []
 
 
 def test_active_autogenerated_profile_on_same_device_is_disabled_and_deactivated():
