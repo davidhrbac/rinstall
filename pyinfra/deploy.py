@@ -62,6 +62,12 @@ def connection_uuid(connection_name):
     ).strip()
 
 
+def active_connection_id(device):
+    return command_output(
+        f"nmcli -g GENERAL.CONNECTION device show {shlex.quote(device)} 2>/dev/null || true"
+    ).strip()
+
+
 def connection_profiles():
     profiles = []
     for line in command_output("nmcli -t -f UUID,TYPE,DEVICE connection show").splitlines():
@@ -383,7 +389,13 @@ if phase == "bastion" and role == "bastion":
     for source_name, target_name in config["bastion"].get("network_connection_names", {}).items():
         source_uuid = connection_uuid(source_name)
         target_uuid = connection_uuid(target_name)
-        rename_needed = profile_rename_needed(source_uuid, target_uuid, source_name, target_name)
+        rename_needed = profile_rename_needed(
+            source_uuid,
+            target_uuid,
+            source_name,
+            target_name,
+            active_connection_id(source_name),
+        )
         server.shell(
             name=f"Rename NetworkManager connection {source_name} to {target_name}",
             commands=[

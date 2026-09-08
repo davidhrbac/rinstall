@@ -444,8 +444,24 @@ def test_route_replacement_preserves_unrelated_static_routes():
 def test_profile_rename_comparison_skips_identical_state_and_rejects_collision():
     assert profile_rename_needed("uuid-1", "uuid-1", "ens224", "mgmt") is False
     assert profile_rename_needed("uuid-1", "", "ens224", "mgmt") is True
+    assert profile_rename_needed("uuid-1", "", "ens224", "mgmt", "mgmt") is False
     with pytest.raises(SystemExit, match="different connection"):
         profile_rename_needed("uuid-1", "uuid-2", "ens224", "mgmt")
+
+
+def test_base_profile_rename_lifecycle_uses_connection_id_not_device_name():
+    assert profile_rename_needed("uuid-ens192", "", "ens192", "local", "ens192") is True
+    assert profile_rename_needed("uuid-ens192", "", "ens192", "local", "local") is False
+    assert profile_rename_needed("uuid-ens224", "", "ens224", "mgmt", "ens224") is True
+    assert profile_rename_needed("uuid-ens224", "", "ens224", "mgmt", "mgmt") is False
+
+
+def test_base_profile_rename_resolves_active_connection_id_from_device():
+    deploy = (ROOT / "pyinfra/deploy.py").read_text()
+
+    assert "nmcli -g GENERAL.CONNECTION device show" in deploy
+    assert "active_connection_id(source_name)" in deploy
+    assert "nmcli connection modify uuid" in deploy
 
 
 def test_identical_downstream_connection_state_needs_no_activation():

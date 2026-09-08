@@ -118,9 +118,12 @@ def route_needs_replacement(current, desired):
     return normalize_route_list(current) != normalize_route_list(replacement)
 
 
-def profile_rename_needed(source_uuid, target_uuid, source, target):
+def profile_rename_needed(source_uuid, target_uuid, source, target, source_connection_id=""):
     source_uuid = source_uuid.strip()
     target_uuid = target_uuid.strip()
+    source_connection_id = source_connection_id.strip()
+    if source_connection_id == target:
+        return False
     if target_uuid:
         if source_uuid and source_uuid != target_uuid:
             raise SystemExit(
