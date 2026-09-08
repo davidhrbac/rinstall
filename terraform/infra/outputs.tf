@@ -15,6 +15,20 @@ output "bastion_ip" {
   value = local.node_static_ips[var.bastion_service_node]
 }
 
+output "bastion_downstream_networks" {
+  value = {
+    for index, nic in var.nodes[var.bastion_service_node].nics : "vlan${nic.downstream_vlan}" => {
+      vlan              = nic.downstream_vlan
+      vmware_network    = var.networks[nic.network]
+      vmware_network_id = data.vsphere_network.this[nic.network].id
+      mac_address       = module.vm[var.bastion_service_node].mac_addresses[index]
+      nic_index         = index
+      attachment_order  = index + 1
+    }
+    if try(nic.downstream_vlan, null) != null
+  }
+}
+
 output "rancher_ips" {
   value = [for name, node in var.nodes : local.node_static_ips[name] if node.role == "rancher"]
 }

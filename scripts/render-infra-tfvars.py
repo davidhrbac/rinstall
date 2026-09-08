@@ -41,15 +41,31 @@ def render(env):
             rendered_node["dns_servers"] = node["dns_servers"]
         nodes[name] = rendered_node
 
+    networks = dict(require(infra, "networks", "env.infra"))
+    bastion_service_node = require(env["bastion"], "service_node", "env.bastion")
+    for downstream in env["bastion"]["downstream_networks"]:
+        vlan = downstream["vlan"]
+        lookup_name = f"__downstream_vlan_{vlan}"
+        if lookup_name in networks:
+            raise SystemExit(f"generated downstream network lookup name conflicts with env.infra.networks: {lookup_name}")
+        networks[lookup_name] = downstream["vmware_network"]
+        nodes[bastion_service_node]["nics"].append(
+            {
+                "network": lookup_name,
+                "customize": False,
+                "downstream_vlan": vlan,
+            }
+        )
+
     rendered = {
         "vsphere_allow_unverified_ssl": vsphere.get("allow_unverified_ssl", False),
         "clone_timeout": vsphere.get("clone_timeout", 60),
-        "bastion_service_node": require(env["bastion"], "service_node", "env.bastion"),
+        "bastion_service_node": bastion_service_node,
         "datacenter": require(vsphere, "datacenter", "env.infra.vsphere"),
         "datastore": require(vsphere, "datastore", "env.infra.vsphere"),
         "resource_pool": require(vsphere, "resource_pool", "env.infra.vsphere"),
         "folder": require(vsphere, "folder", "env.infra.vsphere"),
-        "networks": require(infra, "networks", "env.infra"),
+        "networks": networks,
         "templates": require(infra, "templates", "env.infra"),
         "domain": require(env, "domain", "env"),
         "rancher_url": require(env, "rancher_url", "env"),
@@ -67,16 +83,59 @@ def render(env):
     return rendered
 
 
+def validate_no_downstream_removal(rendered, existing_outputs):
+    existing = existing_outputs.get("bastion_downstream_networks", {}).get("value", {})
+    if not existing:
+        return
+    if not isinstance(existing, dict):
+        raise SystemExit("existing Terraform bastion_downstream_networks output is invalid")
+
+    bastion = rendered["nodes"][rendered["bastion_service_node"]]
+    desired = {
+        f"vlan{nic['downstream_vlan']}": {
+            "nic_index": index,
+            "vmware_network": rendered["networks"][nic["network"]],
+        }
+        for index, nic in enumerate(bastion["nics"])
+        if nic.get("downstream_vlan") is not None
+    }
+
+    removed = sorted(set(existing) - set(desired))
+    if removed:
+        raise SystemExit(
+            "downstream network removal is not supported in v0.3.0; restore these entries: "
+            + ", ".join(removed)
+        )
+
+    reordered = [
+        name
+        for name in existing
+        if existing[name].get("nic_index") != desired[name]["nic_index"]
+    ]
+    if reordered:
+        raise SystemExit(
+            "existing downstream NIC attachment order must not change; restore the previous order for: "
+            + ", ".join(sorted(reordered))
+        )
+
+
 def main():
     parser = argparse.ArgumentParser(description="Render Terraform infra variables from env.yaml")
     parser.add_argument("--env", required=True, help="Path to env.yaml")
     parser.add_argument("--out", required=True, help="Output .tfvars.json path")
+    parser.add_argument("--existing-infra-output", help="Existing Terraform output used to reject NIC removal")
     args = parser.parse_args()
 
     env = load_env(args.env)
+    rendered = render(env)
+    if args.existing_infra_output:
+        existing_path = Path(args.existing_infra_output)
+        if existing_path.exists():
+            validate_no_downstream_removal(rendered, json.loads(existing_path.read_text()))
+
     out_path = Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(json.dumps(render(env), indent=2, sort_keys=True) + "\n")
+    out_path.write_text(json.dumps(rendered, indent=2, sort_keys=True) + "\n")
 
 
 if __name__ == "__main__":

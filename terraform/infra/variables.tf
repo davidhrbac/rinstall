@@ -76,10 +76,11 @@ variable "nodes" {
     memory_mb   = number
     disk_gb     = number
     nics = list(object({
-      network   = string
-      ip        = optional(string)
-      prefix    = optional(number)
-      customize = optional(bool)
+      network         = string
+      ip              = optional(string)
+      prefix          = optional(number)
+      customize       = optional(bool)
+      downstream_vlan = optional(number)
     }))
   }))
 }
