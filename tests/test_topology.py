@@ -193,23 +193,58 @@ def test_topology_outputs_exclude_sensitive_config_values(tmp_path):
     config_path.write_text(yaml.safe_dump(config))
     output_dir = tmp_path / ".rinstall"
 
+    command = [
+        sys.executable,
+        str(RENDER_TOPOLOGY),
+        "--config",
+        str(config_path),
+        "--output-dir",
+        str(output_dir),
+    ]
     subprocess.run(
-        [
-            sys.executable,
-            str(RENDER_TOPOLOGY),
-            "--config",
-            str(config_path),
-            "--output-dir",
-            str(output_dir),
-        ],
+        command,
+        check=True,
+    )
+    first_json = (output_dir / "topology.json").read_bytes()
+    first_markdown = (output_dir / "topology.md").read_bytes()
+    subprocess.run(
+        command,
         check=True,
     )
 
     outputs = (output_dir / "topology.json").read_text() + (output_dir / "topology.md").read_text()
+    assert (output_dir / "topology.json").read_bytes() == first_json
+    assert (output_dir / "topology.md").read_bytes() == first_markdown
     assert all(secret not in outputs for secret in secrets)
     assert output_dir.stat().st_mode & 0o777 == 0o700
     assert (output_dir / "topology.json").stat().st_mode & 0o777 == 0o600
     assert (output_dir / "topology.md").stat().st_mode & 0o777 == 0o600
+
+
+def test_markdown_escapes_configured_table_values():
+    config = raw_config()
+    config["infra"]["networks"]["customer"] = "CUSTOMER|NETWORK"
+    config["rke2"]["version"] = "version|value"
+
+    markdown = render_topology_markdown(build_desired_topology(expand_env(config)))
+
+    assert "CUSTOMER\\|NETWORK" in markdown
+    assert "version\\|value" in markdown
+
+
+def test_topology_script_requires_explicit_config_and_output_directory():
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(RENDER_TOPOLOGY),
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    assert "--config" in result.stderr
+    assert "--output-dir" in result.stderr
 
 
 def test_building_topology_does_not_change_expanded_config():

@@ -81,6 +81,36 @@ def test_makefile_derives_instance_paths(tmp_path):
     assert "-lockfile=readonly" in init_result.stdout
 
 
+def test_topology_target_writes_private_instance_runtime_outputs(tmp_path):
+    instance_root = tmp_path / "customer-a-prod-infra"
+    instance_root.mkdir()
+    config = yaml.safe_load(EXAMPLE_ENV.read_text())
+    config["nodes"]["bastion1"]["nics"][1]["cidr"] = "192.0.2.10/24"
+    (instance_root / "config.yaml").write_text(yaml.safe_dump(config))
+    (instance_root / "rinstall").symlink_to(ENGINE_ROOT, target_is_directory=True)
+
+    result = subprocess.run(
+        ["make", "-f", "rinstall/Makefile", "topology", f"PYTHON={sys.executable}"],
+        cwd=instance_root,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    runtime_dir = instance_root / ".rinstall"
+    topology_json = runtime_dir / "topology.json"
+    topology_markdown = runtime_dir / "topology.md"
+    assert str(topology_json) in result.stdout
+    assert str(topology_markdown) in result.stdout
+    assert topology_json.exists()
+    assert topology_markdown.exists()
+    assert runtime_dir.stat().st_mode & 0o777 == 0o700
+    assert topology_json.stat().st_mode & 0o777 == 0o600
+    assert topology_markdown.stat().st_mode & 0o777 == 0o600
+    assert "terraform" not in result.stdout.lower()
+    assert "pyinfra" not in result.stdout.lower()
+
+
 def test_standalone_bastion_configure_refreshes_output_before_pyinfra(tmp_path):
     instance_root = tmp_path / "customer-a-prod-infra"
     instance_root.mkdir()

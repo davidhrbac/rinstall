@@ -433,6 +433,40 @@ Use `envs/example` only for sanitized engine development fixtures. Real customer
 configuration belongs in the separate instance repository, keeping hostnames,
 IPs, and SSH topology out of this engine repository.
 
+## Desired Topology
+
+Generate a private support-oriented view of the desired infrastructure directly
+from the current expanded `config.yaml`:
+
+```bash
+make -f rinstall/Makefile topology
+```
+
+The target does not run Terraform or pyinfra and does not require provisioned
+infrastructure. In an instance repository it writes `.rinstall/topology.json`
+and `.rinstall/topology.md`; standalone engine use writes under
+`build/<environment.id>/`. Both files come from the same normalized desired
+topology object and have mode `0600` in a mode-`0700` runtime directory.
+
+The output includes expanded hosts and roles, local/customer and management
+interfaces, downstream VLANs and DHCP pools, bastion DNS/DHCP/proxy services,
+and required downstream connectivity. Rancher-role nodes require TCP/22 access
+to every downstream CIDR for administrator SSH. Downstream nodes require
+TCP/UDP 53 access to the bastion address on their own downstream VLAN. DHCP is
+shown as the UDP 68-to-67 client request and UDP 67-to-68 server response.
+
+This first topology version represents desired configuration only. It does not
+read Terraform state, MAC addresses, guest interface names, or runtime network
+facts, and connectivity verification remains `external/unverified`. Configure
+static management addressing with `nics[].cidr`; when a desired management
+address is absent, topology output reports it as unknown instead of inferring
+DHCP state.
+
+Environment-specific topology contains internal hostnames and addresses. Keep
+it under the ignored runtime directory and do not commit it. Tokens, passwords,
+bootstrap secrets, private-key paths, kubeconfig credentials, Terraform state,
+and environment-variable credentials are never included.
+
 ## Terraform State
 
 Production instances use the static `backend "http" {}` declaration in the
