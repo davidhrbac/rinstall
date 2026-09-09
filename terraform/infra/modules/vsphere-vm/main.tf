@@ -7,6 +7,9 @@ resource "vsphere_virtual_machine" "this" {
   num_cpus = var.cpu
   memory   = var.memory_mb
 
+  shutdown_wait_timeout = 1
+  force_power_off       = true
+
   guest_id  = var.template.guest_id
   scsi_type = var.template.scsi_type
   firmware  = var.template.firmware
