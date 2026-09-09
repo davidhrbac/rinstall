@@ -21,6 +21,9 @@ output "bastion_downstream_networks" {
       vlan              = nic.downstream_vlan
       vmware_network    = var.networks[nic.network]
       vmware_network_id = data.vsphere_network.this[nic.network].id
+      subnet            = nic.downstream_subnet
+      bastion_address   = nic.downstream_bastion_address
+      gateway           = nic.downstream_gateway
       mac_address       = try(data.vsphere_virtual_machine.bastion_fresh[0].network_interfaces[index].mac_address, null)
       nic_index         = index
       attachment_order  = index + 1

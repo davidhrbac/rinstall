@@ -54,6 +54,9 @@ def render(env):
                 "network": lookup_name,
                 "customize": False,
                 "downstream_vlan": vlan,
+                "downstream_subnet": downstream["subnet"],
+                "downstream_bastion_address": downstream["bastion_address"],
+                "downstream_gateway": downstream["gateway"],
             }
         )
 
@@ -84,8 +87,11 @@ def render(env):
 
 
 def validate_no_downstream_removal(rendered, existing_outputs):
-    existing = existing_outputs.get("bastion_downstream_networks", {}).get("value", {})
-    if not existing:
+    output = existing_outputs.get("bastion_downstream_networks", {})
+    if not isinstance(output, dict):
+        raise SystemExit("existing Terraform bastion_downstream_networks output is invalid")
+    existing = output.get("value", {})
+    if existing == {}:
         return
     if not isinstance(existing, dict):
         raise SystemExit("existing Terraform bastion_downstream_networks output is invalid")
@@ -93,8 +99,12 @@ def validate_no_downstream_removal(rendered, existing_outputs):
     bastion = rendered["nodes"][rendered["bastion_service_node"]]
     desired = {
         f"vlan{nic['downstream_vlan']}": {
+            "vlan": nic["downstream_vlan"],
             "nic_index": index,
             "vmware_network": rendered["networks"][nic["network"]],
+            "subnet": nic["downstream_subnet"],
+            "bastion_address": nic["downstream_bastion_address"],
+            "gateway": nic["downstream_gateway"],
         }
         for index, nic in enumerate(bastion["nics"])
         if nic.get("downstream_vlan") is not None
@@ -105,6 +115,20 @@ def validate_no_downstream_removal(rendered, existing_outputs):
         raise SystemExit(
             "downstream network removal is not supported in v0.3.0; restore these entries: "
             + ", ".join(removed)
+        )
+
+    incomplete = [
+        name
+        for name, network in existing.items()
+        if not isinstance(network, dict)
+        or any(
+            field not in network
+            for field in ("vlan", "nic_index", "vmware_network", "subnet", "bastion_address", "gateway")
+        )
+    ]
+    if incomplete:
+        raise SystemExit(
+            "existing downstream lifecycle identity is incomplete for: " + ", ".join(sorted(incomplete))
         )
 
     reordered = [
@@ -127,6 +151,20 @@ def validate_no_downstream_removal(rendered, existing_outputs):
         raise SystemExit(
             "changing an existing downstream VMware network is not supported in v0.3.0: "
             + ", ".join(sorted(moved))
+        )
+
+    changed_addressing = [
+        name
+        for name in existing
+        if any(
+            existing[name].get(field) != desired[name][field]
+            for field in ("vlan", "subnet", "bastion_address", "gateway")
+        )
+    ]
+    if changed_addressing:
+        raise SystemExit(
+            "changing existing downstream addressing is not supported in v0.3.0: "
+            + ", ".join(sorted(changed_addressing))
         )
 
 

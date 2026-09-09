@@ -42,6 +42,9 @@ def test_appends_one_downstream_nic_after_existing_bastion_nics():
         "network": "__downstream_vlan_121",
         "customize": False,
         "downstream_vlan": 121,
+        "downstream_subnet": "10.20.121.32/27",
+        "downstream_bastion_address": "10.20.121.34",
+        "downstream_gateway": "10.20.121.33",
     }
     assert rendered["networks"]["__downstream_vlan_121"] == "DOWNSTREAM_VLAN_121"
 
@@ -72,6 +75,26 @@ def base_output(rendered):
                 for index, nic in enumerate(rendered["nodes"]["bastion1"]["nics"])
                 if nic.get("downstream_vlan") is None
             ]
+        }
+    }
+
+
+def downstream_output(rendered):
+    bastion = rendered["nodes"]["bastion1"]
+    return {
+        "bastion_downstream_networks": {
+            "value": {
+                f"vlan{nic['downstream_vlan']}": {
+                    "vlan": nic["downstream_vlan"],
+                    "nic_index": index,
+                    "vmware_network": rendered["networks"][nic["network"]],
+                    "subnet": nic["downstream_subnet"],
+                    "bastion_address": nic["downstream_bastion_address"],
+                    "gateway": nic["downstream_gateway"],
+                }
+                for index, nic in enumerate(bastion["nics"])
+                if nic.get("downstream_vlan") is not None
+            }
         }
     }
 
@@ -122,14 +145,7 @@ def test_base_nic_topology_guard_rejects_existing_output_without_base_topology()
 
 def test_rejects_downstream_removal_and_attachment_reorder():
     rendered = render_with(downstream_network(121), downstream_network(122))
-    existing = {
-        "bastion_downstream_networks": {
-            "value": {
-                "vlan121": {"nic_index": 2, "vmware_network": "DOWNSTREAM_VLAN_121"},
-                "vlan122": {"nic_index": 3, "vmware_network": "DOWNSTREAM_VLAN_122"},
-            }
-        }
-    }
+    existing = downstream_output(rendered)
 
     RENDERER.validate_no_downstream_removal(rendered, existing)
 
@@ -148,6 +164,65 @@ def test_rejects_downstream_removal_and_attachment_reorder():
         RENDERER.validate_no_downstream_removal(moved, existing)
 
 
+def test_downstream_addressing_identity_is_persisted_and_dhcp_only_changes_are_allowed():
+    original = render_with(downstream_network(121))
+    existing = downstream_output(original)
+
+    changed_dhcp = downstream_network(121)
+    changed_dhcp["dhcp"] = {"start": 5, "end": -3, "lease_time": "24h"}
+    RENDERER.validate_no_downstream_removal(render_with(changed_dhcp), existing)
+
+    equivalent = downstream_network(121)
+    equivalent["bastion_address"] = "10.20.121.34"
+    equivalent["gateway"] = "10.20.121.33"
+    RENDERER.validate_no_downstream_removal(render_with(equivalent), existing)
+
+    assert original["nodes"]["bastion1"]["nics"][2]["downstream_subnet"] == "10.20.121.32/27"
+    assert original["nodes"]["bastion1"]["nics"][2]["downstream_bastion_address"] == "10.20.121.34"
+    assert original["nodes"]["bastion1"]["nics"][2]["downstream_gateway"] == "10.20.121.33"
+
+
+def test_fresh_and_appended_downstream_networks_are_allowed():
+    first = render_with(downstream_network(121))
+    second = render_with(downstream_network(121), downstream_network(122))
+
+    RENDERER.validate_no_downstream_removal(first, {})
+    RENDERER.validate_no_downstream_removal(second, downstream_output(first))
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("subnet", "10.20.122.32/27", "addressing"),
+        ("bastion_address", "10.20.121.35", "addressing"),
+        ("gateway", "10.20.121.35", "addressing"),
+    ],
+)
+def test_rejects_existing_downstream_addressing_changes(field, value, message):
+    original = render_with(downstream_network(121))
+    existing = downstream_output(original)
+    changed = downstream_network(121)
+    changed[field] = value
+
+    with pytest.raises(SystemExit, match=message):
+        RENDERER.validate_no_downstream_removal(render_with(changed), existing)
+
+
+def test_rejects_incomplete_non_empty_downstream_lifecycle_output():
+    rendered = render_with(downstream_network(121))
+    existing = downstream_output(rendered)
+    del existing["bastion_downstream_networks"]["value"]["vlan121"]["gateway"]
+
+    with pytest.raises(SystemExit, match="lifecycle identity is incomplete"):
+        RENDERER.validate_no_downstream_removal(rendered, existing)
+
+    with pytest.raises(SystemExit, match="bastion_downstream_networks output is invalid"):
+        RENDERER.validate_no_downstream_removal(
+            rendered,
+            {"bastion_downstream_networks": {"value": []}},
+        )
+
+
 def test_terraform_output_exposes_provider_network_and_mac_identity():
     output_source = (ROOT / "terraform/infra/outputs.tf").read_text()
 
@@ -155,6 +230,9 @@ def test_terraform_output_exposes_provider_network_and_mac_identity():
     assert "vmware_network_id = data.vsphere_network.this[nic.network].id" in output_source
     assert "mac_address       = try(data.vsphere_virtual_machine.bastion_fresh[0].network_interfaces[index].mac_address, null)" in output_source
     assert "nic_index         = index" in output_source
+    assert "subnet            = nic.downstream_subnet" in output_source
+    assert "bastion_address   = nic.downstream_bastion_address" in output_source
+    assert "gateway           = nic.downstream_gateway" in output_source
 
 
 def test_terraform_output_exposes_ordered_base_nic_topology():
@@ -164,6 +242,15 @@ def test_terraform_output_exposes_ordered_base_nic_topology():
     assert "if try(nic.downstream_vlan, null) == null" in output_source
     assert "nic_index      = index" in output_source
     assert "vmware_network = var.networks[nic.network]" in output_source
+
+
+def test_addressing_guard_runs_before_terraform_plan_and_apply():
+    makefile = (ROOT / "Makefile").read_text()
+
+    assert "render-infra-vars-checked: infra-output config-validate" in makefile
+    assert "infra-plan:" in makefile and "render-infra-vars-checked" in makefile
+    assert "infra-apply:" in makefile and "render-infra-vars-checked" in makefile
+    assert "render-infra-tfvars.py --env $(ENV_CONFIG) --out $(INFRA_TFVARS) --existing-infra-output" in makefile
 
 
 def test_fresh_bastion_view_waits_for_vm_update_and_topology_changes():
