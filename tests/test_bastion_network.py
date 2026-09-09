@@ -244,6 +244,19 @@ def test_downstream_networkmanager_no_auto_default_is_reloaded_idempotently():
     assert "_if=no_auto_default.did_change" in deploy
 
 
+def test_downstream_activation_uses_matching_competitor_reconciliation_operation():
+    deploy = (ROOT / "pyinfra/deploy.py").read_text()
+
+    reconciliation_list = "downstream_competitor_reconciliations = []"
+    append = "downstream_competitor_reconciliations.append(competitor_reconciliation)"
+    lookup = "competitor_reconciliation = downstream_competitor_reconciliations[index]"
+
+    assert reconciliation_list in deploy
+    assert append in deploy
+    assert lookup in deploy
+    assert deploy.index(reconciliation_list) < deploy.index(append) < deploy.index(lookup)
+
+
 def test_route_comparison_skips_equal_normalized_route_and_replaces_changed_route():
     desired = "192.0.2.128/26 192.0.2.1"
 

@@ -204,6 +204,7 @@ if phase == "bastion" and role == "bastion":
     obsolete_dhcp_configs = []
     dnsmasq_effective_changes = []
     downstream_profiles = []
+    downstream_competitor_reconciliations = []
     downstream_devices = {}
     for downstream in config["bastion"]["downstream_networks"]:
         interface_name = downstream["interface_name"]
@@ -260,6 +261,7 @@ if phase == "bastion" and role == "bastion":
                 name=f"Reconcile competing NetworkManager profiles for {interface_name}",
                 commands=competitor_commands,
             )
+        downstream_competitor_reconciliations.append(competitor_reconciliation)
 
         files.file(
             name=f"Remove obsolete downstream interface naming rule {interface_name}",
@@ -294,6 +296,7 @@ if phase == "bastion" and role == "bastion":
             downstream,
         )
         profile = downstream_profiles[index]
+        competitor_reconciliation = downstream_competitor_reconciliations[index]
         profile_path = f"/etc/NetworkManager/system-connections/rinstall-{interface_name}.nmconnection"
         server.shell(
             name=f"Activate downstream network {interface_name}",
