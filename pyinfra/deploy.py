@@ -16,6 +16,7 @@ from lib.bastion_network import (
     reconcile_ipv4_routes,
     route_device_is_active,
     route_needs_replacement,
+    dnsmasq_recovery_command,
 )
 from lib.ssh_config import build_dir_for_env
 
@@ -364,6 +365,10 @@ if phase == "bastion" and role == "bastion":
     dnsmasq_candidate_dir = "/run/rinstall-dnsmasq-candidate"
     dnsmasq_rollback_dir = "/run/rinstall-dnsmasq-rollback"
     server.shell(
+        name="Recover interrupted dnsmasq transaction",
+        commands=[dnsmasq_recovery_command(dnsmasq_rollback_dir)],
+    )
+    server.shell(
         name="Prepare complete dnsmasq candidate",
         commands=[
             f"rm -rf {dnsmasq_candidate_dir}; mkdir -p {dnsmasq_candidate_dir}/dnsmasq.d; "
@@ -510,6 +515,10 @@ if phase == "bastion" and role == "bastion":
             f"[ -e \"$path\" ] || continue; cp -a \"$path\" {dnsmasq_rollback_dir}/dhcp/$(basename \"$path\"); done; "
             "was_active=0; if systemctl is-active --quiet dnsmasq; then was_active=1; fi; "
             "was_enabled=0; if systemctl is-enabled --quiet dnsmasq; then was_enabled=1; fi; "
+            f"printf '%s\\n' \"$was_active\" > {dnsmasq_rollback_dir}/service.active; "
+            f"printf '%s\\n' \"$was_enabled\" > {dnsmasq_rollback_dir}/service.enabled; "
+            f"sync -f {dnsmasq_rollback_dir}/service.active; sync -f {dnsmasq_rollback_dir}/service.enabled; "
+            f": > {dnsmasq_rollback_dir}/ready; sync -f {dnsmasq_rollback_dir}/ready; "
             "rollback() { "
             "for path in /etc/dnsmasq.conf /etc/hosts /etc/dnsmasq.d/10-rancher-local.conf /etc/dnsmasq.d/20-local-dhcp.conf /etc/dnsmasq.d/20-rinstall-dhcp.conf; do "
             f"name=$(basename \"$path\"); if [ -e {dnsmasq_rollback_dir}/$name.absent ]; then rm -f \"$path\"; elif [ -e {dnsmasq_rollback_dir}/$name ]; then atomic_replace {dnsmasq_rollback_dir}/$name \"$path\" || true; fi; done; "

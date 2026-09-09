@@ -11,6 +11,7 @@ from lib.bastion_network import (
     downstream_profile_actions,
     downstream_connection_needs_activation,
     dnsmasq_effective_config_changed,
+    dnsmasq_recovery_command,
     load_downstream_network_output,
     normalize_ipv4_route,
     profile_rename_needed,
@@ -370,6 +371,102 @@ def test_dnsmasq_candidate_is_staged_and_validated_before_install():
     assert candidate < validation < install
     assert "dnsmasq --test --conf-file={dnsmasq_candidate_dir}/dnsmasq.conf $hosts_args" in deploy
     assert "live configuration was not changed" in deploy
+
+
+def test_dnsmasq_recovery_precedes_candidate_staging_and_records_completion():
+    deploy = (ROOT / "pyinfra/deploy.py").read_text()
+    recovery = deploy.index("Recover interrupted dnsmasq transaction")
+    candidate = deploy.index("Prepare complete dnsmasq candidate")
+    install = deploy.index("Install validated dnsmasq configuration and restart service")
+
+    assert recovery < candidate < install
+    assert "dnsmasq_recovery_command(dnsmasq_rollback_dir)" in deploy
+    assert "service.active" in deploy
+    assert "service.enabled" in deploy
+    assert ": > {dnsmasq_rollback_dir}/ready" in deploy
+
+
+def test_dnsmasq_recovery_restores_known_good_state_and_restarts_service(tmp_path):
+    config_root = tmp_path / "etc"
+    dropin_dir = config_root / "dnsmasq.d"
+    rollback_dir = tmp_path / "rollback"
+    dropin_dir.mkdir(parents=True)
+    rollback_dir.mkdir()
+
+    (config_root / "dnsmasq.conf").write_text("new")
+    (config_root / "hosts").write_text("new")
+    (dropin_dir / "10-rancher-local.conf").write_text("new")
+    (dropin_dir / "dnsmasq-vlan565.conf").write_text("new")
+    (rollback_dir / "dnsmasq.conf").write_text("old")
+    (rollback_dir / "hosts").write_text("old")
+    (rollback_dir / "10-rancher-local.conf").write_text("old")
+    (rollback_dir / "20-local-dhcp.conf.absent").write_text("")
+    (rollback_dir / "20-rinstall-dhcp.conf.absent").write_text("")
+    (rollback_dir / "dhcp").mkdir()
+    (rollback_dir / "dhcp" / "dnsmasq-vlan565.conf").write_text("old")
+    (rollback_dir / "service.active").write_text("1\n")
+    (rollback_dir / "service.enabled").write_text("1\n")
+    (rollback_dir / "ready").write_text("")
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    log = tmp_path / "systemctl.log"
+    (bin_dir / "systemctl").write_text(f"#!/bin/sh\nprintf '%s\\n' \"$*\" >> {log}\n")
+    (bin_dir / "systemctl").chmod(0o700)
+
+    result = subprocess.run(
+        ["bash", "-c", dnsmasq_recovery_command(rollback_dir, config_root)],
+        env={"PATH": f"{bin_dir}:/usr/bin:/bin"},
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert (config_root / "dnsmasq.conf").read_text() == "old"
+    assert (config_root / "hosts").read_text() == "old"
+    assert (dropin_dir / "10-rancher-local.conf").read_text() == "old"
+    assert (dropin_dir / "dnsmasq-vlan565.conf").read_text() == "old"
+    assert log.read_text().splitlines() == ["restart dnsmasq", "enable dnsmasq"]
+    assert not rollback_dir.exists()
+
+
+def test_dnsmasq_recovery_discards_pre_install_state_without_restart(tmp_path):
+    config_root = tmp_path / "etc"
+    config_root.mkdir()
+    rollback_dir = tmp_path / "rollback"
+    rollback_dir.mkdir()
+    (rollback_dir / "partial").write_text("not ready")
+
+    result = subprocess.run(
+        ["bash", "-c", dnsmasq_recovery_command(rollback_dir, config_root)],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert not rollback_dir.exists()
+    assert "systemctl" not in result.stdout
+
+
+def test_dnsmasq_recovery_without_pending_state_does_not_restart(tmp_path):
+    config_root = tmp_path / "etc"
+    config_root.mkdir()
+    rollback_dir = tmp_path / "rollback"
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    log = tmp_path / "systemctl.log"
+    (bin_dir / "systemctl").write_text(f"#!/bin/sh\nprintf '%s\\n' \"$*\" >> {log}\n")
+    (bin_dir / "systemctl").chmod(0o700)
+
+    result = subprocess.run(
+        ["bash", "-c", dnsmasq_recovery_command(rollback_dir, config_root)],
+        env={"PATH": f"{bin_dir}:/usr/bin:/bin"},
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert not log.exists()
 
 
 def test_dnsmasq_candidate_includes_manual_dropins_and_hosts():

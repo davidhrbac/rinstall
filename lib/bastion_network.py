@@ -2,6 +2,7 @@ import json
 from ipaddress import ip_address, ip_network
 from pathlib import Path
 import re
+import shlex
 
 
 MAC_ADDRESS_PATTERN = re.compile(r"^(?:[0-9a-f]{2}:){5}[0-9a-f]{2}$")
@@ -47,6 +48,52 @@ def dhcp_excluded_interfaces(device_status, downstream_devices):
 
 def dnsmasq_effective_config_changed(operations):
     return any(operation.did_change() for operation in operations)
+
+
+def dnsmasq_recovery_command(rollback_dir, config_root="/etc"):
+    rollback = shlex.quote(str(rollback_dir))
+    root = shlex.quote(str(config_root))
+    dropin = shlex.quote(str(Path(config_root) / "dnsmasq.d"))
+    return (
+        "set -eu; "
+        f'rollback_dir={rollback}; config_root={root}; dropin_dir={dropin}; '
+        'if [ ! -d "$rollback_dir" ]; then exit 0; fi; '
+        'if [ ! -f "$rollback_dir/ready" ]; then rm -rf "$rollback_dir"; exit 0; fi; '
+        'for name in dnsmasq.conf hosts 10-rancher-local.conf 20-local-dhcp.conf 20-rinstall-dhcp.conf; do '
+        'if [ ! -e "$rollback_dir/$name" ] && [ ! -e "$rollback_dir/$name.absent" ]; then '
+        'printf "incomplete dnsmasq rollback state: %s\\n" "$name" >&2; exit 1; fi; done; '
+        'if [ ! -f "$rollback_dir/service.active" ] || [ ! -f "$rollback_dir/service.enabled" ]; then '
+        'printf "incomplete dnsmasq rollback service state\\n" >&2; exit 1; fi; '
+        'atomic_replace() { '
+        'src=$1; dest=$2; dir=$(dirname -- "$dest"); '
+        'tmp=$(mktemp --tmpdir="$dir" .rinstall-dnsmasq-recovery.XXXXXX); '
+        'if ! cp -a -- "$src" "$tmp"; then rm -f -- "$tmp"; return 1; fi; '
+        'if command -v selinuxenabled >/dev/null 2>&1 && selinuxenabled; then '
+        'if [ -e "$dest" ]; then '
+        'if ! chcon --reference="$dest" "$tmp"; then rm -f -- "$tmp"; return 1; fi; '
+        'elif command -v restorecon >/dev/null 2>&1; then '
+        'if ! restorecon -F "$tmp"; then rm -f -- "$tmp"; return 1; fi; fi; fi; '
+        'if ! sync -f "$tmp"; then rm -f -- "$tmp"; return 1; fi; '
+        'if ! mv -f -- "$tmp" "$dest"; then rm -f -- "$tmp"; return 1; fi; '
+        'if ! sync -f "$dir"; then return 1; fi; '
+        '}; '
+        'for name in dnsmasq.conf hosts; do '
+        'dest="$config_root/$name"; '
+        'if [ -e "$rollback_dir/$name.absent" ]; then rm -f -- "$dest"; '
+        'else atomic_replace "$rollback_dir/$name" "$dest"; fi; done; '
+        'for name in 10-rancher-local.conf 20-local-dhcp.conf 20-rinstall-dhcp.conf; do '
+        'dest="$dropin_dir/$name"; '
+        'if [ -e "$rollback_dir/$name.absent" ]; then rm -f -- "$dest"; '
+        'else atomic_replace "$rollback_dir/$name" "$dest"; fi; done; '
+        'rm -f -- "$dropin_dir"/dnsmasq-vlan*.conf; '
+        'for path in "$rollback_dir"/dhcp/*.conf; do [ -e "$path" ] || continue; '
+        'atomic_replace "$path" "$dropin_dir/$(basename "$path")"; done; '
+        'if [ "$(cat "$rollback_dir/service.active")" = 1 ]; then systemctl restart dnsmasq; '
+        'else systemctl stop dnsmasq; fi; '
+        'if [ "$(cat "$rollback_dir/service.enabled")" = 1 ]; then systemctl enable dnsmasq; '
+        'else systemctl disable dnsmasq; fi; '
+        'rm -rf "$rollback_dir"'
+    )
 
 
 def downstream_profile_actions(profiles, managed_uuid, expected_mac, device_names):
