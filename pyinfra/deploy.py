@@ -448,7 +448,8 @@ if phase == "bastion" and role == "bastion":
         for downstream in config["bastion"]["downstream_networks"]
     }
     for path in command_output(
-        "for path in /etc/dnsmasq.d/dnsmasq-vlan*.conf; do [ -e \"$path\" ] && printf '%s\\n' \"$path\"; done"
+        "for path in /etc/dnsmasq.d/dnsmasq-vlan*.conf; do "
+        "if [ -e \"$path\" ]; then printf '%s\\n' \"$path\"; fi; done"
     ).splitlines():
         if path not in desired_dhcp_paths:
             stale_dhcp_configs.append(

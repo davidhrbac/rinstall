@@ -1,5 +1,6 @@
 from pathlib import Path
 import re
+import subprocess
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 import pytest
@@ -172,6 +173,24 @@ def test_project_owned_dnsmasq_files_are_separate_from_manual_files():
     assert "dnsmasq-vlan*.conf" in deploy
     assert "dnsmasq-ens256.conf" not in deploy
     assert deploy.count("/etc/dnsmasq.d/20-rinstall-dhcp.conf") >= 2
+
+
+@pytest.mark.parametrize("filenames", [[], ["dnsmasq-vlan565.conf"], ["dnsmasq-vlan565.conf", "dnsmasq-vlan566.conf"]])
+def test_dnsmasq_vlan_discovery_handles_empty_and_multiple_matches(tmp_path, filenames):
+    config_dir = tmp_path / "dnsmasq.d"
+    config_dir.mkdir()
+    for filename in filenames:
+        (config_dir / filename).write_text("")
+
+    command = (
+        "for path in /etc/dnsmasq.d/dnsmasq-vlan*.conf; do "
+        "if [ -e \"$path\" ]; then printf '%s\\n' \"$path\"; fi; done"
+    ).replace("/etc/dnsmasq.d", str(config_dir))
+    result = subprocess.run(["bash", "-c", command], capture_output=True, text=True)
+
+    assert result.returncode == 0
+    assert result.stderr == ""
+    assert result.stdout.splitlines() == [str(config_dir / filename) for filename in filenames]
 
 
 def test_current_common_policy_is_not_an_obsolete_cleanup_target():
