@@ -355,6 +355,31 @@ def test_dnsmasq_validation_is_after_backup_and_restores_on_failure():
     assert "previous project-owned configuration restored" in deploy
 
 
+def test_dnsmasq_validation_precedes_unrelated_network_operations():
+    deploy = (ROOT / "pyinfra/deploy.py").read_text()
+    validation = deploy.index("Validate changed dnsmasq configuration")
+
+    assert validation < deploy.index("Reconcile competing NetworkManager profiles")
+    assert validation < deploy.index("Render NetworkManager profile")
+    assert validation < deploy.index("Activate downstream network")
+    assert validation < deploy.index("Disable NetworkManager automatic Ethernet profiles")
+    assert validation < deploy.index("Reload NetworkManager configuration")
+    assert validation < deploy.index("Configure vSphere route")
+
+
+def test_dnsmasq_backup_preserves_pending_state_and_cleans_up_noop_runs():
+    deploy = (ROOT / "pyinfra/deploy.py").read_text()
+    backup = deploy[deploy.index("dnsmasq_backup =") : deploy.index("dnsmasq_binding =")]
+    cleanup = deploy.index("Discard dnsmasq backup after unchanged configuration")
+    validation = deploy.index("Validate changed dnsmasq configuration")
+
+    assert "pending dnsmasq backup found; refusing to overwrite" in backup
+    assert "rm -rf /run/rinstall-dnsmasq-backup; mkdir" not in backup
+    assert validation < cleanup
+    assert "_if=lambda: not dnsmasq_effective_config_changed(dnsmasq_effective_changes)" in deploy
+    assert "rm -rf {dnsmasq_backup_dir}" in deploy
+
+
 def test_dnsmasq_restart_only_follows_successful_validation():
     deploy = (ROOT / "pyinfra/deploy.py").read_text()
     validation = deploy.index("Validate changed dnsmasq configuration")
@@ -388,7 +413,7 @@ def test_dnsmasq_real_change_sources_drive_validation():
     assert "dnsmasq_local_config" in effective_changes
     assert "obsolete_dhcp_configs" in effective_changes
     assert "dnsmasq_dhcp_configs" in effective_changes
-    assert deploy.count("dnsmasq_effective_config_changed(dnsmasq_effective_changes)") == 1
+    assert deploy.count("dnsmasq_effective_config_changed(dnsmasq_effective_changes)") == 2
 
 
 def test_dnsmasq_normalizes_only_the_exact_loopback_interface_directive():

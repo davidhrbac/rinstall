@@ -213,7 +213,9 @@ if phase == "bastion" and role == "bastion":
     dnsmasq_backup = server.shell(
         name="Back up project-owned dnsmasq configuration",
         commands=[
-            f"rm -rf {dnsmasq_backup_dir}; mkdir -p {dnsmasq_backup_dir}/dhcp; "
+            f"if [ -e {dnsmasq_backup_dir} ]; then "
+            "printf 'pending dnsmasq backup found; refusing to overwrite an unvalidated configuration\n' >&2; exit 1; fi; "
+            f"mkdir -p {dnsmasq_backup_dir}/dhcp; "
             "for path in /etc/dnsmasq.conf /etc/hosts "
             "/etc/dnsmasq.d/10-rancher-local.conf /etc/dnsmasq.d/20-local-dhcp.conf "
             "/etc/dnsmasq.d/20-rinstall-dhcp.conf; do "
@@ -263,6 +265,74 @@ if phase == "bastion" and role == "bastion":
         )
     )
 
+    downstream_profiles = []
+    downstream_devices = {}
+    for downstream in config["bastion"]["downstream_networks"]:
+        interface_name = downstream["interface_name"]
+        mac_address = host.data.downstream_network_output[interface_name]["mac_address"]
+        device = device_for_mac(mac_address)
+        downstream_devices[interface_name] = device
+        downstream["device_name"] = device
+        dnsmasq_dhcp_configs.append(
+            files.template(
+                name=f"Render dnsmasq DHCP config {interface_name}",
+                src=str(ENGINE_ROOT / "pyinfra/templates/dnsmasq-dhcp.conf.j2"),
+                dest=f"/etc/dnsmasq.d/dnsmasq-{interface_name}.conf",
+                mode="0644",
+                config=config,
+                network=downstream,
+            )
+        )
+
+    if config["bastion"]["downstream_networks"]:
+        excluded_interfaces = dhcp_excluded_interfaces(
+            command_output("nmcli -t -f DEVICE,TYPE device status"), downstream_devices.values()
+        )
+        dnsmasq_dhcp_configs.append(
+            files.template(
+                name="Render common dnsmasq DHCP policy",
+                src=str(ENGINE_ROOT / "pyinfra/templates/dnsmasq-dhcp-policy.conf.j2"),
+                dest="/etc/dnsmasq.d/20-rinstall-dhcp.conf",
+                mode="0644",
+                excluded_interfaces=excluded_interfaces,
+            )
+        )
+
+    dnsmasq_effective_changes.extend(
+        [
+            dnsmasq_binding,
+            dnsmasq_loopback_interface,
+            hosts_config,
+            dnsmasq_local_config,
+            *obsolete_dhcp_configs,
+            *dnsmasq_dhcp_configs,
+        ]
+    )
+
+    dnsmasq_validation = server.shell(
+        name="Validate changed dnsmasq configuration",
+        commands=[
+            "dnsmasq --test; status=$?; "
+            f"if [ \"$status\" -eq 0 ]; then rm -rf {dnsmasq_backup_dir}; exit 0; fi; "
+            "for path in /etc/dnsmasq.conf /etc/hosts "
+            "/etc/dnsmasq.d/10-rancher-local.conf /etc/dnsmasq.d/20-local-dhcp.conf "
+            "/etc/dnsmasq.d/20-rinstall-dhcp.conf; do "
+            f"name=$(basename \"$path\"); if [ -e {dnsmasq_backup_dir}/$name.absent ]; then rm -f \"$path\"; "
+            f"elif [ -e {dnsmasq_backup_dir}/$name ]; then cp -a {dnsmasq_backup_dir}/$name \"$path\"; fi; done; "
+            f"rm -f /etc/dnsmasq.d/dnsmasq-vlan*.conf; "
+            f"for path in {dnsmasq_backup_dir}/dhcp/*.conf; do [ -e \"$path\" ] || continue; cp -a \"$path\" /etc/dnsmasq.d/; done; "
+            f"rm -rf {dnsmasq_backup_dir}; "
+            "printf 'dnsmasq validation failed; previous project-owned configuration restored\n' >&2; exit $status"
+        ],
+        _if=lambda: dnsmasq_effective_config_changed(dnsmasq_effective_changes),
+    )
+
+    server.shell(
+        name="Discard dnsmasq backup after unchanged configuration",
+        commands=[f"rm -rf {dnsmasq_backup_dir}"],
+        _if=lambda: not dnsmasq_effective_config_changed(dnsmasq_effective_changes),
+    )
+
     if config["bastion"]["downstream_networks"]:
         files.directory(
             name="Ensure NetworkManager system connection directory exists",
@@ -288,14 +358,10 @@ if phase == "bastion" and role == "bastion":
             _if=no_auto_default.did_change,
         )
 
-    downstream_profiles = []
-    downstream_devices = {}
     for downstream in config["bastion"]["downstream_networks"]:
         interface_name = downstream["interface_name"]
+        device = downstream_devices[interface_name]
         mac_address = host.data.downstream_network_output[interface_name]["mac_address"]
-        device = device_for_mac(mac_address)
-        downstream_devices[interface_name] = device
-        downstream["device_name"] = device
         competing_profiles = downstream_profile_actions(
             connection_profiles(),
             downstream["connection_uuid"],
@@ -333,41 +399,6 @@ if phase == "bastion" and role == "bastion":
             device_name=device,
         )
         downstream_profiles.append(profile)
-        dnsmasq_dhcp_configs.append(
-            files.template(
-                name=f"Render dnsmasq DHCP config {interface_name}",
-                src=str(ENGINE_ROOT / "pyinfra/templates/dnsmasq-dhcp.conf.j2"),
-                dest=f"/etc/dnsmasq.d/dnsmasq-{interface_name}.conf",
-                mode="0644",
-                config=config,
-                network=downstream,
-            )
-        )
-
-    if config["bastion"]["downstream_networks"]:
-        excluded_interfaces = dhcp_excluded_interfaces(
-            command_output("nmcli -t -f DEVICE,TYPE device status"), downstream_devices.values()
-        )
-        dnsmasq_dhcp_configs.append(
-            files.template(
-                name="Render common dnsmasq DHCP policy",
-                src=str(ENGINE_ROOT / "pyinfra/templates/dnsmasq-dhcp-policy.conf.j2"),
-                dest="/etc/dnsmasq.d/20-rinstall-dhcp.conf",
-                mode="0644",
-                excluded_interfaces=excluded_interfaces,
-            )
-        )
-
-    dnsmasq_effective_changes.extend(
-        [
-            dnsmasq_binding,
-            dnsmasq_loopback_interface,
-            hosts_config,
-            dnsmasq_local_config,
-            *obsolete_dhcp_configs,
-            *dnsmasq_dhcp_configs,
-        ]
-    )
 
     for index, downstream in enumerate(config["bastion"]["downstream_networks"]):
         interface_name = downstream["interface_name"]
@@ -451,24 +482,6 @@ if phase == "bastion" and role == "bastion":
             "nmcli device reapply \"$device\""
         ],
         _if=lambda: route_needs_replacement(current_route, desired_route),
-    )
-
-    dnsmasq_validation = server.shell(
-        name="Validate changed dnsmasq configuration",
-        commands=[
-            "dnsmasq --test; status=$?; "
-            f"if [ \"$status\" -eq 0 ]; then rm -rf {dnsmasq_backup_dir}; exit 0; fi; "
-            "for path in /etc/dnsmasq.conf /etc/hosts "
-            "/etc/dnsmasq.d/10-rancher-local.conf /etc/dnsmasq.d/20-local-dhcp.conf "
-            "/etc/dnsmasq.d/20-rinstall-dhcp.conf; do "
-            f"name=$(basename \"$path\"); if [ -e {dnsmasq_backup_dir}/$name.absent ]; then rm -f \"$path\"; "
-            f"elif [ -e {dnsmasq_backup_dir}/$name ]; then cp -a {dnsmasq_backup_dir}/$name \"$path\"; fi; done; "
-            f"rm -f /etc/dnsmasq.d/dnsmasq-vlan*.conf; "
-            f"for path in {dnsmasq_backup_dir}/dhcp/*.conf; do [ -e \"$path\" ] || continue; cp -a \"$path\" /etc/dnsmasq.d/; done; "
-            f"rm -rf {dnsmasq_backup_dir}; "
-            "printf 'dnsmasq validation failed; previous project-owned configuration restored\\n' >&2; exit $status"
-        ],
-        _if=lambda: dnsmasq_effective_config_changed(dnsmasq_effective_changes),
     )
 
     systemd.service(
