@@ -177,11 +177,9 @@ def test_project_owned_dnsmasq_files_are_separate_from_manual_files():
 
 def test_current_common_policy_is_not_an_obsolete_cleanup_target():
     deploy = (ROOT / "pyinfra/deploy.py").read_text()
-    cleanup = deploy[
-        deploy.index("obsolete_dhcp_configs.append") : deploy.index(
-            "if config[\"bastion\"][\"downstream_networks\"]:"
-        )
-    ]
+    cleanup_start = deploy.index("obsolete_dhcp_configs.append")
+    cleanup_end = deploy.index("    for downstream in config", cleanup_start)
+    cleanup = deploy[cleanup_start:cleanup_end]
 
     assert "/etc/dnsmasq.d/20-local-dhcp.conf" in cleanup
     assert "/etc/dnsmasq.d/20-rinstall-dhcp.conf" not in cleanup
@@ -355,29 +353,34 @@ def test_dnsmasq_validation_is_after_backup_and_restores_on_failure():
     assert "previous project-owned configuration restored" in deploy
 
 
-def test_dnsmasq_validation_precedes_unrelated_network_operations():
+def test_dnsmasq_transaction_starts_after_unrelated_network_operations():
     deploy = (ROOT / "pyinfra/deploy.py").read_text()
+    route = deploy.index("Configure vSphere route")
+    backup = deploy.index("Back up project-owned dnsmasq configuration")
     validation = deploy.index("Validate changed dnsmasq configuration")
+    enable = deploy.index("Enable and start dnsmasq")
+    restart = deploy.index("Restart dnsmasq after validated configuration change")
+    commit = deploy.index("Commit dnsmasq transaction after restart")
 
-    assert validation < deploy.index("Reconcile competing NetworkManager profiles")
-    assert validation < deploy.index("Render NetworkManager profile")
-    assert validation < deploy.index("Activate downstream network")
-    assert validation < deploy.index("Disable NetworkManager automatic Ethernet profiles")
-    assert validation < deploy.index("Reload NetworkManager configuration")
-    assert validation < deploy.index("Configure vSphere route")
+    assert deploy.index("Reconcile competing NetworkManager profiles") < route
+    assert deploy.index("Render NetworkManager profile") < route
+    assert deploy.index("Activate downstream network") < route
+    assert deploy.index("Disable NetworkManager automatic Ethernet profiles") < route
+    assert deploy.index("Reload NetworkManager configuration") < route
+    assert route < backup < validation < enable < restart < commit
 
 
 def test_dnsmasq_backup_preserves_pending_state_and_cleans_up_noop_runs():
     deploy = (ROOT / "pyinfra/deploy.py").read_text()
     backup = deploy[deploy.index("dnsmasq_backup =") : deploy.index("dnsmasq_binding =")]
-    cleanup = deploy.index("Discard dnsmasq backup after unchanged configuration")
+    commit = deploy.index("Commit dnsmasq transaction after restart")
     validation = deploy.index("Validate changed dnsmasq configuration")
 
-    assert "pending dnsmasq backup found; refusing to overwrite" in backup
+    assert ".validated" in backup
+    assert "rm -rf {dnsmasq_backup_dir}" in backup
     assert "rm -rf /run/rinstall-dnsmasq-backup; mkdir" not in backup
-    assert validation < cleanup
-    assert "_if=lambda: not dnsmasq_effective_config_changed(dnsmasq_effective_changes)" in deploy
-    assert "rm -rf {dnsmasq_backup_dir}" in deploy
+    assert validation < commit
+    assert "not dnsmasq_effective_config_changed(dnsmasq_effective_changes)" in deploy
 
 
 def test_dnsmasq_restart_only_follows_successful_validation():
@@ -386,7 +389,29 @@ def test_dnsmasq_restart_only_follows_successful_validation():
     restart = deploy.index("Restart dnsmasq after validated configuration change")
 
     assert validation < restart
-    assert "_if=lambda: dnsmasq_validation.did_change()" in deploy
+    assert "_if=lambda: dnsmasq_validation.did_change() or dnsmasq_pending_restart" in deploy
+
+
+def test_dnsmasq_pending_validation_forces_restart_before_commit():
+    deploy = (ROOT / "pyinfra/deploy.py").read_text()
+    validation = deploy.index("Validate changed dnsmasq configuration")
+    restart = deploy.index("Restart dnsmasq after validated configuration change")
+    commit = deploy.index("Commit dnsmasq transaction after restart")
+
+    assert "dnsmasq_pending_restart = command_output(" in deploy
+    assert "test -f {dnsmasq_backup_dir}/.validated" in deploy
+    assert validation < restart < commit
+    assert "touch {dnsmasq_backup_dir}/.validated || exit 1" in deploy
+
+
+def test_dnsmasq_unvalidated_backup_is_restored_before_new_transaction():
+    deploy = (ROOT / "pyinfra/deploy.py").read_text()
+    backup = deploy[deploy.index("dnsmasq_backup =") : deploy.index("dnsmasq_binding =")]
+
+    assert "if [ -e {dnsmasq_backup_dir}/.validated ]; then exit 0; fi;" in backup
+    assert "dnsmasq-vlan*.conf" in backup
+    assert "rm -rf {dnsmasq_backup_dir}; fi;" in backup
+    assert backup.index("cp -a {dnsmasq_backup_dir}/$name") < backup.index("mkdir -p {dnsmasq_backup_dir}/dhcp")
 
 
 def test_dnsmasq_backup_is_not_an_effective_configuration_change():
