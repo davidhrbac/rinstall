@@ -1,5 +1,6 @@
 import ast
 from pathlib import Path
+import re
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 import pytest
@@ -394,12 +395,33 @@ def test_dnsmasq_normalizes_only_the_exact_loopback_interface_directive():
     deploy = (ROOT / "pyinfra/deploy.py").read_text()
     normalization = deploy[deploy.index("dnsmasq_binding =") : deploy.index("hosts_config =")]
 
-    assert 'line="bind-interfaces"' in normalization
-    assert 'line="interface=lo"' in normalization
+    assert 'line=r"^bind-interfaces$"' in normalization
+    assert 'line=r"^interface=lo$"' in normalization
     assert normalization.count("present=False") == 2
     assert "interface=eth0" not in normalization
     assert "except-interface" not in normalization
     assert "listen-address" not in normalization
+
+
+def test_dnsmasq_normalization_patterns_preserve_comments_and_unrelated_directives():
+    patterns = [r"^bind-interfaces$", r"^interface=lo$"]
+    lines = [
+        "bind-interfaces",
+        "interface=lo",
+        "#bind-interfaces",
+        "# bind-interfaces",
+        "#interface=lo",
+        "# interface=lo",
+        "interface=eth0",
+        "interface=ens192",
+        "except-interface=lo",
+        "listen-address=127.0.0.1",
+        "bind-dynamic",
+    ]
+
+    matches = {line for line in lines if any(re.search(pattern, line) for pattern in patterns)}
+
+    assert matches == {"bind-interfaces", "interface=lo"}
 
 
 def test_dnsmasq_change_detection_is_only_evaluated_after_operations_execute():

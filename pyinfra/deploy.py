@@ -227,14 +227,14 @@ if phase == "bastion" and role == "bastion":
     dnsmasq_binding = files.line(
         name="Disable mutually exclusive dnsmasq static binding",
         path="/etc/dnsmasq.conf",
-        line="bind-interfaces",
+        line=r"^bind-interfaces$",
         present=False,
     )
 
     dnsmasq_loopback_interface = files.line(
         name="Disable loopback-only dnsmasq interface restriction",
         path="/etc/dnsmasq.conf",
-        line="interface=lo",
+        line=r"^interface=lo$",
         present=False,
     )
 
