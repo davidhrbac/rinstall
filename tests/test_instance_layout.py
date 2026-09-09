@@ -378,7 +378,7 @@ def test_backend_helpers_reject_missing_backend(tmp_path, helper):
     assert "not configured" not in result.stdout
 
 
-@pytest.mark.parametrize("target", ["infra-plan", "infra-apply", "destroy-commands"])
+@pytest.mark.parametrize("target", ["infra-plan", "infra-apply", "destroy-commands", "destroy-commands-recovery"])
 def test_operator_targets_include_instance_context_banner(tmp_path, target):
     instance_root = tmp_path / "customer-a-prod-infra"
     instance_root.mkdir()
@@ -437,6 +437,42 @@ def test_destroy_command_resets_ssh_trust_only_after_successful_destroy(tmp_path
     assert "ssh-hostkeys-reset" not in plan_section
     assert "A successful full destroy automatically clears instance-local SSH trust." in output
     assert "If Terraform destroy fails, the instance-local SSH trust is preserved." in output
+
+
+def test_destroy_recovery_commands_disable_refresh_without_changing_normal_destroy(tmp_path):
+    instance_root = tmp_path / "customer-a-prod-infra"
+    instance_root.mkdir()
+    config = yaml.safe_load(EXAMPLE_ENV.read_text())
+    config["terraform"] = {
+        "backend": {
+            "type": "gitlab",
+            "url": "https://gitlab.example",
+            "project_id": 1234,
+        }
+    }
+    (instance_root / "config.yaml").write_text(yaml.safe_dump(config))
+    (instance_root / "rinstall").symlink_to(ENGINE_ROOT, target_is_directory=True)
+
+    normal = subprocess.run(
+        ["make", "-f", "rinstall/Makefile", "destroy-commands", f"PYTHON={sys.executable}"],
+        cwd=instance_root,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    recovery = subprocess.run(
+        ["make", "-f", "rinstall/Makefile", "destroy-commands-recovery", f"PYTHON={sys.executable}"],
+        cwd=instance_root,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+
+    assert "plan -destroy -refresh=false" not in normal
+    assert "destroy -refresh=false" not in normal
+    assert "plan -destroy -refresh=false" in recovery
+    assert "destroy -refresh=false" in recovery
+    assert "Recovery mode skips Terraform refresh" in recovery
 
 
 def test_provision_all_banner_is_complete_and_logged(tmp_path):

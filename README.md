@@ -120,6 +120,8 @@ Always confirm the instance repository, Terraform backend/state, and destroy pla
 
 `make -f rinstall/Makefile destroy-commands` prints a header with the selected instance config, runtime directory, Terraform directory, tfvars path, vSphere server/user when available from environment variables, backend/init settings, and then the explicit review/destroy commands. It never prints the vSphere password.
 
+If normal Terraform plan or destroy fails during refresh because an external dependency, such as the original vSphere VM template, no longer exists, use `make -f rinstall/Makefile destroy-commands-recovery`. This prints an explicit destroy plan and destroy command with `-refresh=false`, using the recorded Terraform state without first refreshing it. Review the recovery plan carefully because state may be stale; recovery mode is intentionally separate and is not an automatic fallback.
+
 The generated full destroy command clears the instance-local
 `.rinstall/known_hosts` automatically after Terraform destroy succeeds. If
 Terraform destroy fails, the `&&` prevents the reset and preserves the

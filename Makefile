@@ -27,7 +27,7 @@ ADMIN_SSH_CONFIG = $(BUILD_ENV_DIR)/$(ENV_ID).conf
 SSH_KNOWN_HOSTS = $(BUILD_ENV_DIR)/known_hosts
 HAS_DOWNSTREAM_NETWORKS = $(shell $(PYTHON) $(ENGINE_ROOT)/scripts/has-downstream-networks.py --env $(ENV_CONFIG) 2>/dev/null)
 
-.PHONY: help config-validate render-infra-vars render-infra-vars-checked instance-context ssh-config ssh-hostkey-reset ssh-hostkeys-reset admin-ssh-config install-admin-ssh-config infra-init infra-fmt infra-validate infra-plan infra-apply infra-output destroy-commands bastion-configure node-prep rke2-install rke2-kubeconfig rancher-install rancher-install-run rancher-bootstrap-password-command rancher-bootstrap rancher-bootstrap-run provision-all provision-all-yes verify
+.PHONY: help config-validate render-infra-vars render-infra-vars-checked instance-context ssh-config ssh-hostkey-reset ssh-hostkeys-reset admin-ssh-config install-admin-ssh-config infra-init infra-fmt infra-validate infra-plan infra-apply infra-output destroy-commands destroy-commands-recovery bastion-configure node-prep rke2-install rke2-kubeconfig rancher-install rancher-install-run rancher-bootstrap-password-command rancher-bootstrap rancher-bootstrap-run provision-all provision-all-yes verify
 
 help:
 	@printf '%s\n' 'Targets:'
@@ -58,6 +58,7 @@ help:
 	@printf '%s\n' '  rancher-bootstrap   manually maintain Rancher runtime settings'
 	@printf '%s\n' ''
 	@printf '\033[3m%s\033[0m\n' '  destroy-commands    print explicit Terraform destroy commands'
+	@printf '\033[3m%s\033[0m\n' '  destroy-commands-recovery  print refresh-free recovery destroy commands'
 
 config-validate:
 	@$(PYTHON) $(ENGINE_ROOT)/scripts/validate-config.py --env $(ENV_CONFIG)
@@ -155,6 +156,41 @@ destroy-commands: instance-context
 	@printf '%s\n' '============================================================'
 	@printf '%s\n' 'A successful full destroy automatically clears instance-local SSH trust.'
 	@printf '%s\n' 'If Terraform destroy fails, the instance-local SSH trust is preserved.'
+	@printf '%s\n' 'If Terraform fails during refresh because an external dependency is missing, review destroy-commands-recovery.'
+
+destroy-commands-recovery: instance-context
+	@$(PYTHON) $(ENGINE_ROOT)/scripts/render-infra-tfvars.py --env $(ENV_CONFIG) --out $(INFRA_TFVARS)
+	@printf '%s\n' '============================================================'
+	@printf '%s\n' 'Rancher Environment Terraform Recovery Destroy Commands'
+	@printf '%s\n' '============================================================'
+	@printf 'Environment file: %s\n' '$(ENV_CONFIG)'
+	@printf 'Build dir:        %s\n' '$(BUILD_ENV_DIR)'
+	@printf 'Terraform dir:    %s\n' '$(TF_INFRA_DIR)'
+	@printf 'Tfvars:           %s\n' '$(INFRA_TFVARS)'
+	@if [[ -n "$${TF_VAR_vsphere_server:-}" ]]; then printf 'vSphere server:   %s\n' "$$TF_VAR_vsphere_server"; else printf 'vSphere server:   %s\n' '(from tfvars or unset)'; fi
+	@if [[ -n "$${TF_VAR_vsphere_user:-}" ]]; then printf 'vSphere user:     %s\n' "$$TF_VAR_vsphere_user"; else printf 'vSphere user:     %s\n' '(from tfvars or unset)'; fi
+	@if [[ -n '$(TF_INIT_ARGS)' ]]; then printf 'Init args:        %s\n' '$(TF_INIT_ARGS)'; fi
+	@printf '%s\n' '============================================================'
+	@printf '%s\n' 'Use only when normal destroy fails during Terraform refresh.'
+	@printf '%s\n' 'Review the refresh-free destroy plan before approving destroy.'
+	@printf '%s\n' ''
+	@printf '%s\n' '1. Recovery plan:'
+	@$(PYTHON) $(ENGINE_ROOT)/scripts/terraform-backend-env.py --env $(ENV_CONFIG) --format multiline
+	@printf '%s %s\n' 'TF_DATA_DIR=$(TF_DATA_DIR)' '\'
+	@printf '%s %s\n' 'terraform' '\'
+	@printf '%s %s\n' '  -chdir=$(TF_INFRA_DIR)' '\'
+	@printf '%s %s\n' '  plan -destroy -refresh=false' '\'
+	@printf '%s\n' '  -var-file=$(INFRA_TFVARS)'
+	@printf '%s\n' ''
+	@printf '%s\n' '2. Recovery destroy only after reviewing that plan:'
+	@$(PYTHON) $(ENGINE_ROOT)/scripts/terraform-backend-env.py --env $(ENV_CONFIG) --format multiline
+	@printf '%s %s\n' 'TF_DATA_DIR=$(TF_DATA_DIR)' '\'
+	@printf '%s %s\n' 'terraform' '\'
+	@printf '%s %s\n' '  -chdir=$(TF_INFRA_DIR)' '\'
+	@printf '%s %s\n' '  destroy -refresh=false' '\'
+	@printf '%s\n' '  -var-file=$(INFRA_TFVARS) && make -f rinstall/Makefile ssh-hostkeys-reset'
+	@printf '%s\n' '============================================================'
+	@printf '%s\n' 'Recovery mode skips Terraform refresh and may use stale state. It is not the normal destroy workflow.'
 
 bastion-configure: render-infra-vars-checked
 	ENV_CONFIG=$(ENV_CONFIG) RUNTIME_DIR=$(RUNTIME_DIR) PHASE=bastion-packages PYINFRA_PROGRESS=$(PYINFRA_PROGRESS) $(PYINFRA) $(PYINFRA_ARGS) $(ENGINE_ROOT)/pyinfra/inventory.py $(ENGINE_ROOT)/pyinfra/deploy.py
