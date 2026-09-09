@@ -361,50 +361,30 @@ if phase == "bastion" and role == "bastion":
         _if=lambda: route_needs_replacement(current_route, desired_route),
     )
 
-    files.directory(
-        name="Ensure dnsmasq config dir exists",
-        path="/etc/dnsmasq.d",
-        present=True,
-    )
-
-    dnsmasq_backup_dir = "/run/rinstall-dnsmasq-backup"
-    dnsmasq_pending_restart = command_output(
-        f"test -f {dnsmasq_backup_dir}/.validated && printf true || printf false"
-    ).strip() == "true"
-    dnsmasq_backup = server.shell(
-        name="Back up project-owned dnsmasq configuration",
+    dnsmasq_candidate_dir = "/run/rinstall-dnsmasq-candidate"
+    dnsmasq_rollback_dir = "/run/rinstall-dnsmasq-rollback"
+    server.shell(
+        name="Prepare complete dnsmasq candidate",
         commands=[
-            f"if [ -e {dnsmasq_backup_dir} ]; then "
-            f"if [ -e {dnsmasq_backup_dir}/.validated ]; then exit 0; fi; "
-            "for path in /etc/dnsmasq.conf /etc/hosts "
-            "/etc/dnsmasq.d/10-rancher-local.conf /etc/dnsmasq.d/20-local-dhcp.conf "
-            "/etc/dnsmasq.d/20-rinstall-dhcp.conf; do "
-            f"name=$(basename \"$path\"); if [ -e {dnsmasq_backup_dir}/$name.absent ]; then rm -f \"$path\"; "
-            f"elif [ -e {dnsmasq_backup_dir}/$name ]; then cp -a {dnsmasq_backup_dir}/$name \"$path\"; fi; done; "
-            f"rm -f /etc/dnsmasq.d/dnsmasq-vlan*.conf; "
-            f"for path in {dnsmasq_backup_dir}/dhcp/*.conf; do [ -e \"$path\" ] || continue; cp -a \"$path\" /etc/dnsmasq.d/; done; "
-            f"rm -rf {dnsmasq_backup_dir}; fi; "
-            f"mkdir -p {dnsmasq_backup_dir}/dhcp; "
-            "for path in /etc/dnsmasq.conf /etc/hosts "
-            "/etc/dnsmasq.d/10-rancher-local.conf /etc/dnsmasq.d/20-local-dhcp.conf "
-            "/etc/dnsmasq.d/20-rinstall-dhcp.conf; do "
-            f"name=$(basename \"$path\"); if [ -e \"$path\" ]; then cp -a \"$path\" {dnsmasq_backup_dir}/$name; "
-            f"else : > {dnsmasq_backup_dir}/$name.absent; fi; done; "
-            "for path in /etc/dnsmasq.d/dnsmasq-vlan*.conf; do "
-            f"[ -e \"$path\" ] || continue; cp -a \"$path\" {dnsmasq_backup_dir}/dhcp/$(basename \"$path\"); done"
+            f"rm -rf {dnsmasq_candidate_dir}; mkdir -p {dnsmasq_candidate_dir}/dnsmasq.d; "
+            f"cp -a /etc/dnsmasq.conf {dnsmasq_candidate_dir}/dnsmasq.conf; "
+            f"cp -a /etc/hosts {dnsmasq_candidate_dir}/hosts; "
+            f"if [ -d /etc/dnsmasq.d ]; then cp -a /etc/dnsmasq.d/. {dnsmasq_candidate_dir}/dnsmasq.d/; fi; "
+            f"sed -i -E 's#^([[:space:]]*conf-dir=)/etc/dnsmasq[.]d#\\1{dnsmasq_candidate_dir}/dnsmasq.d#' "
+            f"{dnsmasq_candidate_dir}/dnsmasq.conf"
         ],
     )
 
     dnsmasq_binding = files.line(
         name="Disable mutually exclusive dnsmasq static binding",
-        path="/etc/dnsmasq.conf",
+        path=f"{dnsmasq_candidate_dir}/dnsmasq.conf",
         line=r"^bind-interfaces$",
         present=False,
     )
 
     dnsmasq_loopback_interface = files.line(
         name="Disable loopback-only dnsmasq interface restriction",
-        path="/etc/dnsmasq.conf",
+        path=f"{dnsmasq_candidate_dir}/dnsmasq.conf",
         line=r"^interface=lo$",
         present=False,
     )
@@ -412,7 +392,7 @@ if phase == "bastion" and role == "bastion":
     hosts_config = files.template(
         name="Render /etc/hosts DNS records",
         src=str(ENGINE_ROOT / "pyinfra/templates/hosts.j2"),
-        dest="/etc/hosts",
+        dest=f"{dnsmasq_candidate_dir}/hosts",
         mode="0644",
         config=config,
         rancher_nodes=rancher_nodes(),
@@ -421,7 +401,7 @@ if phase == "bastion" and role == "bastion":
     dnsmasq_local_config = files.template(
         name="Render dnsmasq local config",
         src=str(ENGINE_ROOT / "pyinfra/templates/dnsmasq-local.conf.j2"),
-        dest="/etc/dnsmasq.d/10-rancher-local.conf",
+        dest=f"{dnsmasq_candidate_dir}/dnsmasq.d/10-rancher-local.conf",
         mode="0644",
         config=config,
     )
@@ -429,7 +409,7 @@ if phase == "bastion" and role == "bastion":
     obsolete_dhcp_configs.append(
         files.file(
             name="Remove obsolete aggregate dnsmasq DHCP config",
-            path="/etc/dnsmasq.d/20-local-dhcp.conf",
+            path=f"{dnsmasq_candidate_dir}/dnsmasq.d/20-local-dhcp.conf",
             present=False,
         )
     )
@@ -441,7 +421,7 @@ if phase == "bastion" and role == "bastion":
             files.template(
                 name=f"Render dnsmasq DHCP config {interface_name}",
                 src=str(ENGINE_ROOT / "pyinfra/templates/dnsmasq-dhcp.conf.j2"),
-                dest=f"/etc/dnsmasq.d/dnsmasq-{interface_name}.conf",
+                dest=f"{dnsmasq_candidate_dir}/dnsmasq.d/dnsmasq-{interface_name}.conf",
                 mode="0644",
                 config=config,
                 network=downstream,
@@ -456,11 +436,28 @@ if phase == "bastion" and role == "bastion":
             files.template(
                 name="Render common dnsmasq DHCP policy",
                 src=str(ENGINE_ROOT / "pyinfra/templates/dnsmasq-dhcp-policy.conf.j2"),
-                dest="/etc/dnsmasq.d/20-rinstall-dhcp.conf",
+                dest=f"{dnsmasq_candidate_dir}/dnsmasq.d/20-rinstall-dhcp.conf",
                 mode="0644",
                 excluded_interfaces=excluded_interfaces,
             )
         )
+
+    stale_dhcp_configs = []
+    desired_dhcp_paths = {
+        f"/etc/dnsmasq.d/dnsmasq-{downstream['interface_name']}.conf"
+        for downstream in config["bastion"]["downstream_networks"]
+    }
+    for path in command_output(
+        "for path in /etc/dnsmasq.d/dnsmasq-vlan*.conf; do [ -e \"$path\" ] && printf '%s\\n' \"$path\"; done"
+    ).splitlines():
+        if path not in desired_dhcp_paths:
+            stale_dhcp_configs.append(
+                files.file(
+                    name=f"Remove obsolete candidate dnsmasq DHCP config {Path(path).name}",
+                    path=f"{dnsmasq_candidate_dir}/dnsmasq.d/{Path(path).name}",
+                    present=False,
+                )
+            )
 
     dnsmasq_effective_changes.extend(
         [
@@ -470,25 +467,63 @@ if phase == "bastion" and role == "bastion":
             dnsmasq_local_config,
             *obsolete_dhcp_configs,
             *dnsmasq_dhcp_configs,
+            *stale_dhcp_configs,
         ]
     )
 
     dnsmasq_validation = server.shell(
         name="Validate changed dnsmasq configuration",
         commands=[
-            "dnsmasq --test; status=$?; "
-            f"if [ \"$status\" -eq 0 ]; then touch {dnsmasq_backup_dir}/.validated || exit 1; exit 0; fi; "
+            f"hosts_args='--no-hosts --addn-hosts={dnsmasq_candidate_dir}/hosts'; "
+            f"if grep -Eq '^[[:space:]]*no-hosts([[:space:]]|$)' {dnsmasq_candidate_dir}/dnsmasq.conf; then hosts_args=''; fi; "
+            f"dnsmasq --test --conf-file={dnsmasq_candidate_dir}/dnsmasq.conf $hosts_args; status=$?; "
+            f"if [ \"$status\" -ne 0 ]; then rm -rf {dnsmasq_candidate_dir}; "
+            "printf 'dnsmasq candidate validation failed; live configuration was not changed\n' >&2; exit $status; fi"
+        ],
+        _if=lambda: dnsmasq_effective_config_changed(dnsmasq_effective_changes),
+    )
+
+    dnsmasq_install = server.shell(
+        name="Install validated dnsmasq configuration and restart service",
+        commands=[
+            f"set -eu; rm -rf {dnsmasq_rollback_dir}; mkdir -p {dnsmasq_rollback_dir}/dhcp; "
             "for path in /etc/dnsmasq.conf /etc/hosts "
             "/etc/dnsmasq.d/10-rancher-local.conf /etc/dnsmasq.d/20-local-dhcp.conf "
             "/etc/dnsmasq.d/20-rinstall-dhcp.conf; do "
-            f"name=$(basename \"$path\"); if [ -e {dnsmasq_backup_dir}/$name.absent ]; then rm -f \"$path\"; "
-            f"elif [ -e {dnsmasq_backup_dir}/$name ]; then cp -a {dnsmasq_backup_dir}/$name \"$path\"; fi; done; "
-            f"rm -f /etc/dnsmasq.d/dnsmasq-vlan*.conf; "
-            f"for path in {dnsmasq_backup_dir}/dhcp/*.conf; do [ -e \"$path\" ] || continue; cp -a \"$path\" /etc/dnsmasq.d/; done; "
-            f"rm -rf {dnsmasq_backup_dir}; "
-            "printf 'dnsmasq validation failed; previous project-owned configuration restored\n' >&2; exit $status"
+            f"name=$(basename \"$path\"); if [ -e \"$path\" ]; then cp -a \"$path\" {dnsmasq_rollback_dir}/$name; "
+            f"else : > {dnsmasq_rollback_dir}/$name.absent; fi; done; "
+            "for path in /etc/dnsmasq.d/dnsmasq-vlan*.conf; do "
+            f"[ -e \"$path\" ] || continue; cp -a \"$path\" {dnsmasq_rollback_dir}/dhcp/$(basename \"$path\"); done; "
+            "was_active=0; if systemctl is-active --quiet dnsmasq; then was_active=1; fi; "
+            "was_enabled=0; if systemctl is-enabled --quiet dnsmasq; then was_enabled=1; fi; "
+            "rollback() { "
+            "for path in /etc/dnsmasq.conf /etc/hosts /etc/dnsmasq.d/10-rancher-local.conf /etc/dnsmasq.d/20-local-dhcp.conf /etc/dnsmasq.d/20-rinstall-dhcp.conf; do "
+            f"name=$(basename \"$path\"); if [ -e {dnsmasq_rollback_dir}/$name.absent ]; then rm -f \"$path\"; elif [ -e {dnsmasq_rollback_dir}/$name ]; then cp -a {dnsmasq_rollback_dir}/$name \"$path\"; fi; done; "
+            f"rm -f /etc/dnsmasq.d/dnsmasq-vlan*.conf; for path in {dnsmasq_rollback_dir}/dhcp/*.conf; do [ -e \"$path\" ] || continue; cp -a \"$path\" /etc/dnsmasq.d/; done; "
+            f"if [ \"$was_active\" -eq 1 ]; then systemctl restart dnsmasq || true; else systemctl stop dnsmasq || true; fi; "
+            f"if [ \"$was_enabled\" -eq 1 ]; then systemctl enable dnsmasq || true; else systemctl disable dnsmasq || true; fi; }}; trap rollback 0; "
+            f"sed -i -E 's#^([[:space:]]*conf-dir=){dnsmasq_candidate_dir}/dnsmasq.d#\\1/etc/dnsmasq.d#' {dnsmasq_candidate_dir}/dnsmasq.conf; "
+            f"cp -a {dnsmasq_candidate_dir}/dnsmasq.conf /etc/dnsmasq.conf; "
+            f"cp -a {dnsmasq_candidate_dir}/hosts /etc/hosts; "
+            f"cp -a {dnsmasq_candidate_dir}/dnsmasq.d/10-rancher-local.conf /etc/dnsmasq.d/10-rancher-local.conf; "
+            f"rm -f /etc/dnsmasq.d/20-local-dhcp.conf /etc/dnsmasq.d/dnsmasq-vlan*.conf; "
+            f"if [ -e {dnsmasq_candidate_dir}/dnsmasq.d/20-rinstall-dhcp.conf ]; then cp -a {dnsmasq_candidate_dir}/dnsmasq.d/20-rinstall-dhcp.conf /etc/dnsmasq.d/20-rinstall-dhcp.conf; else rm -f /etc/dnsmasq.d/20-rinstall-dhcp.conf; fi; "
+            f"for path in {dnsmasq_candidate_dir}/dnsmasq.d/dnsmasq-vlan*.conf; do [ -e \"$path\" ] || continue; cp -a \"$path\" /etc/dnsmasq.d/; done; "
+            "if ! systemctl enable dnsmasq || ! systemctl start dnsmasq || ! systemctl restart dnsmasq; then "
+            "printf 'dnsmasq restart failed; previous live configuration was restored\n' >&2; exit 1; fi; "
+            "trap - 0; "
+            f"rm -rf {dnsmasq_rollback_dir} {dnsmasq_candidate_dir}"
         ],
-        _if=lambda: dnsmasq_effective_config_changed(dnsmasq_effective_changes),
+        _if=lambda: (
+            dnsmasq_effective_config_changed(dnsmasq_effective_changes)
+            and dnsmasq_validation.did_change()
+        ),
+    )
+
+    server.shell(
+        name="Discard unchanged dnsmasq candidate",
+        commands=[f"rm -rf {dnsmasq_candidate_dir}"],
+        _if=lambda: not dnsmasq_effective_config_changed(dnsmasq_effective_changes),
     )
 
     systemd.service(
@@ -496,24 +531,7 @@ if phase == "bastion" and role == "bastion":
         service="dnsmasq",
         running=True,
         enabled=True,
-    )
-
-    systemd.service(
-        name="Restart dnsmasq after validated configuration change",
-        service="dnsmasq",
-        running=True,
-        restarted=True,
-        _if=lambda: dnsmasq_validation.did_change() or dnsmasq_pending_restart,
-    )
-
-    server.shell(
-        name="Commit dnsmasq transaction after restart",
-        commands=[f"rm -rf {dnsmasq_backup_dir}"],
-        _if=lambda: (
-            dnsmasq_pending_restart
-            or dnsmasq_validation.did_change()
-            or not dnsmasq_effective_config_changed(dnsmasq_effective_changes)
-        ),
+        _if=lambda: not dnsmasq_effective_config_changed(dnsmasq_effective_changes),
     )
 
     systemd.service(
