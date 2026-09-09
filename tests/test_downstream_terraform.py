@@ -61,6 +61,65 @@ def test_dhcp_only_change_does_not_change_terraform_input():
     assert render_with(first) == render_with(second)
 
 
+def base_output(rendered):
+    return {
+        "bastion_base_nics": {
+            "value": [
+                {
+                    "nic_index": index,
+                    "vmware_network": rendered["networks"][nic["network"]],
+                }
+                for index, nic in enumerate(rendered["nodes"]["bastion1"]["nics"])
+                if nic.get("downstream_vlan") is None
+            ]
+        }
+    }
+
+
+def test_base_nic_topology_guard_allows_unchanged_and_appended_downstream_nics():
+    base = render_with()
+    one_downstream = render_with(downstream_network(565, 165))
+    two_downstream = render_with(downstream_network(565, 165), downstream_network(610, 166))
+
+    RENDERER.validate_bastion_base_nics(base, base_output(base))
+    RENDERER.validate_bastion_base_nics(one_downstream, base_output(base))
+    RENDERER.validate_bastion_base_nics(two_downstream, base_output(base))
+
+
+def test_base_nic_topology_guard_rejects_swap_and_network_replacement():
+    config = yaml.safe_load(EXAMPLE_ENV.read_text())
+    base = RENDERER.render(expand_env(config))
+    existing = base_output(base)
+
+    swapped_config = yaml.safe_load(EXAMPLE_ENV.read_text())
+    swapped_config["nodes"]["bastion1"]["nics"] = list(reversed(swapped_config["nodes"]["bastion1"]["nics"]))
+    swapped = RENDERER.render(expand_env(swapped_config))
+    with pytest.raises(SystemExit, match="base NIC order or VMware network identity changed"):
+        RENDERER.validate_bastion_base_nics(swapped, existing)
+
+    replaced_config = yaml.safe_load(EXAMPLE_ENV.read_text())
+    replaced_config["infra"]["networks"]["customer"] = "REPLACED_CUSTOMER_PORTGROUP"
+    replaced = RENDERER.render(expand_env(replaced_config))
+    with pytest.raises(SystemExit, match="base NIC order or VMware network identity changed"):
+        RENDERER.validate_bastion_base_nics(replaced, existing)
+
+
+def test_base_nic_topology_guard_allows_dhcp_only_changes_and_fresh_output():
+    original = downstream_network(565, 165)
+    changed = downstream_network(565, 165)
+    changed["dhcp"]["start"] = 5
+    rendered = render_with(changed)
+
+    RENDERER.validate_bastion_base_nics(rendered, {})
+    RENDERER.validate_bastion_base_nics(rendered, base_output(rendered))
+    assert render_with(original) == rendered
+
+
+def test_base_nic_topology_guard_rejects_existing_output_without_base_topology():
+    with pytest.raises(SystemExit, match="has no bastion_base_nics topology"):
+        RENDERER.validate_bastion_base_nics(render_with(), {"nodes": {}})
+
+
 def test_rejects_downstream_removal_and_attachment_reorder():
     rendered = render_with(downstream_network(121), downstream_network(122))
     existing = {
@@ -96,6 +155,15 @@ def test_terraform_output_exposes_provider_network_and_mac_identity():
     assert "vmware_network_id = data.vsphere_network.this[nic.network].id" in output_source
     assert "mac_address       = try(data.vsphere_virtual_machine.bastion_fresh[0].network_interfaces[index].mac_address, null)" in output_source
     assert "nic_index         = index" in output_source
+
+
+def test_terraform_output_exposes_ordered_base_nic_topology():
+    output_source = (ROOT / "terraform/infra/outputs.tf").read_text()
+
+    assert 'output "bastion_base_nics"' in output_source
+    assert "if try(nic.downstream_vlan, null) == null" in output_source
+    assert "nic_index      = index" in output_source
+    assert "vmware_network = var.networks[nic.network]" in output_source
 
 
 def test_fresh_bastion_view_waits_for_vm_update_and_topology_changes():

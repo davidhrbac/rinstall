@@ -130,6 +130,37 @@ def validate_no_downstream_removal(rendered, existing_outputs):
         )
 
 
+def validate_bastion_base_nics(rendered, existing_outputs):
+    if "bastion_base_nics" not in existing_outputs:
+        if existing_outputs:
+            raise SystemExit(
+                "existing Terraform output has no bastion_base_nics topology; "
+                "refresh/apply the infrastructure before changing bastion NICs"
+            )
+        return
+    output = existing_outputs["bastion_base_nics"]
+    if not isinstance(output, dict):
+        raise SystemExit("existing Terraform bastion_base_nics output is invalid")
+    existing = output.get("value")
+    if not isinstance(existing, list):
+        raise SystemExit("existing Terraform bastion_base_nics output is invalid")
+
+    bastion = rendered["nodes"][rendered["bastion_service_node"]]
+    desired = [
+        {
+            "nic_index": index,
+            "vmware_network": rendered["networks"][nic["network"]],
+        }
+        for index, nic in enumerate(bastion["nics"])
+        if nic.get("downstream_vlan") is None
+    ]
+    if existing != desired:
+        raise SystemExit(
+            "existing bastion base NIC order or VMware network identity changed; "
+            "restore the previous base NIC topology"
+        )
+
+
 def main():
     parser = argparse.ArgumentParser(description="Render Terraform infra variables from env.yaml")
     parser.add_argument("--env", required=True, help="Path to env.yaml")
@@ -142,7 +173,9 @@ def main():
     if args.existing_infra_output:
         existing_path = Path(args.existing_infra_output)
         if existing_path.exists():
-            validate_no_downstream_removal(rendered, json.loads(existing_path.read_text()))
+            existing_outputs = json.loads(existing_path.read_text())
+            validate_bastion_base_nics(rendered, existing_outputs)
+            validate_no_downstream_removal(rendered, existing_outputs)
 
     out_path = Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)

@@ -37,6 +37,16 @@ output "bastion_downstream_networks" {
   }
 }
 
+output "bastion_base_nics" {
+  value = [
+    for index, nic in var.nodes[var.bastion_service_node].nics : {
+      nic_index      = index
+      vmware_network = var.networks[nic.network]
+    }
+    if try(nic.downstream_vlan, null) == null
+  ]
+}
+
 output "rancher_ips" {
   value = [for name, node in var.nodes : local.node_static_ips[name] if node.role == "rancher"]
 }
