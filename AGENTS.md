@@ -98,3 +98,20 @@
 - In split-horizon setups with different TLS endpoints, prefer Rancher `agent-tls-mode=system-store` over `strict`.
 - Rancher Helm `hostname` and Rancher runtime `server-url` are separate; changing only Terraform/Helm hostname is not enough.
 - Keep the old Rancher hostname alive during URL migrations, use dual-host ingress/cert SANs temporarily, fix `NO_PROXY`, then update Terraform/Helm last.
+
+====
+
+Downstream lifecycle invariant:
+
+For an existing downstream network, VLAN, VMware network, subnet, resolved
+bastion address, resolved gateway, and NIC attachment order are immutable.
+
+DHCP start/end/lease time remain mutable and appending new downstream networks
+is supported.
+
+Removal, reorder, portgroup changes, and addressing identity changes must fail
+closed before Terraform plan/apply or standalone `bastion-configure`.
+Lifecycle policy remains centralized in the checked renderer; do not add
+bypass paths or duplicate the authoritative validator in pyinfra runtime
+logic. pyinfra may validate only runtime/output consistency needed for safe
+interface configuration, such as provider-MAC/VLAN/network mapping.
