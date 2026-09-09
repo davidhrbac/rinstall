@@ -109,7 +109,7 @@ def downstream_profile_actions(profiles, managed_uuid, expected_mac, device_name
             "802-3-ethernet",
         }:
             continue
-        profile_mac = profile.get("mac_address", "").strip().lower()
+        profile_mac = profile.get("mac_address", "").strip().lower().replace("\\:", ":")
         if profile_mac == "--":
             profile_mac = ""
         device = profile.get("device", "").strip()
