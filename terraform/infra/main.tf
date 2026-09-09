@@ -58,6 +58,19 @@ locals {
   node_vsphere_names = {
     for name, node in var.nodes : name => "${name}-${random_string.vm_suffix_a[name].result}-${random_string.vm_suffix_b[name].result}"
   }
+  bastion_downstream_nics = [
+    for nic in var.nodes[var.bastion_service_node].nics : nic
+    if try(nic.downstream_vlan, null) != null
+  ]
+  bastion_downstream_fresh = [
+    for index, nic in var.nodes[var.bastion_service_node].nics : {
+      mac_address         = try(data.vsphere_virtual_machine.bastion_fresh[0].network_interfaces[index].mac_address, null)
+      network_id          = try(data.vsphere_virtual_machine.bastion_fresh[0].network_interfaces[index].network_id, null)
+      expected_network_id = data.vsphere_network.this[nic.network].id
+    }
+    if try(nic.downstream_vlan, null) != null
+  ]
+  bastion_mac_addresses = length(local.bastion_downstream_nics) > 0 ? data.vsphere_virtual_machine.bastion_fresh[0].network_interfaces[*].mac_address : module.vm[var.bastion_service_node].mac_addresses
 }
 
 module "vm" {
@@ -84,4 +97,13 @@ module "vm" {
     ipv4_netmask = try(nic.prefix, null)
     customize    = coalesce(try(nic.customize, null), try(nic.ip, null) != null)
   }]
+  settle_after_change = each.key == var.bastion_service_node && length(local.bastion_downstream_nics) > 0
+}
+
+data "vsphere_virtual_machine" "bastion_fresh" {
+  count         = length(local.bastion_downstream_nics) > 0 ? 1 : 0
+  name          = module.vm[var.bastion_service_node].name
+  datacenter_id = data.vsphere_datacenter.this.id
+
+  depends_on = [module.vm]
 }

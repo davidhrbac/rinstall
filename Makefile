@@ -25,8 +25,9 @@ PROVISION_PHASE ?= 0
 ADMIN_SSH_HOST ?=
 ADMIN_SSH_CONFIG = $(BUILD_ENV_DIR)/$(ENV_ID).conf
 SSH_KNOWN_HOSTS = $(BUILD_ENV_DIR)/known_hosts
+HAS_DOWNSTREAM_NETWORKS = $(shell $(PYTHON) $(ENGINE_ROOT)/scripts/has-downstream-networks.py --env $(ENV_CONFIG) 2>/dev/null)
 
-.PHONY: help config-validate render-infra-vars instance-context ssh-config ssh-hostkey-reset ssh-hostkeys-reset admin-ssh-config install-admin-ssh-config infra-init infra-fmt infra-validate infra-plan infra-apply infra-output destroy-commands bastion-configure node-prep rke2-install rke2-kubeconfig rancher-install rancher-install-run rancher-bootstrap-password-command rancher-bootstrap rancher-bootstrap-run provision-all provision-all-yes verify
+.PHONY: help config-validate render-infra-vars render-infra-vars-checked instance-context ssh-config ssh-hostkey-reset ssh-hostkeys-reset admin-ssh-config install-admin-ssh-config infra-init infra-fmt infra-validate infra-plan infra-apply infra-output destroy-commands destroy-commands-recovery bastion-configure node-prep rke2-install rke2-kubeconfig rancher-install rancher-install-run rancher-bootstrap-password-command rancher-bootstrap rancher-bootstrap-run provision-all provision-all-yes verify
 
 help:
 	@printf '%s\n' 'Targets:'
@@ -57,13 +58,18 @@ help:
 	@printf '%s\n' '  rancher-bootstrap   manually maintain Rancher runtime settings'
 	@printf '%s\n' ''
 	@printf '\033[3m%s\033[0m\n' '  destroy-commands    print explicit Terraform destroy commands'
+	@printf '\033[3m%s\033[0m\n' '  destroy-commands-recovery  print refresh-free recovery destroy commands'
 
 config-validate:
 	@$(PYTHON) $(ENGINE_ROOT)/scripts/validate-config.py --env $(ENV_CONFIG)
 
 render-infra-vars: config-validate
 	install -d -m 700 $(BUILD_ENV_DIR)
-	$(PYTHON) $(ENGINE_ROOT)/scripts/render-infra-tfvars.py --env $(ENV_CONFIG) --out $(INFRA_TFVARS)
+	$(PYTHON) $(ENGINE_ROOT)/scripts/render-infra-tfvars.py --env $(ENV_CONFIG) --out $(INFRA_TFVARS) --existing-infra-output $(BUILD_ENV_DIR)/infra-output.json
+
+render-infra-vars-checked: infra-output config-validate
+	install -d -m 700 $(BUILD_ENV_DIR)
+	$(PYTHON) $(ENGINE_ROOT)/scripts/render-infra-tfvars.py --env $(ENV_CONFIG) --out $(INFRA_TFVARS) --existing-infra-output $(BUILD_ENV_DIR)/infra-output.json
 
 instance-context: config-validate
 	@$(PYTHON) $(ENGINE_ROOT)/scripts/print-instance-context.py --env $(ENV_CONFIG)
@@ -102,15 +108,16 @@ infra-fmt:
 infra-validate: infra-init
 	@set -e; backend_env="$$($(PYTHON) $(TF_BACKEND_HELPER) --env $(ENV_CONFIG))"; eval "$$backend_env TF_DATA_DIR=$(TF_DATA_DIR) $(TERRAFORM) -chdir=$(TF_INFRA_DIR) validate"
 
-infra-plan: $(if $(filter 1,$(PROVISION_PHASE)),,instance-context) infra-init render-infra-vars
+infra-plan: $(if $(filter 1,$(PROVISION_PHASE)),,instance-context) infra-init render-infra-vars-checked
 	@set -e; backend_env="$$($(PYTHON) $(TF_BACKEND_HELPER) --env $(ENV_CONFIG))"; eval "$$backend_env TF_DATA_DIR=$(TF_DATA_DIR) $(TERRAFORM) -chdir=$(TF_INFRA_DIR) plan -var-file=$(INFRA_TFVARS)"
 
-infra-apply: $(if $(filter 1,$(PROVISION_PHASE)),,instance-context) infra-init render-infra-vars
+infra-apply: $(if $(filter 1,$(PROVISION_PHASE)),,instance-context) infra-init render-infra-vars-checked
 	@set -e; backend_env="$$($(PYTHON) $(TF_BACKEND_HELPER) --env $(ENV_CONFIG))"; eval "$$backend_env TF_DATA_DIR=$(TF_DATA_DIR) $(TERRAFORM) -chdir=$(TF_INFRA_DIR) apply $(TF_APPLY_ARGS) -var-file=$(INFRA_TFVARS)"
+	@$(MAKE) -f "$(ENGINE_ROOT)/Makefile" infra-output ENGINE_ROOT="$(ENGINE_ROOT)" ENV_CONFIG="$(ENV_CONFIG)" RUNTIME_DIR="$(RUNTIME_DIR)" TF_DATA_DIR="$(TF_DATA_DIR)" TF_BACKEND_HELPER="$(TF_BACKEND_HELPER)" PYTHON="$(PYTHON)" TERRAFORM="$(TERRAFORM)" TF_INIT_ARGS="$(TF_INIT_ARGS)"
 
 infra-output: infra-init
-	mkdir -p $(BUILD_ENV_DIR)
-	@set -e; backend_env="$$($(PYTHON) $(TF_BACKEND_HELPER) --env $(ENV_CONFIG))"; eval "$$backend_env TF_DATA_DIR=$(TF_DATA_DIR) $(TERRAFORM) -chdir=$(TF_INFRA_DIR) output -json" > $(BUILD_ENV_DIR)/infra-output.json
+	install -d -m 700 $(BUILD_ENV_DIR)
+	@set -e; umask 077; output_tmp="$(BUILD_ENV_DIR)/.infra-output.$$$$"; trap 'rm -f "$$output_tmp"' EXIT; backend_env="$$($(PYTHON) $(TF_BACKEND_HELPER) --env $(ENV_CONFIG))"; eval "$$backend_env TF_DATA_DIR=$(TF_DATA_DIR) $(TERRAFORM) -chdir=$(TF_INFRA_DIR) output -json" > "$$output_tmp"; mv "$$output_tmp" "$(BUILD_ENV_DIR)/infra-output.json"; trap - EXIT
 
 destroy-commands: instance-context
 	@$(PYTHON) $(ENGINE_ROOT)/scripts/render-infra-tfvars.py --env $(ENV_CONFIG) --out $(INFRA_TFVARS)
@@ -149,8 +156,44 @@ destroy-commands: instance-context
 	@printf '%s\n' '============================================================'
 	@printf '%s\n' 'A successful full destroy automatically clears instance-local SSH trust.'
 	@printf '%s\n' 'If Terraform destroy fails, the instance-local SSH trust is preserved.'
+	@printf '%s\n' 'If Terraform fails during refresh because an external dependency is missing, review destroy-commands-recovery.'
 
-bastion-configure:
+destroy-commands-recovery: instance-context
+	@$(PYTHON) $(ENGINE_ROOT)/scripts/render-infra-tfvars.py --env $(ENV_CONFIG) --out $(INFRA_TFVARS)
+	@printf '%s\n' '============================================================'
+	@printf '%s\n' 'Rancher Environment Terraform Recovery Destroy Commands'
+	@printf '%s\n' '============================================================'
+	@printf 'Environment file: %s\n' '$(ENV_CONFIG)'
+	@printf 'Build dir:        %s\n' '$(BUILD_ENV_DIR)'
+	@printf 'Terraform dir:    %s\n' '$(TF_INFRA_DIR)'
+	@printf 'Tfvars:           %s\n' '$(INFRA_TFVARS)'
+	@if [[ -n "$${TF_VAR_vsphere_server:-}" ]]; then printf 'vSphere server:   %s\n' "$$TF_VAR_vsphere_server"; else printf 'vSphere server:   %s\n' '(from tfvars or unset)'; fi
+	@if [[ -n "$${TF_VAR_vsphere_user:-}" ]]; then printf 'vSphere user:     %s\n' "$$TF_VAR_vsphere_user"; else printf 'vSphere user:     %s\n' '(from tfvars or unset)'; fi
+	@if [[ -n '$(TF_INIT_ARGS)' ]]; then printf 'Init args:        %s\n' '$(TF_INIT_ARGS)'; fi
+	@printf '%s\n' '============================================================'
+	@printf '%s\n' 'Use only when normal destroy fails during Terraform refresh.'
+	@printf '%s\n' 'Review the refresh-free destroy plan before approving destroy.'
+	@printf '%s\n' ''
+	@printf '%s\n' '1. Recovery plan:'
+	@$(PYTHON) $(ENGINE_ROOT)/scripts/terraform-backend-env.py --env $(ENV_CONFIG) --format multiline
+	@printf '%s %s\n' 'TF_DATA_DIR=$(TF_DATA_DIR)' '\'
+	@printf '%s %s\n' 'terraform' '\'
+	@printf '%s %s\n' '  -chdir=$(TF_INFRA_DIR)' '\'
+	@printf '%s %s\n' '  plan -destroy -refresh=false' '\'
+	@printf '%s\n' '  -var-file=$(INFRA_TFVARS)'
+	@printf '%s\n' ''
+	@printf '%s\n' '2. Recovery destroy only after reviewing that plan:'
+	@$(PYTHON) $(ENGINE_ROOT)/scripts/terraform-backend-env.py --env $(ENV_CONFIG) --format multiline
+	@printf '%s %s\n' 'TF_DATA_DIR=$(TF_DATA_DIR)' '\'
+	@printf '%s %s\n' 'terraform' '\'
+	@printf '%s %s\n' '  -chdir=$(TF_INFRA_DIR)' '\'
+	@printf '%s %s\n' '  destroy -refresh=false' '\'
+	@printf '%s\n' '  -var-file=$(INFRA_TFVARS) && make -f rinstall/Makefile ssh-hostkeys-reset'
+	@printf '%s\n' '============================================================'
+	@printf '%s\n' 'Recovery mode skips Terraform refresh and may use stale state. It is not the normal destroy workflow.'
+
+bastion-configure: render-infra-vars-checked
+	ENV_CONFIG=$(ENV_CONFIG) RUNTIME_DIR=$(RUNTIME_DIR) PHASE=bastion-packages PYINFRA_PROGRESS=$(PYINFRA_PROGRESS) $(PYINFRA) $(PYINFRA_ARGS) $(ENGINE_ROOT)/pyinfra/inventory.py $(ENGINE_ROOT)/pyinfra/deploy.py
 	ENV_CONFIG=$(ENV_CONFIG) RUNTIME_DIR=$(RUNTIME_DIR) PHASE=bastion PYINFRA_PROGRESS=$(PYINFRA_PROGRESS) $(PYINFRA) $(PYINFRA_ARGS) $(ENGINE_ROOT)/pyinfra/inventory.py $(ENGINE_ROOT)/pyinfra/deploy.py
 
 node-prep:
@@ -305,7 +348,7 @@ provision-all-yes:
 
 verify: config-validate
 	cd $(ENGINE_ROOT) && $(PYTHON) -m pytest
-	$(PYTHON) -m py_compile $(ENGINE_ROOT)/lib/env_config.py $(ENGINE_ROOT)/lib/ssh_config.py $(ENGINE_ROOT)/pyinfra/inventory.py $(ENGINE_ROOT)/pyinfra/deploy.py $(ENGINE_ROOT)/scripts/admin-jump-host.py $(ENGINE_ROOT)/scripts/environment-id.py $(ENGINE_ROOT)/scripts/print-instance-context.py $(ENGINE_ROOT)/scripts/print-rancher-bootstrap-password-command.py $(ENGINE_ROOT)/scripts/render-admin-ssh-config.py $(ENGINE_ROOT)/scripts/render-infra-tfvars.py $(ENGINE_ROOT)/scripts/render-ssh-config.py $(ENGINE_ROOT)/scripts/reset-ssh-hostkeys.py $(ENGINE_ROOT)/scripts/prepare-rke2-kubeconfig.py $(ENGINE_ROOT)/scripts/terraform-backend-env.py $(ENGINE_ROOT)/scripts/validate-config.py
+	$(PYTHON) -m py_compile $(ENGINE_ROOT)/lib/bastion_network.py $(ENGINE_ROOT)/lib/env_config.py $(ENGINE_ROOT)/lib/ssh_config.py $(ENGINE_ROOT)/pyinfra/inventory.py $(ENGINE_ROOT)/pyinfra/deploy.py $(ENGINE_ROOT)/scripts/admin-jump-host.py $(ENGINE_ROOT)/scripts/environment-id.py $(ENGINE_ROOT)/scripts/has-downstream-networks.py $(ENGINE_ROOT)/scripts/print-instance-context.py $(ENGINE_ROOT)/scripts/print-rancher-bootstrap-password-command.py $(ENGINE_ROOT)/scripts/render-admin-ssh-config.py $(ENGINE_ROOT)/scripts/render-infra-tfvars.py $(ENGINE_ROOT)/scripts/render-ssh-config.py $(ENGINE_ROOT)/scripts/reset-ssh-hostkeys.py $(ENGINE_ROOT)/scripts/prepare-rke2-kubeconfig.py $(ENGINE_ROOT)/scripts/terraform-backend-env.py $(ENGINE_ROOT)/scripts/validate-config.py
 	bash -n $(ENGINE_ROOT)/scripts/install-rke2.sh $(ENGINE_ROOT)/scripts/install-rancher.sh $(ENGINE_ROOT)/scripts/bootstrap-rancher.sh
 	$(PYTHON) $(ENGINE_ROOT)/scripts/render-infra-tfvars.py --env $(ENV_CONFIG) --out $(INFRA_TFVARS)
 	RUNTIME_DIR=$(RUNTIME_DIR) $(PYTHON) $(ENGINE_ROOT)/scripts/render-ssh-config.py --env $(ENV_CONFIG) --out $(BUILD_ENV_DIR)/ssh_config

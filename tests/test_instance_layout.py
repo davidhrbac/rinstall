@@ -80,6 +80,100 @@ def test_makefile_derives_instance_paths(tmp_path):
     assert f"{instance_root}/.rinstall/terraform " not in init_result.stdout
     assert "-lockfile=readonly" in init_result.stdout
 
+
+def test_standalone_bastion_configure_refreshes_output_before_pyinfra(tmp_path):
+    instance_root = tmp_path / "customer-a-prod-infra"
+    instance_root.mkdir()
+    config = yaml.safe_load(EXAMPLE_ENV.read_text())
+    config["bastion"]["downstream_networks"] = [
+        {
+            "vlan": 565,
+            "vmware_network": "DOWNSTREAM_VLAN_565",
+            "subnet": "10.124.101.32/27",
+            "bastion_address": 2,
+            "gateway": 1,
+            "dhcp": {"start": 4, "end": -2, "lease_time": "12h"},
+        }
+    ]
+    (instance_root / "config.yaml").write_text(yaml.safe_dump(config))
+    (instance_root / "rinstall").symlink_to(ENGINE_ROOT, target_is_directory=True)
+
+    result = subprocess.run(
+        ["make", "-f", "rinstall/Makefile", "-n", "bastion-configure", f"PYTHON={sys.executable}"],
+        cwd=instance_root,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    output = result.stdout
+    assert "output -json" in output
+    output_index = output.index("output -json")
+    validation_index = output.index("render-infra-tfvars.py")
+    pyinfra_index = output.index("PHASE=bastion-packages")
+    assert output_index < validation_index < pyinfra_index
+    assert "terraform -chdir=" in output
+    assert " apply " not in output
+
+
+def test_bastion_configure_validates_base_topology_without_downstream_networks(tmp_path):
+    instance_root = tmp_path / "customer-a-prod-infra"
+    instance_root.mkdir()
+    config = yaml.safe_load(EXAMPLE_ENV.read_text())
+    (instance_root / "config.yaml").write_text(yaml.safe_dump(config))
+    (instance_root / "rinstall").symlink_to(ENGINE_ROOT, target_is_directory=True)
+
+    result = subprocess.run(
+        ["make", "-f", "rinstall/Makefile", "-n", "bastion-configure", f"PYTHON={sys.executable}"],
+        cwd=instance_root,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert "output -json" in result.stdout
+    assert result.stdout.index("output -json") < result.stdout.index("render-infra-tfvars.py")
+    assert "PHASE=bastion-packages" in result.stdout
+
+
+def test_provision_bastion_configure_uses_already_refreshed_output(tmp_path):
+    instance_root = tmp_path / "customer-a-prod-infra"
+    instance_root.mkdir()
+    config = yaml.safe_load(EXAMPLE_ENV.read_text())
+    config["bastion"]["downstream_networks"] = [
+        {
+            "vlan": 565,
+            "vmware_network": "DOWNSTREAM_VLAN_565",
+            "subnet": "10.124.101.32/27",
+            "bastion_address": 2,
+            "gateway": 1,
+            "dhcp": {"start": 4, "end": -2, "lease_time": "12h"},
+        }
+    ]
+    (instance_root / "config.yaml").write_text(yaml.safe_dump(config))
+    (instance_root / "rinstall").symlink_to(ENGINE_ROOT, target_is_directory=True)
+
+    result = subprocess.run(
+        [
+            "make",
+            "-f",
+            "rinstall/Makefile",
+            "-n",
+            "bastion-configure",
+            "PROVISION_PHASE=1",
+            f"PYTHON={sys.executable}",
+        ],
+        cwd=instance_root,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert "output -json" in result.stdout
+    assert result.stdout.index("output -json") < result.stdout.index("render-infra-tfvars.py")
+    assert "PHASE=bastion-packages" in result.stdout
+
+
 def test_verify_uses_clean_temporary_terraform_data_dir(tmp_path):
     instance_root = tmp_path / "customer-a-prod-infra"
     instance_root.mkdir()
@@ -284,7 +378,7 @@ def test_backend_helpers_reject_missing_backend(tmp_path, helper):
     assert "not configured" not in result.stdout
 
 
-@pytest.mark.parametrize("target", ["infra-plan", "infra-apply", "destroy-commands"])
+@pytest.mark.parametrize("target", ["infra-plan", "infra-apply", "destroy-commands", "destroy-commands-recovery"])
 def test_operator_targets_include_instance_context_banner(tmp_path, target):
     instance_root = tmp_path / "customer-a-prod-infra"
     instance_root.mkdir()
@@ -343,6 +437,42 @@ def test_destroy_command_resets_ssh_trust_only_after_successful_destroy(tmp_path
     assert "ssh-hostkeys-reset" not in plan_section
     assert "A successful full destroy automatically clears instance-local SSH trust." in output
     assert "If Terraform destroy fails, the instance-local SSH trust is preserved." in output
+
+
+def test_destroy_recovery_commands_disable_refresh_without_changing_normal_destroy(tmp_path):
+    instance_root = tmp_path / "customer-a-prod-infra"
+    instance_root.mkdir()
+    config = yaml.safe_load(EXAMPLE_ENV.read_text())
+    config["terraform"] = {
+        "backend": {
+            "type": "gitlab",
+            "url": "https://gitlab.example",
+            "project_id": 1234,
+        }
+    }
+    (instance_root / "config.yaml").write_text(yaml.safe_dump(config))
+    (instance_root / "rinstall").symlink_to(ENGINE_ROOT, target_is_directory=True)
+
+    normal = subprocess.run(
+        ["make", "-f", "rinstall/Makefile", "destroy-commands", f"PYTHON={sys.executable}"],
+        cwd=instance_root,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    recovery = subprocess.run(
+        ["make", "-f", "rinstall/Makefile", "destroy-commands-recovery", f"PYTHON={sys.executable}"],
+        cwd=instance_root,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+
+    assert "plan -destroy -refresh=false" not in normal
+    assert "destroy -refresh=false" not in normal
+    assert "plan -destroy -refresh=false" in recovery
+    assert "destroy -refresh=false" in recovery
+    assert "Recovery mode skips Terraform refresh" in recovery
 
 
 def test_provision_all_banner_is_complete_and_logged(tmp_path):

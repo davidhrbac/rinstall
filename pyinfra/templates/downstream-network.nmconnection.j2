@@ -1,0 +1,18 @@
+[connection]
+id={{ downstream.interface_name }}
+uuid={{ downstream.connection_uuid }}
+type=ethernet
+interface-name={{ device_name }}
+autoconnect=true
+
+[ethernet]
+mac-address={{ mac_address }}
+
+[ipv4]
+address1={{ downstream.bastion_address }}/{{ downstream.prefix }}
+method=manual
+never-default=true
+may-fail=false
+
+[ipv6]
+method=disabled

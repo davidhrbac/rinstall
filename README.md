@@ -120,6 +120,8 @@ Always confirm the instance repository, Terraform backend/state, and destroy pla
 
 `make -f rinstall/Makefile destroy-commands` prints a header with the selected instance config, runtime directory, Terraform directory, tfvars path, vSphere server/user when available from environment variables, backend/init settings, and then the explicit review/destroy commands. It never prints the vSphere password.
 
+If normal Terraform plan or destroy fails during refresh because an external dependency, such as the original vSphere VM template, no longer exists, use `make -f rinstall/Makefile destroy-commands-recovery`. This prints an explicit destroy plan and destroy command with `-refresh=false`, using the recorded Terraform state without first refreshing it. Review the recovery plan carefully because state may be stale; recovery mode is intentionally separate and is not an automatic fallback.
+
 The generated full destroy command clears the instance-local
 `.rinstall/known_hosts` automatically after Terraform destroy succeeds. If
 Terraform destroy fails, the `&&` prevents the reset and preserves the
@@ -243,9 +245,67 @@ The loader expands that NIC to `ip`/`prefix` for Terraform and uses the same IP 
 
 vSphere clone customization applies static NIC addressing during VM clone/provisioning. Adding or changing `nics[].cidr` on an already-created VM may update Terraform/vSphere customization metadata but does not reliably reconfigure the guest OS network. For existing VMs, either recreate the VM or adjust the NetworkManager profile in the guest manually/through pyinfra, then keep `env.yaml` aligned for the next redeploy.
 
-dnsmasq uses `no-dhcp-interface=<management-device>` and `bind-dynamic`, so it may provide DNS on the management NIC but never DHCP. The loader derives that device from `bastion.vsphere_route_connection`: it uses the connection directly when it is a device name, or the source device in `bastion.network_connection_names` when the route connection is a renamed NetworkManager profile.
+The bastion's dnsmasq common DHCP policy uses `bind-dynamic` and excludes the base/customer and management interfaces with `no-dhcp-interface`, so those interfaces may provide DNS but never DHCP. Downstream DHCP configuration is split into one project-owned `/etc/dnsmasq.d/20-rinstall-dhcp.conf` policy file and one `/etc/dnsmasq.d/dnsmasq-vlan<VLAN>.conf` file per downstream network.
 
 vSphere clone customization gives local nodes DNS servers derived from `local.vlan.dns_nodes`, normally the configured bastion. `nodes[bastion.service_node].dns_servers` is required and supplies the separate management/vSphere DNS used by the bastion OS and Squid. Set `bastion.dnsmasq_upstream_servers` to the DNS resolvers that local clients may use through dnsmasq. dnsmasq renders `no-resolv` and explicit `server=` entries, so it never exposes the bastion's `/etc/resolv.conf` DNS to local clients.
+
+The bastion can also provide DHCP and DNS on dedicated VMware networks used by downstream clusters:
+
+```yaml
+bastion:
+  downstream_networks:
+    - vlan: 565
+      vmware_network: DOWNSTREAM_VLAN_565
+      subnet: 10.20.56.32/27
+      bastion_address: 2
+      gateway: 1
+      dhcp:
+        start: 4
+        end: -2
+        lease_time: 12h
+```
+
+Each entry appends one physical bastion vNIC connected to the named VMware portgroup. VMware owns VLAN tagging; Linux does not create an 802.1Q subinterface or rename the kernel device. Terraform reports the provider-assigned MAC as the stable interface identity, and pyinfra resolves it to the current Linux device (for example `ens256` or `ens161`), binds the project-owned NetworkManager profile with logical connection ID `vlan<VLAN>` to that device and MAC, and configures `bastion_address/prefix` with no default route.
+
+Positive address integers count usable hosts from the start of the subnet: `1` is the first usable address. Negative integers count backwards from the end: `-1` is the last usable address. Zero is invalid, and absolute IPv4 strings are also accepted. The `dhcp.start` and `dhcp.end` values use the same offset rules and define the DHCP pool; the pool cannot include the gateway or bastion address. For `10.20.56.32/27`, the example resolves the external gateway to `10.20.56.33`, the bastion address to `10.20.56.34`, and the DHCP pool to `10.20.56.36-10.20.56.61`.
+
+The configured `gateway` is the external firewall's gateway and is advertised to clients with the DHCP router option. It is not configured as a bastion route or default gateway. rinstall does not enable forwarding, NAT, masquerading, or forwarding firewall rules for downstream networks. Per-VLAN dnsmasq files use `dhcp-range=set:vlan<VLAN>,...` and `dhcp-option=tag:vlan<VLAN>,option:router,...`; they do not use the runtime `ensXXX` device name as a DHCP tag or emit DHCP option 6, so dnsmasq's normal behavior advertises the bastion address on the downstream interface as DNS.
+
+Keep existing entries in their original order and append new entries at the end. Both Terraform plan/apply and standalone `bastion-configure` refresh `.rinstall/infra-output.json` from remote Terraform state, then run the checked lifecycle renderer before pyinfra consumes provider MAC mappings. DHCP range/lease changes are supported where configuration validation permits them. Removing, reordering, renaming a VLAN, or moving an existing entry to another VMware network is refused in this release because downstream VMs are owned by a separate Terraform workflow and rinstall cannot determine whether a network remains in use.
+
+### Downstream network lifecycle
+
+Downstream networks have a deliberately conservative lifecycle in v0.3.0. After a downstream network has been applied, its network identity is treated as immutable. The lifecycle check runs before Terraform plan/apply and before standalone `bastion-configure`; the standalone target does not bypass infrastructure protection.
+
+For an existing downstream network, these properties cannot change:
+
+- `vlan`
+- `vmware_network`
+- `subnet`
+- resolved bastion IP (`bastion_address`)
+- resolved gateway (`gateway`)
+- NIC order / attachment identity
+
+These DHCP settings remain mutable:
+
+- `dhcp.start`
+- `dhcp.end`
+- `dhcp.lease_time`
+
+Adding another downstream network is supported. Removal, reordering, VMware portgroup changes, addressing changes, or changes to an existing attachment identity fail closed before infrastructure or bastion configuration can be modified. Use the appropriate lifecycle procedure for a disruptive identity change instead of editing an existing entry in place.
+
+| Change | v0.3.0 |
+| --- | --- |
+| Add downstream network | Supported |
+| Change DHCP start/end | Supported |
+| Change DHCP lease time | Supported |
+| Remove existing network | Unsupported |
+| Reorder existing networks | Unsupported |
+| Change VMware portgroup/network | Unsupported |
+| Change subnet | Unsupported |
+| Change resolved bastion IP | Unsupported |
+| Change resolved gateway | Unsupported |
+| Change existing NIC order/attachment identity | Unsupported |
 
 vSphere VM object names are made globally unique by Terraform with a stable random suffix: `<node>-xxxxx-xxxxx`. The node key still stays the operational hostname, so guest hostnames, SSH aliases, DNS records, and pyinfra groups retain the configured node names. Terraform outputs include `vsphere_name` for mapping the operational node name to the actual vSphere object name.
 
@@ -295,7 +355,7 @@ bastion:
   vsphere_route_connection: mgmt
 ```
 
-The map keys are current device names or current profile names, and values are target profile names. This keeps the base interfaces readable as `local`/`mgmt`, while downstream VLAN interfaces can still be named `vlanXXX`.
+The map keys are current base device names or current profile names, and values are target NetworkManager connection IDs. This keeps the base connections readable as `local`/`mgmt`. Downstream devices retain their actual guest names, while their NetworkManager connection IDs and dnsmasq DHCP tags use logical `vlan<VLAN>` names.
 
 ## Proxy
 

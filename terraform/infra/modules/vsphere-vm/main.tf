@@ -7,6 +7,9 @@ resource "vsphere_virtual_machine" "this" {
   num_cpus = var.cpu
   memory   = var.memory_mb
 
+  shutdown_wait_timeout = 1
+  force_power_off       = true
+
   guest_id  = var.template.guest_id
   scsi_type = var.template.scsi_type
   firmware  = var.template.firmware
@@ -47,5 +50,17 @@ resource "vsphere_virtual_machine" "this" {
       dns_server_list = var.dns_servers
       dns_suffix_list = [var.domain]
     }
+  }
+}
+
+resource "time_sleep" "nic_settle" {
+  count = var.settle_after_change ? 1 : 0
+
+  create_duration = "5s"
+
+  depends_on = [vsphere_virtual_machine.this]
+
+  lifecycle {
+    replace_triggered_by = [vsphere_virtual_machine.this]
   }
 }

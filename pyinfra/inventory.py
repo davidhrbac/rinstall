@@ -4,13 +4,14 @@ from pathlib import Path as _Path
 
 _sys.path.insert(0, str(_Path(__file__).resolve().parents[1]))
 
+from lib.bastion_network import load_downstream_network_output as _load_downstream_network_output
 from lib.env_config import load_env as _load_env
 from lib.ssh_config import build_dir_for_env as _build_dir_for_env
 from lib.ssh_config import node_ssh_target as _node_ssh_target
 from lib.ssh_config import write_ssh_config as _write_ssh_config
 
 
-def _host_entry(node_name, node, config, ssh_config_file, known_hosts_file):
+def _host_entry(node_name, node, config, ssh_config_file, known_hosts_file, downstream_network_output=None):
     ssh = config.get("ssh", {})
     ssh_target = _node_ssh_target(node)
     address = ssh_target
@@ -24,6 +25,7 @@ def _host_entry(node_name, node, config, ssh_config_file, known_hosts_file):
         "ssh_strict_host_key_checking": "accept-new",
         "env_config": config,
         "node_config": node,
+        "downstream_network_output": downstream_network_output or {},
     }
     if ssh_config_file:
         data["ssh_config_file"] = str(ssh_config_file)
@@ -33,7 +35,7 @@ def _host_entry(node_name, node, config, ssh_config_file, known_hosts_file):
 def _phase_hosts(phase, config):
     nodes = config["nodes"]
     primary = config["rke2"]["primary_node"]
-    if phase in {"bastion", "rancher-install", "rancher-bootstrap"}:
+    if phase in {"bastion-packages", "bastion", "rancher-install", "rancher-bootstrap"}:
         service_node = config["bastion"]["service_node"]
         return {service_node: nodes[service_node]}
     if phase in {"rke2-install-primary", "rke2-kubeconfig"}:
@@ -49,8 +51,14 @@ _config = _load_env(_env_config)
 _runtime_dir = _build_dir_for_env(_env_config)
 _ssh_config_file = _write_ssh_config(_config, _runtime_dir / "ssh_config")
 _known_hosts_file = (_runtime_dir / "known_hosts").resolve()
+_downstream_network_output = {}
+if _phase == "bastion":
+    _downstream_network_output = _load_downstream_network_output(
+        _runtime_dir / "infra-output.json",
+        _config["bastion"]["downstream_networks"],
+    )
 
 all = [
-    _host_entry(name, node, _config, _ssh_config_file, _known_hosts_file)
+    _host_entry(name, node, _config, _ssh_config_file, _known_hosts_file, _downstream_network_output)
     for name, node in _phase_hosts(_phase, _config).items()
 ]

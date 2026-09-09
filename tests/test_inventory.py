@@ -28,7 +28,7 @@ def configured_bastion2():
 def test_bastion_phases_select_only_configured_service_node():
     config = configured_bastion2()
 
-    for phase in ("bastion", "rancher-install", "rancher-bootstrap"):
+    for phase in ("bastion-packages", "bastion", "rancher-install", "rancher-bootstrap"):
         assert set(_phase_hosts(phase, config)) == {"bastion2"}
 
 

@@ -3,8 +3,11 @@ from ipaddress import ip_address, ip_interface, ip_network
 from pathlib import Path
 import re
 from urllib.parse import urlparse
+from uuid import NAMESPACE_URL, uuid5
 
 import yaml
+
+from lib.bastion_network import normalize_ipv4_route
 
 
 DEFAULT_NO_PROXY_CIDRS = [
@@ -26,6 +29,7 @@ RANCHER_HOSTNAME_PATTERN = re.compile(
     r"^(?=.{1,253}$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+"
     r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$"
 )
+DNSMASQ_LEASE_TIME_PATTERN = re.compile(r"^[1-9][0-9]*[smhdw]$")
 
 
 def require(mapping, key, context):
@@ -68,11 +72,10 @@ def validate_environment_identity(env):
 
 
 def address_from_host(network, host, context):
-    try:
-        offset = int(host)
-    except (TypeError, ValueError):
+    if isinstance(host, bool) or not isinstance(host, int):
         raise SystemExit(f"{context} must be an integer host offset") from None
 
+    offset = host
     if offset < 0 or offset >= network.num_addresses:
         raise SystemExit(f"{context}={offset} is outside {network}")
 
@@ -83,6 +86,130 @@ def address_from_host(network, host, context):
         raise SystemExit(f"{context}={offset} resolves to broadcast address {address}")
 
     return str(address)
+
+
+def resolve_ipv4_address(network, value, context):
+    if isinstance(value, bool):
+        raise SystemExit(f"{context} must be a relative integer or absolute IPv4 address")
+
+    if isinstance(value, int):
+        if value == 0:
+            raise SystemExit(f"{context}=0 is invalid; relative offsets start at 1 or -1")
+        usable_hosts = network.num_addresses - 2
+        if abs(value) > usable_hosts:
+            raise SystemExit(f"{context}={value} is outside the usable host range of {network}")
+        address = network.network_address + value if value > 0 else network.broadcast_address + value
+    elif isinstance(value, str):
+        if re.fullmatch(r"[+-]?[0-9]+", value):
+            raise SystemExit(f"{context}={value!r} is ambiguous; use an integer offset")
+        try:
+            address = ip_address(value)
+        except ValueError as error:
+            raise SystemExit(f"{context} must be a relative integer or absolute IPv4 address: {error}") from None
+        if address.version != 4:
+            raise SystemExit(f"{context} must be an IPv4 address")
+        if address not in network:
+            raise SystemExit(f"{context}={address} is outside {network}")
+    else:
+        raise SystemExit(f"{context} must be a relative integer or absolute IPv4 address")
+
+    if address == network.network_address:
+        raise SystemExit(f"{context} resolves to network address {address}")
+    if address == network.broadcast_address:
+        raise SystemExit(f"{context} resolves to broadcast address {address}")
+    return str(address)
+
+
+def resolve_downstream_networks(bastion, local_network, environment_id):
+    downstream_networks = bastion.setdefault("downstream_networks", [])
+    if not isinstance(downstream_networks, list):
+        raise SystemExit("env.bastion.downstream_networks must be a list")
+
+    vlans = set()
+    interface_names = set()
+    vmware_networks = set()
+    resolved_networks = []
+
+    for index, downstream in enumerate(downstream_networks):
+        context = f"env.bastion.downstream_networks[{index}]"
+        if not isinstance(downstream, dict):
+            raise SystemExit(f"{context} must be a mapping")
+
+        vlan = require(downstream, "vlan", context)
+        if isinstance(vlan, bool) or not isinstance(vlan, int) or not 1 <= vlan <= 4094:
+            raise SystemExit(f"{context}.vlan must be an integer from 1 through 4094")
+        if vlan in vlans:
+            raise SystemExit(f"{context}.vlan duplicates VLAN {vlan}")
+        vlans.add(vlan)
+
+        interface_name = f"vlan{vlan}"
+        if interface_name in interface_names:
+            raise SystemExit(f"{context}.vlan derives duplicate interface name {interface_name}")
+        interface_names.add(interface_name)
+
+        vmware_network = require(downstream, "vmware_network", context)
+        if not isinstance(vmware_network, str) or not vmware_network.strip():
+            raise SystemExit(f"{context}.vmware_network must be a non-empty string")
+        if vmware_network in vmware_networks:
+            raise SystemExit(f"{context}.vmware_network duplicates VMware network {vmware_network!r}")
+        vmware_networks.add(vmware_network)
+
+        subnet = require(downstream, "subnet", context)
+        if not isinstance(subnet, str):
+            raise SystemExit(f"{context}.subnet must be a canonical IPv4 subnet")
+        try:
+            network = ip_network(subnet, strict=True)
+        except ValueError as error:
+            raise SystemExit(f"{context}.subnet is invalid or non-canonical: {error}") from None
+        if network.version != 4:
+            raise SystemExit(f"{context}.subnet must be IPv4")
+        if network.prefixlen >= 31:
+            raise SystemExit(f"{context}.subnet must provide usable host addresses")
+        if network.overlaps(local_network):
+            raise SystemExit(f"{context}.subnet {network} overlaps local VLAN {local_network}")
+        for previous_network in resolved_networks:
+            if network.overlaps(previous_network):
+                raise SystemExit(f"{context}.subnet {network} overlaps downstream subnet {previous_network}")
+        resolved_networks.append(network)
+
+        gateway = resolve_ipv4_address(network, require(downstream, "gateway", context), f"{context}.gateway")
+        bastion_address = resolve_ipv4_address(
+            network,
+            require(downstream, "bastion_address", context),
+            f"{context}.bastion_address",
+        )
+        if gateway == bastion_address:
+            raise SystemExit(f"{context}.gateway must differ from bastion_address")
+
+        dhcp = require(downstream, "dhcp", context)
+        if not isinstance(dhcp, dict):
+            raise SystemExit(f"{context}.dhcp must be a mapping")
+        dhcp_start = resolve_ipv4_address(network, require(dhcp, "start", f"{context}.dhcp"), f"{context}.dhcp.start")
+        dhcp_end = resolve_ipv4_address(network, require(dhcp, "end", f"{context}.dhcp"), f"{context}.dhcp.end")
+        if ip_address(dhcp_start) > ip_address(dhcp_end):
+            raise SystemExit(f"{context}.dhcp.start must be less than or equal to dhcp.end")
+        if ip_address(dhcp_start) <= ip_address(gateway) <= ip_address(dhcp_end):
+            raise SystemExit(f"{context}.gateway must not be inside the DHCP pool")
+        if ip_address(dhcp_start) <= ip_address(bastion_address) <= ip_address(dhcp_end):
+            raise SystemExit(f"{context}.bastion_address must not be inside the DHCP pool")
+
+        lease_time = require(dhcp, "lease_time", f"{context}.dhcp")
+        if not isinstance(lease_time, str) or not DNSMASQ_LEASE_TIME_PATTERN.fullmatch(lease_time):
+            raise SystemExit(f"{context}.dhcp.lease_time must be a positive integer followed by s, m, h, d, or w")
+
+        downstream["subnet"] = str(network)
+        downstream["prefix"] = network.prefixlen
+        downstream["netmask"] = str(network.netmask)
+        downstream["interface_name"] = interface_name
+        downstream["connection_uuid"] = str(
+            uuid5(NAMESPACE_URL, f"rinstall:{environment_id}:downstream:{interface_name}")
+        )
+        downstream["gateway"] = gateway
+        downstream["bastion_address"] = bastion_address
+        dhcp["start"] = dhcp_start
+        dhcp["end"] = dhcp_end
+
+    return resolved_networks
 
 
 def validate_name_exists(name, collection, context):
@@ -241,6 +368,22 @@ def expand_env(raw_env):
     cidr = require(local_vlan, "cidr", "env.local.vlan")
     network = ip_network(cidr, strict=False)
 
+    bastion = require(env, "bastion", "env")
+    resolve_downstream_networks(bastion, network, environment_id)
+    bastion_name = require(bastion, "service_node", "env.bastion")
+    base_vmware_networks = {
+        env["infra"]["networks"][nic["network"]]
+        for nic in env["nodes"][bastion_name]["nics"]
+    }
+    for downstream in bastion["downstream_networks"]:
+        if downstream["vmware_network"] in base_vmware_networks:
+            raise SystemExit(
+                "env.bastion.downstream_networks VMware network conflicts with an existing bastion NIC: "
+                f"{downstream['vmware_network']}"
+            )
+    if len(env["nodes"][bastion_name]["nics"]) + len(bastion["downstream_networks"]) > 10:
+        raise SystemExit("the configured bastion cannot have more than 10 VMware NICs")
+
     local_vlan["prefix"] = network.prefixlen
     local_vlan["gateway"] = address_from_host(
         network,
@@ -285,9 +428,30 @@ def expand_env(raw_env):
             raise SystemExit(f"env.nodes.{name}.ip {ip} conflicts with env.nodes.{previous_name}.ip")
         primary_ips[ip] = name
 
-    bastion = require(env, "bastion", "env")
     bastion.setdefault("squid_http_port", 3128)
-    bastion_name = require(bastion, "service_node", "env.bastion")
+    bastion["vsphere_route"] = normalize_ipv4_route(
+        require(bastion, "vsphere_route", "env.bastion"),
+        "env.bastion.vsphere_route",
+    )
+    vsphere_route_network = ip_network(bastion["vsphere_route"].split()[0])
+    bastion_nic_networks = [
+        ip_interface(f"{nic['ip']}/{nic['prefix']}").network
+        for nic in nodes[bastion_name]["nics"]
+        if nic.get("ip") is not None
+    ]
+    for downstream in bastion["downstream_networks"]:
+        downstream_subnet = ip_network(downstream["subnet"])
+        if downstream_subnet.overlaps(vsphere_route_network):
+            raise SystemExit(
+                "env.bastion.downstream_networks subnet overlaps env.bastion.vsphere_route: "
+                f"{downstream_subnet}"
+            )
+        for nic_network in bastion_nic_networks:
+            if downstream_subnet.overlaps(nic_network):
+                raise SystemExit(
+                    "env.bastion.downstream_networks subnet overlaps an existing bastion NIC network: "
+                    f"{downstream_subnet}"
+                )
     route_connection = require(bastion, "vsphere_route_connection", "env.bastion")
     management_interfaces = [
         source
