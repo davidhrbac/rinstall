@@ -108,12 +108,15 @@ def test_standalone_bastion_configure_refreshes_output_before_pyinfra(tmp_path):
 
     output = result.stdout
     assert "output -json" in output
-    assert output.index("output -json") < output.index("PHASE=bastion-packages")
+    output_index = output.index("output -json")
+    validation_index = output.index("render-infra-tfvars.py")
+    pyinfra_index = output.index("PHASE=bastion-packages")
+    assert output_index < validation_index < pyinfra_index
     assert "terraform -chdir=" in output
     assert " apply " not in output
 
 
-def test_bastion_configure_skips_output_refresh_without_downstream_networks(tmp_path):
+def test_bastion_configure_validates_base_topology_without_downstream_networks(tmp_path):
     instance_root = tmp_path / "customer-a-prod-infra"
     instance_root.mkdir()
     config = yaml.safe_load(EXAMPLE_ENV.read_text())
@@ -128,7 +131,8 @@ def test_bastion_configure_skips_output_refresh_without_downstream_networks(tmp_
         text=True,
     )
 
-    assert "output -json" not in result.stdout
+    assert "output -json" in result.stdout
+    assert result.stdout.index("output -json") < result.stdout.index("render-infra-tfvars.py")
     assert "PHASE=bastion-packages" in result.stdout
 
 
@@ -165,7 +169,8 @@ def test_provision_bastion_configure_uses_already_refreshed_output(tmp_path):
         text=True,
     )
 
-    assert "output -json" not in result.stdout
+    assert "output -json" in result.stdout
+    assert result.stdout.index("output -json") < result.stdout.index("render-infra-tfvars.py")
     assert "PHASE=bastion-packages" in result.stdout
 
 

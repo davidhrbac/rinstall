@@ -248,6 +248,7 @@ def test_addressing_guard_runs_before_terraform_plan_and_apply():
     makefile = (ROOT / "Makefile").read_text()
 
     assert "render-infra-vars-checked: infra-output config-validate" in makefile
+    assert "bastion-configure: render-infra-vars-checked" in makefile
     assert "infra-plan:" in makefile and "render-infra-vars-checked" in makefile
     assert "infra-apply:" in makefile and "render-infra-vars-checked" in makefile
     assert "render-infra-tfvars.py --env $(ENV_CONFIG) --out $(INFRA_TFVARS) --existing-infra-output" in makefile

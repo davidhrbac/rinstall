@@ -156,7 +156,7 @@ destroy-commands: instance-context
 	@printf '%s\n' 'A successful full destroy automatically clears instance-local SSH trust.'
 	@printf '%s\n' 'If Terraform destroy fails, the instance-local SSH trust is preserved.'
 
-bastion-configure: config-validate $(if $(and $(filter 0,$(PROVISION_PHASE)),$(filter 1,$(HAS_DOWNSTREAM_NETWORKS))),infra-output)
+bastion-configure: render-infra-vars-checked
 	ENV_CONFIG=$(ENV_CONFIG) RUNTIME_DIR=$(RUNTIME_DIR) PHASE=bastion-packages PYINFRA_PROGRESS=$(PYINFRA_PROGRESS) $(PYINFRA) $(PYINFRA_ARGS) $(ENGINE_ROOT)/pyinfra/inventory.py $(ENGINE_ROOT)/pyinfra/deploy.py
 	ENV_CONFIG=$(ENV_CONFIG) RUNTIME_DIR=$(RUNTIME_DIR) PHASE=bastion PYINFRA_PROGRESS=$(PYINFRA_PROGRESS) $(PYINFRA) $(PYINFRA_ARGS) $(ENGINE_ROOT)/pyinfra/inventory.py $(ENGINE_ROOT)/pyinfra/deploy.py
 
