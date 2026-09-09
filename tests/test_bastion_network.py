@@ -366,6 +366,29 @@ def test_dnsmasq_candidate_includes_manual_dropins_and_hosts():
     assert "conf-dir=/etc/dnsmasq.d" not in deploy[deploy.index("Prepare complete dnsmasq candidate") : validation]
 
 
+def test_dnsmasq_live_replacements_are_atomic_and_same_directory():
+    deploy = (ROOT / "pyinfra/deploy.py").read_text()
+    install = deploy[deploy.index("Install validated dnsmasq configuration and restart service") : deploy.index("Discard unchanged dnsmasq candidate")]
+
+    assert 'tmp=$(mktemp --tmpdir=\\"$dir\\" .rinstall-dnsmasq.XXXXXX)' in install
+    assert 'cp -a -- \\"$src\\" \\"$tmp\\"' in install
+    assert 'mv -f -- \\"$tmp\\" \\"$dest\\"' in install
+    assert 'sync -f \\"$tmp\\"' in install
+    assert 'sync -f \\"$dir\\"' in install
+    assert 'cp -a {dnsmasq_candidate_dir}/dnsmasq.conf /etc/dnsmasq.conf' not in install
+    assert 'cp -a {dnsmasq_candidate_dir}/hosts /etc/hosts' not in install
+
+
+def test_dnsmasq_rollback_uses_atomic_replacements_and_preserves_selinux_context():
+    deploy = (ROOT / "pyinfra/deploy.py").read_text()
+    install = deploy[deploy.index("Install validated dnsmasq configuration and restart service") : deploy.index("Discard unchanged dnsmasq candidate")]
+
+    assert install.count("atomic_replace ") >= 6
+    assert "chcon --reference=\\\"$dest\\\" \\\"$tmp\\\"" in install
+    assert "restorecon -F \\\"$tmp\\\"" in install
+    assert "systemctl restart dnsmasq || true" in install
+
+
 def test_dnsmasq_restart_failure_restores_live_config_and_service_state():
     deploy = (ROOT / "pyinfra/deploy.py").read_text()
     install = deploy.index("Install validated dnsmasq configuration and restart service")
