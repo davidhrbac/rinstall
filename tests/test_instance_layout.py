@@ -100,13 +100,17 @@ def test_topology_target_writes_private_instance_runtime_outputs(tmp_path):
     runtime_dir = instance_root / ".rinstall"
     topology_json = runtime_dir / "topology.json"
     topology_markdown = runtime_dir / "topology.md"
+    topology_mermaid = runtime_dir / "topology.mmd"
     assert str(topology_json) in result.stdout
     assert str(topology_markdown) in result.stdout
+    assert str(topology_mermaid) in result.stdout
     assert topology_json.exists()
     assert topology_markdown.exists()
+    assert topology_mermaid.exists()
     assert runtime_dir.stat().st_mode & 0o777 == 0o700
     assert topology_json.stat().st_mode & 0o777 == 0o600
     assert topology_markdown.stat().st_mode & 0o777 == 0o600
+    assert topology_mermaid.stat().st_mode & 0o777 == 0o600
     assert "terraform" not in result.stdout.lower()
     assert "pyinfra" not in result.stdout.lower()
 

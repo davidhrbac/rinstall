@@ -1,7 +1,9 @@
 from dataclasses import asdict, dataclass
+from hashlib import sha256
 from html import escape
 from ipaddress import ip_interface, ip_network
 import json
+import re
 
 RINSTALL_ARCHITECTURE = "RINSTALL_ARCHITECTURE"
 RINSTALL_CODE = "RINSTALL_CODE"
@@ -237,6 +239,67 @@ def _protocol_port(rule):
 
 def _markdown(value):
     return escape(str(value), quote=False).replace("|", "\\|").replace("\r", "").replace("\n", "<br>")
+
+
+def _plain(value):
+    return str(value).replace("\r", " ").replace("\n", " ").replace("`", "'")
+
+
+def _mermaid(value):
+    return (
+        escape(_plain(value), quote=True)
+        .replace("`", "&#96;")
+        .replace("[", "&#91;")
+        .replace("]", "&#93;")
+        .replace("{", "&#123;")
+        .replace("}", "&#125;")
+    )
+
+
+def _mermaid_id(kind, value):
+    text = str(value)
+    slug = re.sub(r"[^A-Za-z0-9_]", "_", text).strip("_")[:32] or "item"
+    digest = sha256(text.encode()).hexdigest()[:10]
+    return f"{kind}_{slug}_{digest}"
+
+
+def _host_address(host):
+    return host.local_ip or host.primary_ip or host.ssh_target or "unknown"
+
+
+def _external_jump_hosts(topology):
+    return tuple(
+        host
+        for host in topology.hosts
+        if host.id != topology.metadata.bastion_host
+        and ("jump-host" in host.capabilities or "external-jump" in host.roles)
+    )
+
+
+def _known_network(topology, network):
+    return network.cidr is not None or any(
+        interface.network == network.id and interface.address is not None
+        for interface in topology.interfaces
+    )
+
+
+def _downstream_for_endpoint(topology, endpoint):
+    endpoint_values = {
+        value
+        for resolved in endpoint.resolved
+        for value in (resolved.id, resolved.address)
+    }
+    return next(
+        (
+            downstream
+            for downstream in topology.downstream_networks
+            if downstream.id in endpoint_values
+            or downstream.interface_name in endpoint_values
+            or downstream.cidr in endpoint_values
+            or downstream.bastion_address in endpoint_values
+        ),
+        None,
+    )
 
 
 def build_desired_topology(config):
@@ -550,10 +613,255 @@ def render_topology_json(topology):
     return json.dumps(topology.to_dict(), indent=2) + "\n"
 
 
+def render_topology_ascii(topology):
+    metadata = topology.metadata
+    hosts_by_id = {host.id: host for host in topology.hosts}
+    bastion = hosts_by_id[metadata.bastion_host]
+    external_jumps = _external_jump_hosts(topology)
+    lines = [f"Desired topology: {_plain(metadata.environment_id)}"]
+    if external_jumps:
+        lines.append(
+            "External jump: "
+            + ", ".join(
+                f"{_plain(host.id)} ({_plain(host.ssh_target or _host_address(host))})"
+                for host in external_jumps
+            )
+        )
+    else:
+        lines.append("External jump: not represented in desired topology")
+    lines.extend(
+        [
+            "|",
+            f"Bastion: {_plain(bastion.id)} ({_plain(_host_address(bastion))})",
+        ]
+    )
+
+    base_networks = [network for network in topology.networks if network.kind != "downstream"]
+    for network in base_networks:
+        if network.kind == "management" and not _known_network(topology, network):
+            address = "unknown"
+        else:
+            address = network.cidr or "unknown"
+        lines.append(f"+-- {_plain(network.kind)} {_plain(network.id)}: {_plain(address)}")
+    for downstream in topology.downstream_networks:
+        lines.append(
+            f"+-- downstream VLAN {_plain(downstream.vlan)}: {_plain(downstream.cidr)}, "
+            f"bastion {_plain(downstream.bastion_address)}"
+        )
+
+    external_ids = {host.id for host in external_jumps}
+    core_hosts = [
+        host
+        for host in topology.hosts
+        if host.id != metadata.bastion_host and host.id not in external_ids
+    ]
+    lines.extend(["", "Core nodes:"])
+    if core_hosts:
+        for host in core_hosts:
+            lines.append(
+                f"- {_plain('/'.join(host.roles) or 'node')}: {_plain(host.id)} "
+                f"({_plain(_host_address(host))})"
+            )
+    else:
+        lines.append("- none")
+
+    lines.extend(["", "Connectivity:"])
+    visible_rules = [
+        rule
+        for rule in topology.connectivity_rules
+        if rule.required and not rule.id.startswith("downstream-dhcp-response:")
+    ]
+    if visible_rules:
+        for rule in visible_rules:
+            lines.append(
+                f"- {_plain(_endpoint_text(rule.source))} -> "
+                f"{_plain(_endpoint_text(rule.destination))}: {_plain(_protocol_port(rule))}"
+            )
+    else:
+        lines.append("- no downstream connectivity rules")
+    return "\n".join(lines) + "\n"
+
+
+def render_topology_mermaid(topology):
+    metadata = topology.metadata
+    hosts_by_id = {host.id: host for host in topology.hosts}
+    bastion = hosts_by_id[metadata.bastion_host]
+    external_jumps = _external_jump_hosts(topology)
+    external_ids = {host.id for host in external_jumps}
+    host_ids = {host.id: _mermaid_id("host", host.id) for host in topology.hosts}
+    network_ids = {network.id: _mermaid_id("network", network.id) for network in topology.networks}
+    downstream_service_ids = {
+        downstream.id: _mermaid_id("bastion_ip", downstream.id)
+        for downstream in topology.downstream_networks
+    }
+    lines = ["flowchart LR"]
+
+    for host in external_jumps:
+        lines.append(
+            f'  {host_ids[host.id]}["External jump<br/>{_mermaid(host.id)}<br/>'
+            f'{_mermaid(host.ssh_target or _host_address(host))}"]'
+        )
+
+    lines.extend(
+        [
+            f'  subgraph {_mermaid_id("group", "core")}["Core nodes"]',
+            "    direction TB",
+        ]
+    )
+    for host in topology.hosts:
+        if host.id in external_ids:
+            continue
+        if host.id == metadata.bastion_host:
+            label = "Bastion / jump"
+        elif "rancher" in host.roles:
+            label = "Rancher"
+        elif "prometheus" in host.roles or "monitoring" in host.roles:
+            label = "Monitoring"
+        else:
+            label = "/".join(host.roles) or "Node"
+        lines.append(
+            f'    {host_ids[host.id]}["{_mermaid(label)}<br/>{_mermaid(host.id)}<br/>'
+            f'{_mermaid(_host_address(host))}"]'
+        )
+    lines.append("  end")
+
+    visible_base_networks = [
+        network
+        for network in topology.networks
+        if network.kind != "downstream"
+        and (network.kind != "management" or _known_network(topology, network))
+    ]
+    lines.extend(
+        [
+            f'  subgraph {_mermaid_id("group", "networks")}["Core networks"]',
+            "    direction TB",
+        ]
+    )
+    for network in visible_base_networks:
+        lines.append(
+            f'    {network_ids[network.id]}["{_mermaid(network.kind)}<br/>'
+            f'{_mermaid(network.id)}<br/>{_mermaid(network.cidr or "unknown")}"]'
+        )
+    lines.append("  end")
+
+    if topology.downstream_networks:
+        lines.extend(
+            [
+                f'  subgraph {_mermaid_id("group", "downstream")}["Downstream networks"]',
+                "    direction TB",
+            ]
+        )
+        for downstream in topology.downstream_networks:
+            network_id = network_ids[downstream.id]
+            service_id = downstream_service_ids[downstream.id]
+            lines.append(
+                f'    {network_id}["VLAN {_mermaid(downstream.vlan)}<br/>'
+                f'{_mermaid(downstream.cidr)}"]'
+            )
+            lines.append(
+                f'    {service_id}[["Bastion IP<br/>{_mermaid(downstream.bastion_address)}"]]'
+            )
+        lines.append("  end")
+
+    for external in external_jumps:
+        lines.append(f"  {host_ids[external.id]} -->|SSH| {host_ids[bastion.id]}")
+
+    for interface in topology.interfaces:
+        if interface.host in external_ids or interface.network not in network_ids:
+            continue
+        network = next(network for network in topology.networks if network.id == interface.network)
+        if network.kind == "downstream" or network not in visible_base_networks:
+            continue
+        lines.append(f"  {host_ids[interface.host]} --- {network_ids[interface.network]}")
+
+    for host in topology.hosts:
+        if host.id == bastion.id or host.id in external_ids:
+            continue
+        lines.append(f"  {host_ids[bastion.id]} -.->|SSH jump path| {host_ids[host.id]}")
+
+    for downstream in topology.downstream_networks:
+        lines.append(
+            f"  {host_ids[bastion.id]} ---|attached| {downstream_service_ids[downstream.id]}"
+        )
+
+    for rule in topology.connectivity_rules:
+        downstream = _downstream_for_endpoint(topology, rule.destination)
+        if rule.id.startswith("rancher-downstream-ssh:") and downstream is not None:
+            for source in rule.source.resolved:
+                if source.id in host_ids:
+                    lines.append(
+                        f"  {host_ids[source.id]} -->|{_mermaid(_protocol_port(rule))}| "
+                        f"{network_ids[downstream.id]}"
+                    )
+            continue
+        if rule.id.startswith("downstream-dns:") and downstream is not None:
+            lines.append(
+                f"  {network_ids[downstream.id]} -->|{_mermaid(_protocol_port(rule))} DNS| "
+                f"{downstream_service_ids[downstream.id]}"
+            )
+            continue
+        if rule.id.startswith("downstream-dhcp-request:"):
+            downstream = _downstream_for_endpoint(topology, rule.source)
+            if downstream is not None:
+                lines.append(
+                    f"  {network_ids[downstream.id]} -.->|DHCP {_mermaid(_protocol_port(rule))}| "
+                    f"{downstream_service_ids[downstream.id]}"
+                )
+
+    lines.extend(
+        [
+            "  classDef bastion fill:#f7c873,stroke:#5b4636,color:#201a16",
+            "  classDef rancher fill:#d8e8ff,stroke:#315a8a,color:#172433",
+            "  classDef monitoring fill:#d9f2e6,stroke:#39735a,color:#193326",
+            "  classDef network fill:#eeeeee,stroke:#666666,color:#222222",
+            "  classDef downstream fill:#f2e2ff,stroke:#76508f,color:#2e1f38",
+            f"  class {host_ids[bastion.id]} bastion",
+        ]
+    )
+    rancher_ids = [host_ids[host.id] for host in topology.hosts if "rancher" in host.roles]
+    monitoring_ids = [
+        host_ids[host.id]
+        for host in topology.hosts
+        if "prometheus" in host.roles or "monitoring" in host.roles
+    ]
+    if rancher_ids:
+        lines.append(f"  class {','.join(rancher_ids)} rancher")
+    if monitoring_ids:
+        lines.append(f"  class {','.join(monitoring_ids)} monitoring")
+    if visible_base_networks:
+        lines.append(
+            f"  class {','.join(network_ids[network.id] for network in visible_base_networks)} network"
+        )
+    downstream_ids = [
+        item
+        for downstream in topology.downstream_networks
+        for item in (network_ids[downstream.id], downstream_service_ids[downstream.id])
+    ]
+    if downstream_ids:
+        lines.append(f"  class {','.join(downstream_ids)} downstream")
+    return "\n".join(lines) + "\n"
+
+
 def render_topology_markdown(topology):
     metadata = topology.metadata
+    ascii_overview = render_topology_ascii(topology).rstrip()
+    mermaid = render_topology_mermaid(topology).rstrip()
     lines = [
         f"# Desired Topology: {metadata.environment_id}",
+        "",
+        "> Status: desired configuration only; runtime state and reachability are not verified.",
+        "",
+        "## ASCII Overview",
+        "",
+        "```text",
+        ascii_overview,
+        "```",
+        "",
+        "## Mermaid Topology",
+        "",
+        "```mermaid",
+        mermaid,
+        "```",
         "",
         "## Environment Overview",
         "",
@@ -579,31 +887,30 @@ def render_topology_markdown(topology):
     lines.extend(
         [
             "",
-            "## Bastion",
+            "## Interfaces",
             "",
-            f"Host {_markdown(metadata.bastion_host)} provides jump-host, DNS, DHCP, and proxy capabilities.",
-            "",
-            "| Interface | Network | Kind | Address | Addressing |",
-            "| --- | --- | --- | --- | --- |",
+            "| Host | Interface | Network | Kind | Address | Addressing |",
+            "| --- | --- | --- | --- | --- | --- |",
         ]
     )
     for interface in topology.interfaces:
-        if interface.host != metadata.bastion_host:
-            continue
         address = (
             f"{interface.address}/{interface.prefix}"
             if interface.address is not None and interface.prefix is not None
             else "unknown"
         )
         lines.append(
-            f"| {_markdown(interface.logical_name)} | {_markdown(interface.network)} | "
+            f"| {_markdown(interface.host)} | {_markdown(interface.logical_name)} | "
+            f"{_markdown(interface.network)} | "
             f"{_markdown(interface.network_kind)} | {_markdown(address)} | {_markdown(interface.addressing)} |"
         )
 
     lines.extend(
         [
             "",
-            "### Bastion Services",
+            "## Bastion Services",
+            "",
+            f"Host {_markdown(metadata.bastion_host)} provides jump-host, DNS, DHCP, and proxy capabilities.",
             "",
             "| Service | Network | Endpoint | Proto/Port | Purpose |",
             "| --- | --- | --- | --- | --- |",

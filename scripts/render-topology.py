@@ -7,7 +7,12 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from lib.env_config import load_env
-from lib.topology import build_desired_topology, render_topology_json, render_topology_markdown
+from lib.topology import (
+    build_desired_topology,
+    render_topology_json,
+    render_topology_markdown,
+    render_topology_mermaid,
+)
 
 
 def write_private_text(path, content):
@@ -35,10 +40,13 @@ def main():
     output_dir = Path(args.output_dir)
     json_path = output_dir / "topology.json"
     markdown_path = output_dir / "topology.md"
+    mermaid_path = output_dir / "topology.mmd"
     write_private_text(json_path, render_topology_json(topology))
     write_private_text(markdown_path, render_topology_markdown(topology))
+    write_private_text(mermaid_path, render_topology_mermaid(topology))
     print(json_path)
     print(markdown_path)
+    print(mermaid_path)
 
 
 if __name__ == "__main__":

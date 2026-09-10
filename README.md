@@ -443,10 +443,13 @@ make -f rinstall/Makefile topology
 ```
 
 The target does not run Terraform or pyinfra and does not require provisioned
-infrastructure. In an instance repository it writes `.rinstall/topology.json`
-and `.rinstall/topology.md`; standalone engine use writes under
-`build/<environment.id>/`. Both files come from the same normalized desired
-topology object and have mode `0600` in a mode-`0700` runtime directory.
+infrastructure. In an instance repository it writes `.rinstall/topology.json`,
+`.rinstall/topology.md`, and standalone Mermaid source at
+`.rinstall/topology.mmd`; standalone engine use writes the same files under
+`build/<environment.id>/`. All representations come from the same normalized
+desired topology object and have mode `0600` in a mode-`0700` runtime directory.
+The Markdown report begins with a compact plain-text overview and an embedded
+copy of the Mermaid diagram before its detailed support tables.
 
 The output includes expanded hosts and roles, local/customer and management
 interfaces, downstream VLANs and DHCP pools, bastion DNS/DHCP/proxy services,

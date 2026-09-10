@@ -1,4 +1,5 @@
 from copy import deepcopy
+from dataclasses import replace
 import json
 from pathlib import Path
 import subprocess
@@ -7,7 +8,14 @@ import sys
 import yaml
 
 from lib.env_config import expand_env
-from lib.topology import build_desired_topology, render_topology_json, render_topology_markdown
+from lib.topology import (
+    HostTopology,
+    build_desired_topology,
+    render_topology_ascii,
+    render_topology_json,
+    render_topology_markdown,
+    render_topology_mermaid,
+)
 
 
 ROOT = Path(__file__).parents[1]
@@ -36,6 +44,11 @@ def topology_with(*downstreams):
     config = raw_config()
     config["bastion"]["downstream_networks"] = list(downstreams)
     return build_desired_topology(expand_env(config))
+
+
+def mermaid_node_id(rendered, label_fragment):
+    line = next(line for line in rendered.splitlines() if label_fragment in line)
+    return line.strip().split("[", 1)[0]
 
 
 def test_topology_includes_expanded_hosts_roles_and_static_addresses():
@@ -178,6 +191,96 @@ def test_json_and_markdown_share_one_topology_and_are_deterministic():
     assert "TCP 22" in first_markdown
 
 
+def test_ascii_and_mermaid_are_deterministic_and_embedded_from_same_topology():
+    topology = topology_with(downstream_network(565, "10.20.56.32/27"))
+
+    ascii_overview = render_topology_ascii(topology)
+    mermaid = render_topology_mermaid(topology)
+    markdown = render_topology_markdown(topology)
+
+    assert render_topology_ascii(topology) == ascii_overview
+    assert render_topology_mermaid(topology) == mermaid
+    assert f"```text\n{ascii_overview.rstrip()}\n```" in markdown
+    assert f"```mermaid\n{mermaid.rstrip()}\n```" in markdown
+    assert "Bastion: bastion1 (10.14.17.4)" in ascii_overview
+    assert "+-- management management: 192.0.2.0/24" in ascii_overview
+    assert "+-- downstream VLAN 565: 10.20.56.32/27, bastion 10.20.56.34" in ascii_overview
+    assert "- rancher: rancher1 (10.14.17.11)" in ascii_overview
+    assert "- prometheus: prom1 (10.14.17.6)" in ascii_overview
+    assert "TCP/UDP 53" in ascii_overview
+    assert "TCP 22" in ascii_overview
+
+
+def test_mermaid_shows_all_core_nodes_and_same_vlan_relationships():
+    topology = topology_with(
+        downstream_network(565, "10.20.56.32/27"),
+        downstream_network(566, "10.20.56.64/27"),
+    )
+
+    mermaid = render_topology_mermaid(topology)
+
+    assert all(host in mermaid for host in ("rancher1", "rancher2", "rancher3", "prom1", "bastion1"))
+    assert mermaid.count(">|TCP 22|") == 6
+    assert mermaid.count(">|TCP/UDP 53 DNS|") == 2
+    assert mermaid.count(">|DHCP UDP 68 -&gt; 67|") == 2
+    for vlan, cidr, bastion_address in (
+        (565, "10.20.56.32/27", "10.20.56.34"),
+        (566, "10.20.56.64/27", "10.20.56.66"),
+    ):
+        network_id = mermaid_node_id(mermaid, f"VLAN {vlan}<br/>{cidr}")
+        bastion_ip_id = mermaid_node_id(mermaid, f"Bastion IP<br/>{bastion_address}")
+        assert f"{network_id} -->|TCP/UDP 53 DNS| {bastion_ip_id}" in mermaid
+        for rancher in ("rancher1", "rancher2", "rancher3"):
+            rancher_id = mermaid_node_id(mermaid, f"Rancher<br/>{rancher}<br/>")
+            assert f"{rancher_id} -->|TCP 22| {network_id}" in mermaid
+
+
+def test_mermaid_supports_arbitrary_rancher_names_and_safe_ids():
+    config = raw_config()
+    config["local"]["rancher_nodes"]["name_prefix"] = 'control.east/"] {'
+    config["local"]["rancher_nodes"]["count"] = 2
+    topology = build_desired_topology(expand_env(config))
+
+    mermaid = render_topology_mermaid(topology)
+
+    assert mermaid.count("Rancher<br/>") == 2
+    assert 'control.east/\"] {1' not in mermaid
+    assert "&quot;&#93; &#123;1" in mermaid
+    for line in mermaid.splitlines():
+        if "Rancher<br/>" not in line:
+            continue
+        node_id = line.strip().split("[", 1)[0]
+        assert node_id.replace("_", "").isalnum()
+        assert "/" not in node_id
+        assert '"' not in node_id
+        assert "]" not in node_id
+
+
+def test_mermaid_shows_external_jump_only_when_topology_represents_it():
+    topology = topology_with()
+    external = HostTopology(
+        id="operator.jump/eu-1",
+        hostname="operator.jump/eu-1",
+        fqdn="operator.jump/eu-1",
+        roles=("external-jump",),
+        capabilities=("jump-host",),
+        primary_ip=None,
+        local_ip=None,
+        management_ip=None,
+        ssh_target="192.0.2.200",
+    )
+    represented = replace(topology, hosts=(external, *topology.hosts))
+
+    without_external = render_topology_mermaid(topology)
+    with_external = render_topology_mermaid(represented)
+
+    assert "External jump" not in without_external
+    assert "External jump<br/>operator.jump/eu-1<br/>192.0.2.200" in with_external
+    external_id = mermaid_node_id(with_external, "External jump<br/>")
+    bastion_id = mermaid_node_id(with_external, "Bastion / jump<br/>")
+    assert f"{external_id} -->|SSH| {bastion_id}" in with_external
+
+
 def test_topology_outputs_exclude_sensitive_config_values(tmp_path):
     config = raw_config()
     secrets = [
@@ -207,18 +310,25 @@ def test_topology_outputs_exclude_sensitive_config_values(tmp_path):
     )
     first_json = (output_dir / "topology.json").read_bytes()
     first_markdown = (output_dir / "topology.md").read_bytes()
+    first_mermaid = (output_dir / "topology.mmd").read_bytes()
     subprocess.run(
         command,
         check=True,
     )
 
-    outputs = (output_dir / "topology.json").read_text() + (output_dir / "topology.md").read_text()
+    outputs = (
+        (output_dir / "topology.json").read_text()
+        + (output_dir / "topology.md").read_text()
+        + (output_dir / "topology.mmd").read_text()
+    )
     assert (output_dir / "topology.json").read_bytes() == first_json
     assert (output_dir / "topology.md").read_bytes() == first_markdown
+    assert (output_dir / "topology.mmd").read_bytes() == first_mermaid
     assert all(secret not in outputs for secret in secrets)
     assert output_dir.stat().st_mode & 0o777 == 0o700
     assert (output_dir / "topology.json").stat().st_mode & 0o777 == 0o600
     assert (output_dir / "topology.md").stat().st_mode & 0o777 == 0o600
+    assert (output_dir / "topology.mmd").stat().st_mode & 0o777 == 0o600
 
 
 def test_markdown_escapes_configured_table_values():
