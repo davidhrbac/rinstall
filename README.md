@@ -76,8 +76,8 @@ static customer and management addressing, the expanded three-node Rancher
 pool, Prometheus, two downstream VLANs, bastion DNS/DHCP/proxy settings,
 connection aliases, vSphere placement, RKE2, Rancher, and sanitized SSH
 topology metadata. Its generated public topology examples are kept beside it
-as `topology.json`, `topology.md`, and `topology.mmd`; they are rendered by the
-normal topology generator and contain synthetic values only.
+as `topology.json`, `topology.md`, `topology.mmd`, and `connectivity.mmd`; they
+are rendered by the normal topology generator and contain synthetic values only.
 The `ssh.jump_host` value is intentionally only a safe OpenSSH alias: its real
 definition remains in the operator's SSH config and is therefore not rendered
 as an external node in desired topology output.
@@ -455,12 +455,13 @@ make -f rinstall/Makefile topology
 
 The target does not run Terraform or pyinfra and does not require provisioned
 infrastructure. In an instance repository it writes `.rinstall/topology.json`,
-`.rinstall/topology.md`, and standalone Mermaid source at
-`.rinstall/topology.mmd`; standalone engine use writes the same files under
+`.rinstall/topology.md`, and standalone Mermaid sources at
+`.rinstall/topology.mmd` and `.rinstall/connectivity.mmd`; standalone engine use writes the same files under
 `build/<environment.id>/`. All representations come from the same normalized
 desired topology object and have mode `0600` in a mode-`0700` runtime directory.
-The Markdown report begins with a compact plain-text overview and an embedded
-copy of the Mermaid diagram before its detailed support tables.
+The Markdown report begins with the infrastructure Mermaid diagram and compact
+plain-text overview, then embeds the required-connectivity Mermaid diagram
+before its detailed support tables.
 
 The output includes expanded hosts and roles, local/customer and management
 interfaces, downstream VLANs and DHCP pools, bastion DNS/DHCP/proxy services,

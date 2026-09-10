@@ -3,10 +3,10 @@ import json
 
 from lib.env_config import load_env
 from lib.topology import (
-    render_topology_ascii,
     render_topology_json,
     render_topology_markdown,
-    render_topology_mermaid,
+    render_topology_connectivity_mermaid,
+    render_topology_infrastructure_mermaid,
     build_desired_topology,
 )
 
@@ -56,7 +56,8 @@ def test_full_reference_generated_outputs_are_deterministic_and_sanitized():
     expected = {
         "topology.json": render_topology_json(topology),
         "topology.md": render_topology_markdown(topology),
-        "topology.mmd": render_topology_mermaid(topology),
+        "topology.mmd": render_topology_infrastructure_mermaid(topology),
+        "connectivity.mmd": render_topology_connectivity_mermaid(topology),
     }
 
     assert all((REFERENCE_OUTPUT / name).read_text() == content for name, content in expected.items())
@@ -70,10 +71,12 @@ def test_full_reference_generated_outputs_are_deterministic_and_sanitized():
 def test_full_reference_outputs_show_both_downstream_visual_attachments():
     markdown = (REFERENCE_OUTPUT / "topology.md").read_text()
     mermaid = (REFERENCE_OUTPUT / "topology.mmd").read_text()
+    connectivity = (REFERENCE_OUTPUT / "connectivity.mmd").read_text()
 
     assert "VLAN 565" in markdown and "VLAN 566" in markdown
     assert "203.0.113.34" in markdown and "203.0.113.66" in markdown
-    assert mermaid.count(">|TCP 22|") == 6
-    assert mermaid.count(">|TCP/UDP 53 DNS|") == 2
+    assert mermaid.count('-->|"TCP 22"|') == 0
+    assert connectivity.count('-->|"TCP 22"|') == 2
+    assert connectivity.count('-->|"DNS TCP/UDP 53 @') == 2
     assert "network_downstream_vlan565" in mermaid
     assert "network_downstream_vlan566" in mermaid

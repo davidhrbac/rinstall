@@ -11,7 +11,8 @@ from lib.topology import (
     build_desired_topology,
     render_topology_json,
     render_topology_markdown,
-    render_topology_mermaid,
+    render_topology_infrastructure_mermaid,
+    render_topology_connectivity_mermaid,
 )
 
 
@@ -40,13 +41,16 @@ def main():
     output_dir = Path(args.output_dir)
     json_path = output_dir / "topology.json"
     markdown_path = output_dir / "topology.md"
-    mermaid_path = output_dir / "topology.mmd"
+    infrastructure_mermaid_path = output_dir / "topology.mmd"
+    connectivity_mermaid_path = output_dir / "connectivity.mmd"
     write_private_text(json_path, render_topology_json(topology))
     write_private_text(markdown_path, render_topology_markdown(topology))
-    write_private_text(mermaid_path, render_topology_mermaid(topology))
+    write_private_text(infrastructure_mermaid_path, render_topology_infrastructure_mermaid(topology))
+    write_private_text(connectivity_mermaid_path, render_topology_connectivity_mermaid(topology))
     print(json_path)
     print(markdown_path)
-    print(mermaid_path)
+    print(infrastructure_mermaid_path)
+    print(connectivity_mermaid_path)
 
 
 if __name__ == "__main__":

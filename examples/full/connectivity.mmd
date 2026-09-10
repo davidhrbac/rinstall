@@ -1,0 +1,17 @@
+flowchart LR
+  rancher_group[["Rancher nodes (3)<br/>rancher1, rancher2, rancher3"]]
+  bastion["Bastion<br/>bastion1<br/>198.51.100.4"]
+  network_downstream_vlan565_8ed6786137["VLAN 565<br/>203.0.113.32/27<br/>bastion 203.0.113.34"]
+  rancher_group -->|"TCP 22"| network_downstream_vlan565_8ed6786137
+  network_downstream_vlan565_8ed6786137 -->|"DNS TCP/UDP 53 @ 203.0.113.34"| bastion
+  network_downstream_vlan565_8ed6786137 -.->|"logical DHCP service @ 203.0.113.34 (UDP 67/68)"| bastion
+  network_downstream_vlan566_d2bd8ff235["VLAN 566<br/>203.0.113.64/27<br/>bastion 203.0.113.66"]
+  rancher_group -->|"TCP 22"| network_downstream_vlan566_d2bd8ff235
+  network_downstream_vlan566_d2bd8ff235 -->|"DNS TCP/UDP 53 @ 203.0.113.66"| bastion
+  network_downstream_vlan566_d2bd8ff235 -.->|"logical DHCP service @ 203.0.113.66 (UDP 67/68)"| bastion
+  classDef bastion fill:#f7c873,stroke:#5b4636,color:#201a16
+  classDef rancher fill:#d8e8ff,stroke:#315a8a,color:#172433
+  classDef downstream fill:#f2e2ff,stroke:#76508f,color:#2e1f38
+  class bastion bastion
+  class rancher_group rancher
+  class network_downstream_vlan565_8ed6786137,network_downstream_vlan566_d2bd8ff235 downstream
