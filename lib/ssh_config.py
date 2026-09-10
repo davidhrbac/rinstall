@@ -22,18 +22,30 @@ def proxy_command_via(proxy_jump):
     return f"ssh -F ~/.ssh/config -J {','.join(hops[:-1])} -W %h:%p {hops[-1]}"
 
 
-def node_proxy_command(config, node_name, node, known_hosts_file=None):
+def node_ssh_hops(config, node_name, node):
     ssh = config.get("ssh", {})
     jump_host = ssh.get("jump_host")
     if not jump_host:
-        return None
+        return ()
 
     jump_alias = jump_host if isinstance(jump_host, str) else jump_host.get("alias", "rancher-env-jump")
     bastion_name = config["bastion"]["service_node"]
-    bastion_proxy_roles = set(ssh.get("bastion_proxy_roles", []))
-    if node["role"] not in bastion_proxy_roles or node_name == bastion_name:
+    if node_name == bastion_name or node["role"] not in set(ssh.get("bastion_proxy_roles", [])):
+        return (jump_alias,)
+    return (jump_alias, bastion_name)
+
+
+def node_proxy_command(config, node_name, node, known_hosts_file=None):
+    hops = node_ssh_hops(config, node_name, node)
+    if not hops:
+        return None
+
+    jump_alias = hops[0]
+    if len(hops) == 1:
         return proxy_command_via(jump_alias)
 
+    ssh = config.get("ssh", {})
+    bastion_name = config["bastion"]["service_node"]
     bastion_node = config["nodes"][bastion_name]
     bastion_ssh_target = node_ssh_target(bastion_node)
     ssh_user = ssh.get("user", "root")

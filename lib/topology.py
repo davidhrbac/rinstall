@@ -4,11 +4,38 @@ from html import escape
 from ipaddress import ip_interface, ip_network
 import json
 import re
+from urllib.parse import urlparse
+
+from lib.env_config import gitlab_backend_state_address
+from lib.ssh_config import node_ssh_hops, node_ssh_target
 
 RINSTALL_ARCHITECTURE = "RINSTALL_ARCHITECTURE"
 RINSTALL_CODE = "RINSTALL_CODE"
 UPSTREAM_PROTOCOL = "UPSTREAM_PROTOCOL"
 EXTERNAL_UNVERIFIED = "external/unverified"
+
+RINSTALL_MANAGED = "RINSTALL_MANAGED"
+RINSTALL_CONFIGURED = "RINSTALL_CONFIGURED"
+REFERENCED_EXTERNAL = "REFERENCED_EXTERNAL"
+EXTERNALLY_MANAGED = "EXTERNALLY_MANAGED"
+SYMBOLIC = "SYMBOLIC"
+
+CONFIGURED = "CONFIGURED"
+DERIVED = "DERIVED"
+UPSTREAM_REQUIREMENT = "UPSTREAM_REQUIREMENT"
+EXTERNAL = "EXTERNAL"
+
+RESOLVED = "RESOLVED"
+EXTERNAL_UNRESOLVED = "EXTERNAL_UNRESOLVED"
+RUNTIME_SUPPLIED = "RUNTIME_SUPPLIED"
+
+DESIRED_ONLY = "DESIRED_ONLY"
+
+
+@dataclass(frozen=True)
+class EntityReference:
+    kind: str
+    id: str
 
 
 @dataclass(frozen=True)
@@ -34,6 +61,11 @@ class HostTopology:
     local_ip: str | None
     management_ip: str | None
     ssh_target: str | None
+    service_status: str | None = None
+    ownership: str = RINSTALL_MANAGED
+    provenance: str = DERIVED
+    resolution: str = RESOLVED
+    verification: str = DESIRED_ONLY
 
 
 @dataclass(frozen=True)
@@ -47,6 +79,10 @@ class InterfaceTopology:
     address: str | None
     prefix: int | None
     addressing: str
+    ownership: str = RINSTALL_MANAGED
+    provenance: str = DERIVED
+    resolution: str = RESOLVED
+    verification: str = DESIRED_ONLY
 
 
 @dataclass(frozen=True)
@@ -58,6 +94,10 @@ class NetworkTopology:
     vmware_network: str
     gateway: str | None
     interface_ids: tuple[str, ...]
+    ownership: str = REFERENCED_EXTERNAL
+    provenance: str = CONFIGURED
+    resolution: str = RESOLVED
+    verification: str = DESIRED_ONLY
 
 
 @dataclass(frozen=True)
@@ -82,6 +122,14 @@ class DownstreamNetworkTopology:
     dhcp_end: str
     dhcp_lease: str
     lifecycle: LifecyclePolicy
+    interface_id: str | None = None
+    gateway_endpoint_id: str | None = None
+    bastion_is_router: bool = False
+    ownership: str = RINSTALL_CONFIGURED
+    lifecycle_ownership: str = EXTERNALLY_MANAGED
+    provenance: str = DERIVED
+    resolution: str = RESOLVED
+    verification: str = DESIRED_ONLY
 
 
 @dataclass(frozen=True)
@@ -94,12 +142,18 @@ class ServiceTopology:
     protocols: tuple[str, ...]
     ports: tuple[int, ...]
     purpose: str
+    interface_id: str | None = None
+    ownership: str = RINSTALL_CONFIGURED
+    provenance: str = RINSTALL_ARCHITECTURE
+    resolution: str = RESOLVED
+    verification: str = DESIRED_ONLY
 
 
 @dataclass(frozen=True)
 class ResolvedEndpoint:
     id: str
     address: str
+    reference: EntityReference | None = None
 
 
 @dataclass(frozen=True)
@@ -120,6 +174,153 @@ class ConnectivityRule:
     requirement_sources: tuple[str, ...]
     required: bool
     verification_status: str
+    provenance: str = RINSTALL_ARCHITECTURE
+
+
+@dataclass(frozen=True)
+class ClusterTopology:
+    id: str
+    kind: str
+    member_host_ids: tuple[str, ...]
+    primary_host_id: str
+    join_host_ids: tuple[str, ...]
+    endpoint_ids: tuple[str, ...]
+    versions: dict[str, str]
+    ownership: str = RINSTALL_CONFIGURED
+    provenance: str = DERIVED
+    resolution: str = RESOLVED
+    verification: str = DESIRED_ONLY
+
+
+@dataclass(frozen=True)
+class EndpointResolutionTopology:
+    scope: str
+    addresses: tuple[str, ...]
+    ownership: str
+    provenance: str
+    resolution: str
+    verification: str = DESIRED_ONLY
+    reason: str | None = None
+
+
+@dataclass(frozen=True)
+class EndpointTopology:
+    id: str
+    kind: str
+    name: str
+    protocols: tuple[str, ...]
+    ports: tuple[int, ...]
+    cluster_id: str | None
+    resolutions: tuple[EndpointResolutionTopology, ...]
+    ownership: str
+    provenance: str
+    resolution: str
+    verification: str = DESIRED_ONLY
+
+
+@dataclass(frozen=True)
+class ActorTopology:
+    id: str
+    kind: str
+    ownership: str
+    provenance: str
+    resolution: str
+    verification: str = DESIRED_ONLY
+
+
+@dataclass(frozen=True)
+class AccessPathTopology:
+    id: str
+    source_actor_id: str
+    destination: EntityReference
+    hops: tuple[EntityReference, ...]
+    protocol: str
+    destination_port: int
+    target: str
+    ownership: str = RINSTALL_CONFIGURED
+    provenance: str = DERIVED
+    resolution: str = RESOLVED
+    verification: str = EXTERNAL_UNVERIFIED
+
+
+@dataclass(frozen=True)
+class DownstreamConsumerTopology:
+    id: str
+    kind: str
+    network_id: str
+    address_start: str
+    address_end: str
+    identities_known: bool
+    lifecycle: str
+    gateway_endpoint_id: str
+    ownership: str = EXTERNALLY_MANAGED
+    provenance: str = RINSTALL_ARCHITECTURE
+    resolution: str = SYMBOLIC
+    verification: str = EXTERNAL_UNVERIFIED
+
+
+@dataclass(frozen=True)
+class DeploymentMappingTopology:
+    id: str
+    value: str
+    ownership: str = REFERENCED_EXTERNAL
+    provenance: str = CONFIGURED
+    resolution: str = RESOLVED
+
+
+@dataclass(frozen=True)
+class VsphereRouteTopology:
+    destination: str
+    gateway: str
+    connection: str
+    ownership: str = RINSTALL_CONFIGURED
+    provenance: str = CONFIGURED
+    resolution: str = RESOLVED
+    verification: str = EXTERNAL_UNVERIFIED
+
+
+@dataclass(frozen=True)
+class VsphereDeploymentTopology:
+    endpoint_id: str
+    datacenter: str
+    datastore: str
+    resource_pool: str
+    folder: str
+    templates: tuple[DeploymentMappingTopology, ...]
+    networks: tuple[DeploymentMappingTopology, ...]
+    route: VsphereRouteTopology
+    clone_timeout_minutes: int
+    allow_unverified_ssl: bool
+    ownership: str = REFERENCED_EXTERNAL
+    provenance: str = CONFIGURED
+    resolution: str = RUNTIME_SUPPLIED
+    verification: str = EXTERNAL_UNVERIFIED
+
+
+@dataclass(frozen=True)
+class TerraformBackendTopology:
+    endpoint_id: str
+    type: str
+    url: str
+    project_id: int
+    state_name: str
+    state_address: str
+    ownership: str = REFERENCED_EXTERNAL
+    provenance: str = DERIVED
+    resolution: str = RESOLVED
+    verification: str = EXTERNAL_UNVERIFIED
+
+
+@dataclass(frozen=True)
+class DeploymentContextTopology:
+    execution_actor_id: str
+    terraform_root: str
+    vsphere: VsphereDeploymentTopology
+    terraform_backend: TerraformBackendTopology
+    ownership: str = RINSTALL_CONFIGURED
+    provenance: str = DERIVED
+    resolution: str = RESOLVED
+    verification: str = DESIRED_ONLY
 
 
 @dataclass(frozen=True)
@@ -144,9 +345,25 @@ class EnvironmentTopology:
     downstream_networks: tuple[DownstreamNetworkTopology, ...]
     connectivity_rules: tuple[ConnectivityRule, ...]
     notes: tuple[str, ...]
+    clusters: tuple[ClusterTopology, ...] = ()
+    endpoints: tuple[EndpointTopology, ...] = ()
+    actors: tuple[ActorTopology, ...] = ()
+    access_paths: tuple[AccessPathTopology, ...] = ()
+    downstream_consumers: tuple[DownstreamConsumerTopology, ...] = ()
+    deployment_context: DeploymentContextTopology | None = None
 
     def to_dict(self):
         return _json_value(asdict(self))
+
+    @property
+    def renderer_connectivity_rules(self):
+        prefixes = (
+            "downstream-dns:",
+            "rancher-downstream-ssh:",
+            "downstream-dhcp-request:",
+            "downstream-dhcp-response:",
+        )
+        return tuple(rule for rule in self.connectivity_rules if rule.id.startswith(prefixes))
 
 
 DOWNSTREAM_DNS_RULE = ArchitectureRule(
@@ -217,8 +434,8 @@ def _single_network_cidr(interfaces):
     return next(iter(cidrs)) if len(cidrs) == 1 else None
 
 
-def _service_network(address, interfaces):
-    return next((interface.network for interface in interfaces if interface.address == address), None)
+def _service_interface(address, interfaces):
+    return next((interface for interface in interfaces if interface.address == address), None)
 
 
 def _endpoint_text(endpoint):
@@ -303,6 +520,324 @@ def _downstream_for_endpoint(topology, endpoint):
     )
 
 
+def validate_topology(topology):
+    collections = {
+        "host": topology.hosts,
+        "interface": topology.interfaces,
+        "network": topology.networks,
+        "service": topology.services,
+        "downstream-network": topology.downstream_networks,
+        "cluster": topology.clusters,
+        "endpoint": topology.endpoints,
+        "actor": topology.actors,
+        "access-path": topology.access_paths,
+        "downstream-consumer": topology.downstream_consumers,
+        "connectivity-rule": topology.connectivity_rules,
+    }
+    indexes = {}
+    for kind, items in collections.items():
+        index = {}
+        for item in items:
+            if item.id in index:
+                raise ValueError(f"invalid topology: duplicate {kind} id {item.id}")
+            index[item.id] = item
+        indexes[kind] = index
+
+    def resolve(reference, context):
+        if reference.kind not in indexes:
+            raise ValueError(
+                f"invalid topology: {context} references unsupported kind {reference.kind}"
+            )
+        if reference.id not in indexes[reference.kind]:
+            raise ValueError(
+                f"invalid topology: {context} references missing {reference.kind} {reference.id}"
+            )
+        return indexes[reference.kind][reference.id]
+
+    hosts = indexes["host"]
+    interfaces = indexes["interface"]
+    networks = indexes["network"]
+    services = indexes["service"]
+    endpoints = indexes["endpoint"]
+    consumers = indexes["downstream-consumer"]
+
+    if topology.metadata.bastion_host not in hosts:
+        raise ValueError(
+            f"invalid topology: missing bastion host {topology.metadata.bastion_host}"
+        )
+    for interface in topology.interfaces:
+        if interface.host not in hosts:
+            raise ValueError(
+                f"invalid topology: interface {interface.id} references missing host {interface.host}"
+            )
+        if interface.network not in networks:
+            raise ValueError(
+                f"invalid topology: interface {interface.id} references missing network {interface.network}"
+            )
+    for network in topology.networks:
+        expected = tuple(
+            interface.id for interface in topology.interfaces if interface.network == network.id
+        )
+        if network.interface_ids != expected:
+            raise ValueError(
+                f"invalid topology: network {network.id} interface references do not match interfaces"
+            )
+        for interface_id in network.interface_ids:
+            if interface_id not in interfaces:
+                raise ValueError(
+                    f"invalid topology: network {network.id} references missing interface {interface_id}"
+                )
+    for service in topology.services:
+        if service.host not in hosts:
+            raise ValueError(
+                f"invalid topology: service {service.id} references missing host {service.host}"
+            )
+        if service.network is not None and service.network not in networks:
+            raise ValueError(
+                f"invalid topology: service {service.id} references missing network {service.network}"
+            )
+        if service.interface_id is not None:
+            if service.interface_id not in interfaces:
+                raise ValueError(
+                    f"invalid topology: service {service.id} references missing interface {service.interface_id}"
+                )
+            interface = interfaces[service.interface_id]
+            if (
+                interface.host != service.host
+                or interface.network != service.network
+                or interface.address != service.address
+            ):
+                raise ValueError(
+                    f"invalid topology: service {service.id} interface binding is inconsistent"
+                )
+
+    if set(consumers) != {f"consumer:{downstream.id}" for downstream in topology.downstream_networks}:
+        raise ValueError(
+            "invalid topology: exactly one symbolic downstream consumer is required per downstream network"
+        )
+    for downstream in topology.downstream_networks:
+        if downstream.id not in networks:
+            raise ValueError(
+                f"invalid topology: downstream network {downstream.id} has no network entity"
+            )
+        if downstream.interface_id not in interfaces:
+            raise ValueError(
+                f"invalid topology: downstream network {downstream.id} has no bastion interface"
+            )
+        interface = interfaces[downstream.interface_id]
+        network = networks[downstream.id]
+        if (
+            interface.host != downstream.bastion_host
+            or interface.network != downstream.id
+            or interface.address != downstream.bastion_address
+            or network.cidr != downstream.cidr
+            or network.gateway != downstream.gateway
+            or network.vlan != downstream.vlan
+        ):
+            raise ValueError(
+                f"invalid topology: downstream network {downstream.id} references are inconsistent"
+            )
+        consumer = consumers[f"consumer:{downstream.id}"]
+        if (
+            consumer.network_id != downstream.id
+            or consumer.address_start != downstream.dhcp_start
+            or consumer.address_end != downstream.dhcp_end
+            or consumer.gateway_endpoint_id != downstream.gateway_endpoint_id
+        ):
+            raise ValueError(
+                f"invalid topology: downstream consumer {consumer.id} does not match {downstream.id}"
+            )
+        gateway = endpoints.get(downstream.gateway_endpoint_id)
+        if gateway is None or gateway.kind != "downstream-gateway":
+            raise ValueError(
+                f"invalid topology: downstream network {downstream.id} gateway endpoint is missing"
+            )
+        if downstream.bastion_is_router:
+            raise ValueError(
+                f"invalid topology: bastion cannot be the router for {downstream.id}"
+            )
+
+    for cluster in topology.clusters:
+        for host_id in cluster.member_host_ids:
+            if host_id not in hosts:
+                raise ValueError(
+                    f"invalid topology: cluster {cluster.id} references missing host {host_id}"
+                )
+        if cluster.primary_host_id not in cluster.member_host_ids:
+            raise ValueError(
+                f"invalid topology: cluster {cluster.id} primary {cluster.primary_host_id} is not a member"
+            )
+        expected_joins = tuple(
+            host_id for host_id in cluster.member_host_ids if host_id != cluster.primary_host_id
+        )
+        if cluster.join_host_ids != expected_joins:
+            raise ValueError(f"invalid topology: cluster {cluster.id} join members are inconsistent")
+        if cluster.kind == "rke2-rancher-control-cluster" and cluster.member_host_ids != tuple(
+            host.id for host in topology.hosts if "rancher" in host.roles
+        ):
+            raise ValueError(
+                f"invalid topology: cluster {cluster.id} members do not match Rancher-role hosts"
+            )
+        for endpoint_id in cluster.endpoint_ids:
+            if endpoint_id not in endpoints:
+                raise ValueError(
+                    f"invalid topology: cluster {cluster.id} references missing endpoint {endpoint_id}"
+                )
+    for endpoint in topology.endpoints:
+        if endpoint.cluster_id is not None:
+            cluster = indexes["cluster"].get(endpoint.cluster_id)
+            if cluster is None or endpoint.id not in cluster.endpoint_ids:
+                raise ValueError(
+                    f"invalid topology: endpoint {endpoint.id} cluster reference is inconsistent"
+                )
+
+    for path in topology.access_paths:
+        if path.source_actor_id not in indexes["actor"]:
+            raise ValueError(
+                f"invalid topology: access path {path.id} references missing actor {path.source_actor_id}"
+            )
+        destination = resolve(path.destination, f"access path {path.id} destination")
+        if path.destination.kind != "host" or destination.ssh_target != path.target:
+            raise ValueError(
+                f"invalid topology: access path {path.id} destination target is inconsistent"
+            )
+        for hop in path.hops:
+            resolved_hop = resolve(hop, f"access path {path.id} hop")
+            if hop.kind == "host" and resolved_hop.id != topology.metadata.bastion_host:
+                raise ValueError(
+                    f"invalid topology: access path {path.id} internal hop is not the bastion"
+                )
+        if path.destination in path.hops:
+            raise ValueError(f"invalid topology: access path {path.id} contains its destination as a hop")
+    if len(topology.access_paths) != len(hosts) or {
+        path.destination.id for path in topology.access_paths
+    } != set(hosts):
+        raise ValueError("invalid topology: exactly one administrative access path is required per host")
+
+    for rule in topology.connectivity_rules:
+        for side_name, side in (("source", rule.source), ("destination", rule.destination)):
+            for resolved in side.resolved:
+                if resolved.reference is None:
+                    raise ValueError(
+                        f"invalid topology: connectivity rule {rule.id} {side_name} has no entity reference"
+                    )
+                resolve(resolved.reference, f"connectivity rule {rule.id} {side_name}")
+
+    rancher_hosts = tuple(host.id for host in topology.hosts if "rancher" in host.roles)
+    rancher_endpoint = next(
+        (endpoint for endpoint in topology.endpoints if endpoint.kind == "rancher-https"), None
+    )
+    if rancher_endpoint is None:
+        raise ValueError("invalid topology: Rancher HTTPS endpoint is missing")
+    local_resolution = next(
+        (item for item in rancher_endpoint.resolutions if item.scope == "local"), None
+    )
+    expected_local_addresses = tuple(
+        hosts[host_id].local_ip or hosts[host_id].primary_ip or "unknown"
+        for host_id in rancher_hosts
+    )
+    if local_resolution is None or local_resolution.addresses != expected_local_addresses:
+        raise ValueError("invalid topology: Rancher local endpoint resolution is inconsistent")
+    external_resolution = next(
+        (item for item in rancher_endpoint.resolutions if item.scope == "external"), None
+    )
+    if (
+        external_resolution is None
+        or external_resolution.addresses
+        or external_resolution.resolution != EXTERNAL_UNRESOLVED
+    ):
+        raise ValueError("invalid topology: Rancher external endpoint must remain unresolved")
+
+    for downstream in topology.downstream_networks:
+        dns_rule_id = f"downstream-dns:{downstream.interface_name}"
+        ssh_rule_id = f"rancher-downstream-ssh:{downstream.interface_name}"
+        if dns_rule_id not in indexes["connectivity-rule"]:
+            raise ValueError(f"invalid topology: missing same-VLAN DNS rule {dns_rule_id}")
+        dns_rule = indexes["connectivity-rule"][dns_rule_id]
+        dns_service = services.get(f"dns:{downstream.interface_name}")
+        if dns_service is None:
+            raise ValueError(
+                f"invalid topology: downstream network {downstream.id} has no DNS service"
+            )
+        if (
+            dns_rule.source.resolved[0].reference
+            != EntityReference("downstream-consumer", f"consumer:{downstream.id}")
+            or
+            dns_rule.destination.resolved[0].reference
+            != EntityReference("service", dns_service.id)
+            or dns_rule.destination.resolved[0].address != downstream.bastion_address
+            or dns_rule.protocols != ("TCP", "UDP")
+            or dns_rule.destination_ports != (53,)
+        ):
+            raise ValueError(f"invalid topology: same-VLAN DNS rule {dns_rule_id} is inconsistent")
+        if ssh_rule_id not in indexes["connectivity-rule"]:
+            raise ValueError(f"invalid topology: missing Rancher SSH rule {ssh_rule_id}")
+        ssh_rule = indexes["connectivity-rule"][ssh_rule_id]
+        if tuple(item.reference.id for item in ssh_rule.source.resolved) != rancher_hosts:
+            raise ValueError(f"invalid topology: Rancher SSH rule {ssh_rule_id} has incomplete sources")
+        consumer_id = f"consumer:{downstream.id}"
+        if ssh_rule.destination.resolved[0].reference != EntityReference(
+            "downstream-consumer", consumer_id
+        ):
+            raise ValueError(f"invalid topology: Rancher SSH rule {ssh_rule_id} has wrong consumer")
+        for direction, source_reference, destination_reference, source_ports, destination_ports in (
+            (
+                "request",
+                EntityReference("downstream-consumer", consumer_id),
+                EntityReference("service", f"dhcp:{downstream.interface_name}"),
+                (68,),
+                (67,),
+            ),
+            (
+                "response",
+                EntityReference("service", f"dhcp:{downstream.interface_name}"),
+                EntityReference("downstream-consumer", consumer_id),
+                (67,),
+                (68,),
+            ),
+        ):
+            rule_id = f"downstream-dhcp-{direction}:{downstream.interface_name}"
+            rule = indexes["connectivity-rule"].get(rule_id)
+            if rule is None:
+                raise ValueError(f"invalid topology: missing DHCP {direction} rule {rule_id}")
+            if (
+                rule.source.resolved[0].reference != source_reference
+                or rule.destination.resolved[0].reference != destination_reference
+                or rule.source_ports != source_ports
+                or rule.destination_ports != destination_ports
+            ):
+                raise ValueError(
+                    f"invalid topology: DHCP {direction} rule {rule_id} has wrong endpoint types"
+                )
+        agent_rule_id = f"downstream-rancher-agent:{downstream.interface_name}"
+        agent_rule = indexes["connectivity-rule"].get(agent_rule_id)
+        if (
+            agent_rule is None
+            or agent_rule.source.resolved[0].reference
+            != EntityReference("downstream-consumer", consumer_id)
+            or agent_rule.destination.resolved[0].reference
+            != EntityReference("endpoint", rancher_endpoint.id)
+            or agent_rule.destination_ports != (443,)
+        ):
+            raise ValueError(
+                f"invalid topology: downstream Rancher agent rule {agent_rule_id} is inconsistent"
+            )
+
+    if topology.deployment_context is None:
+        raise ValueError("invalid topology: deployment context is missing")
+    context = topology.deployment_context
+    if context.execution_actor_id not in indexes["actor"]:
+        raise ValueError("invalid topology: deployment context execution actor is missing")
+    for endpoint_id in (
+        context.vsphere.endpoint_id,
+        context.terraform_backend.endpoint_id,
+    ):
+        if endpoint_id not in endpoints:
+            raise ValueError(
+                f"invalid topology: deployment context references missing endpoint {endpoint_id}"
+            )
+
+
 def build_desired_topology(config):
     environment_id = config["environment"]["id"]
     bastion_host = config["bastion"]["service_node"]
@@ -323,6 +858,7 @@ def build_desired_topology(config):
                 address=nic.get("ip"),
                 prefix=nic.get("prefix"),
                 addressing="static" if nic.get("ip") is not None else "unknown",
+                resolution=RESOLVED if nic.get("ip") is not None else SYMBOLIC,
             )
             interfaces.append(interface)
             host_interfaces.append(interface)
@@ -348,7 +884,10 @@ def build_desired_topology(config):
                 primary_ip=node.get("ip"),
                 local_ip=local_ip,
                 management_ip=management_ip,
-                ssh_target=node.get("ssh_ip") or node.get("management_ip") or node.get("ip"),
+                ssh_target=node_ssh_target(node),
+                service_status=(
+                    "host-only/not-modeled" if node["role"] == "prometheus" else None
+                ),
             )
         )
 
@@ -356,9 +895,11 @@ def build_desired_topology(config):
     base_nic_count = len(config["nodes"][bastion_host]["nics"])
     for index, downstream in enumerate(config["bastion"]["downstream_networks"]):
         network_id = f"downstream:{downstream['interface_name']}"
+        interface_id = f"{bastion_host}:{downstream['interface_name']}"
+        gateway_endpoint_id = f"endpoint:gateway:{downstream['interface_name']}"
         interfaces.append(
             InterfaceTopology(
-                id=f"{bastion_host}:{downstream['interface_name']}",
+                id=interface_id,
                 host=bastion_host,
                 nic_index=base_nic_count + index,
                 logical_name=downstream["interface_name"],
@@ -395,6 +936,8 @@ def build_desired_topology(config):
                         "attachment_order",
                     ),
                 ),
+                interface_id=interface_id,
+                gateway_endpoint_id=gateway_endpoint_id,
             )
         )
 
@@ -417,6 +960,7 @@ def build_desired_topology(config):
                 vmware_network=vmware_network,
                 gateway=gateway,
                 interface_ids=tuple(interface.id for interface in attached),
+                resolution=RESOLVED if cidr is not None else SYMBOLIC,
             )
         )
 
@@ -429,22 +973,24 @@ def build_desired_topology(config):
                 vlan=downstream.vlan,
                 vmware_network=downstream.vmware_network,
                 gateway=downstream.gateway,
-                interface_ids=(f"{bastion_host}:{downstream.interface_name}",),
+                interface_ids=(downstream.interface_id,),
             )
         )
 
     services = []
     bastion_service_ip = config["bastion"]["service_ip"]
+    bastion_service_interface = _service_interface(bastion_service_ip, interfaces)
     services.append(
         ServiceTopology(
             id="proxy:squid",
             kind="proxy",
             host=bastion_host,
-            network=_service_network(bastion_service_ip, interfaces),
+            network=(bastion_service_interface.network if bastion_service_interface else None),
             address=bastion_service_ip,
             protocols=("TCP",),
             ports=(config["bastion"]["squid_http_port"],),
             purpose="HTTP and HTTPS forward proxy for local services",
+            interface_id=(bastion_service_interface.id if bastion_service_interface else None),
         )
     )
     services.append(
@@ -452,11 +998,12 @@ def build_desired_topology(config):
             id="dns:local",
             kind="dns",
             host=bastion_host,
-            network=_service_network(bastion_service_ip, interfaces),
+            network=(bastion_service_interface.network if bastion_service_interface else None),
             address=bastion_service_ip,
             protocols=("TCP", "UDP"),
             ports=(53,),
             purpose="DNS for local nodes",
+            interface_id=(bastion_service_interface.id if bastion_service_interface else None),
         )
     )
     for downstream in downstream_networks:
@@ -471,6 +1018,7 @@ def build_desired_topology(config):
                     protocols=("TCP", "UDP"),
                     ports=(53,),
                     purpose="DNS for downstream nodes on the same VLAN",
+                    interface_id=downstream.interface_id,
                 ),
                 ServiceTopology(
                     id=f"dhcp:{downstream.interface_name}",
@@ -481,27 +1029,346 @@ def build_desired_topology(config):
                     protocols=("UDP",),
                     ports=(67, 68),
                     purpose="DHCP for downstream nodes on the same VLAN",
+                    interface_id=downstream.interface_id,
                 ),
             ]
         )
 
+    rancher_hosts = tuple(host for host in hosts if "rancher" in host.roles)
+    rancher_host_ids = tuple(host.id for host in rancher_hosts)
+    rke2_primary_host = config["rke2"]["primary_node"]
+    rancher_endpoint_id = "endpoint:rancher"
+    cluster_id = "cluster:rke2-rancher"
+
+    clusters = (
+        ClusterTopology(
+            id=cluster_id,
+            kind="rke2-rancher-control-cluster",
+            member_host_ids=rancher_host_ids,
+            primary_host_id=rke2_primary_host,
+            join_host_ids=tuple(
+                host_id for host_id in rancher_host_ids if host_id != rke2_primary_host
+            ),
+            endpoint_ids=(rancher_endpoint_id,),
+            versions={
+                "rke2": config["rke2"]["version"],
+                "rancher": config["rancher"]["rancher_chart_version"],
+            },
+        ),
+    )
+
+    endpoints = [
+        EndpointTopology(
+            id=rancher_endpoint_id,
+            kind="rancher-https",
+            name=config["rancher_url"],
+            protocols=("HTTPS",),
+            ports=(443,),
+            cluster_id=cluster_id,
+            resolutions=(
+                EndpointResolutionTopology(
+                    scope="local",
+                    addresses=tuple(
+                        host.local_ip or host.primary_ip or "unknown" for host in rancher_hosts
+                    ),
+                    ownership=RINSTALL_CONFIGURED,
+                    provenance=DERIVED,
+                    resolution=RESOLVED,
+                ),
+                EndpointResolutionTopology(
+                    scope="external",
+                    addresses=(),
+                    ownership=EXTERNALLY_MANAGED,
+                    provenance=EXTERNAL,
+                    resolution=EXTERNAL_UNRESOLVED,
+                    verification=EXTERNAL_UNVERIFIED,
+                    reason="External Rancher VIP/load balancer is not represented in config.yaml.",
+                ),
+            ),
+            ownership=RINSTALL_CONFIGURED,
+            provenance=CONFIGURED,
+            resolution=RESOLVED,
+        ),
+        EndpointTopology(
+            id="endpoint:vcenter",
+            kind="vcenter",
+            name="runtime-supplied vCenter endpoint",
+            protocols=(),
+            ports=(),
+            cluster_id=None,
+            resolutions=(
+                EndpointResolutionTopology(
+                    scope="external",
+                    addresses=(),
+                    ownership=REFERENCED_EXTERNAL,
+                    provenance=EXTERNAL,
+                    resolution=RUNTIME_SUPPLIED,
+                    verification=EXTERNAL_UNVERIFIED,
+                    reason="vCenter endpoint is supplied at runtime outside config.yaml.",
+                ),
+            ),
+            ownership=REFERENCED_EXTERNAL,
+            provenance=EXTERNAL,
+            resolution=RUNTIME_SUPPLIED,
+            verification=EXTERNAL_UNVERIFIED,
+        ),
+    ]
+
+    backend = config["terraform"]["backend"]
+    backend_url = backend["url"]
+    backend_scheme = urlparse(backend_url).scheme.lower()
+    backend_protocols = (backend_scheme.upper(),) if backend_scheme else ()
+    backend_ports = (443,) if backend_scheme == "https" else ((80,) if backend_scheme == "http" else ())
+    endpoints.append(
+        EndpointTopology(
+            id="endpoint:terraform-backend",
+            kind="terraform-backend",
+            name=backend_url,
+            protocols=backend_protocols,
+            ports=backend_ports,
+            cluster_id=None,
+            resolutions=(
+                EndpointResolutionTopology(
+                    scope="external",
+                    addresses=(backend_url,),
+                    ownership=REFERENCED_EXTERNAL,
+                    provenance=CONFIGURED,
+                    resolution=RESOLVED,
+                    verification=EXTERNAL_UNVERIFIED,
+                ),
+            ),
+            ownership=REFERENCED_EXTERNAL,
+            provenance=CONFIGURED,
+            resolution=RESOLVED,
+            verification=EXTERNAL_UNVERIFIED,
+        )
+    )
+
+    jump_host = config.get("ssh", {}).get("jump_host")
+    jump_endpoint_id = None
+    jump_alias = None
+    if jump_host:
+        jump_alias = (
+            jump_host
+            if isinstance(jump_host, str)
+            else jump_host.get("alias", "rancher-env-jump")
+        )
+        jump_identity = None
+        if isinstance(jump_host, dict):
+            jump_identity = jump_host.get("hostname") or jump_host.get("host")
+        jump_endpoint_id = "endpoint:ssh-jump"
+        endpoints.append(
+            EndpointTopology(
+                id=jump_endpoint_id,
+                kind="ssh-jump-alias",
+                name=jump_alias,
+                protocols=("SSH",),
+                ports=tuple(
+                    [jump_host["port"]]
+                    if isinstance(jump_host, dict) and jump_host.get("port")
+                    else []
+                ),
+                cluster_id=None,
+                resolutions=(
+                    EndpointResolutionTopology(
+                        scope="operator-ssh-config",
+                        addresses=((jump_identity,) if jump_identity else ()),
+                        ownership=REFERENCED_EXTERNAL,
+                        provenance=CONFIGURED,
+                        resolution=(RESOLVED if jump_identity else EXTERNAL_UNRESOLVED),
+                        verification=EXTERNAL_UNVERIFIED,
+                        reason=(
+                            None
+                            if jump_identity
+                            else "SSH alias network identity is defined outside config.yaml."
+                        ),
+                    ),
+                ),
+                ownership=REFERENCED_EXTERNAL,
+                provenance=CONFIGURED,
+                resolution=(RESOLVED if jump_identity else EXTERNAL_UNRESOLVED),
+                verification=EXTERNAL_UNVERIFIED,
+            )
+        )
+
+    for downstream in downstream_networks:
+        endpoints.append(
+            EndpointTopology(
+                id=downstream.gateway_endpoint_id,
+                kind="downstream-gateway",
+                name=f"gateway for VLAN {downstream.vlan}",
+                protocols=(),
+                ports=(),
+                cluster_id=None,
+                resolutions=(
+                    EndpointResolutionTopology(
+                        scope=f"downstream-vlan-{downstream.vlan}",
+                        addresses=(downstream.gateway,),
+                        ownership=REFERENCED_EXTERNAL,
+                        provenance=CONFIGURED,
+                        resolution=RESOLVED,
+                        verification=EXTERNAL_UNVERIFIED,
+                    ),
+                ),
+                ownership=REFERENCED_EXTERNAL,
+                provenance=CONFIGURED,
+                resolution=RESOLVED,
+                verification=EXTERNAL_UNVERIFIED,
+            )
+        )
+
+    dns_upstream_endpoint_ids = []
+    for address in config["bastion"]["dnsmasq_upstream_servers"]:
+        endpoint_id = f"endpoint:dns-upstream:{address}"
+        dns_upstream_endpoint_ids.append(endpoint_id)
+        endpoints.append(
+            EndpointTopology(
+                id=endpoint_id,
+                kind="dns-upstream",
+                name=address,
+                protocols=("DNS",),
+                ports=(53,),
+                cluster_id=None,
+                resolutions=(
+                    EndpointResolutionTopology(
+                        scope="external",
+                        addresses=(address,),
+                        ownership=REFERENCED_EXTERNAL,
+                        provenance=CONFIGURED,
+                        resolution=RESOLVED,
+                        verification=EXTERNAL_UNVERIFIED,
+                    ),
+                ),
+                ownership=REFERENCED_EXTERNAL,
+                provenance=CONFIGURED,
+                resolution=RESOLVED,
+                verification=EXTERNAL_UNVERIFIED,
+            )
+        )
+
+    actors = (
+        ActorTopology(
+            id="actor:operator-workstation",
+            kind="operator-workstation",
+            ownership=REFERENCED_EXTERNAL,
+            provenance=RINSTALL_ARCHITECTURE,
+            resolution=SYMBOLIC,
+        ),
+    )
+    access_paths = []
+    for host_id, node in config["nodes"].items():
+        hops = []
+        for hop in node_ssh_hops(config, host_id, node):
+            if jump_alias is not None and hop == jump_alias:
+                hops.append(EntityReference("endpoint", jump_endpoint_id))
+            else:
+                hops.append(EntityReference("host", hop))
+        access_paths.append(
+            AccessPathTopology(
+                id=f"access:ssh:{host_id}",
+                source_actor_id="actor:operator-workstation",
+                destination=EntityReference("host", host_id),
+                hops=tuple(hops),
+                protocol="SSH",
+                destination_port=22,
+                target=node_ssh_target(node),
+            )
+        )
+
+    downstream_consumers = tuple(
+        DownstreamConsumerTopology(
+            id=f"consumer:{downstream.id}",
+            kind="downstream-nodes-or-cluster",
+            network_id=downstream.id,
+            address_start=downstream.dhcp_start,
+            address_end=downstream.dhcp_end,
+            identities_known=False,
+            lifecycle="external/downstream",
+            gateway_endpoint_id=downstream.gateway_endpoint_id,
+        )
+        for downstream in downstream_networks
+    )
+
+    vsphere = config["infra"]["vsphere"]
+    vsphere_route_destination, vsphere_route_gateway = config["bastion"][
+        "vsphere_route"
+    ].split()
+    state_name = f"{environment_id}-infra"
+    deployment_context = DeploymentContextTopology(
+        execution_actor_id="actor:operator-workstation",
+        terraform_root="rinstall/terraform/infra",
+        vsphere=VsphereDeploymentTopology(
+            endpoint_id="endpoint:vcenter",
+            datacenter=vsphere["datacenter"],
+            datastore=vsphere["datastore"],
+            resource_pool=vsphere["resource_pool"],
+            folder=vsphere["folder"],
+            templates=tuple(
+                DeploymentMappingTopology(id=name, value=value)
+                for name, value in config["infra"]["templates"].items()
+            ),
+            networks=tuple(
+                DeploymentMappingTopology(id=network.id, value=network.vmware_network)
+                for network in networks
+            ),
+            route=VsphereRouteTopology(
+                destination=vsphere_route_destination,
+                gateway=vsphere_route_gateway,
+                connection=config["bastion"]["vsphere_route_connection"],
+            ),
+            clone_timeout_minutes=vsphere["clone_timeout"],
+            allow_unverified_ssl=vsphere["allow_unverified_ssl"],
+        ),
+        terraform_backend=TerraformBackendTopology(
+            endpoint_id="endpoint:terraform-backend",
+            type=backend["type"],
+            url=backend_url,
+            project_id=backend["project_id"],
+            state_name=state_name,
+            state_address=gitlab_backend_state_address(backend, environment_id),
+        ),
+    )
+
     rancher_sources = tuple(
-        ResolvedEndpoint(host.id, host.local_ip or host.primary_ip or "unknown")
-        for host in hosts
-        if "rancher" in host.roles
+        ResolvedEndpoint(
+            host.id,
+            host.local_ip or host.primary_ip or "unknown",
+            EntityReference("host", host.id),
+        )
+        for host in rancher_hosts
     )
     connectivity_rules = []
     for downstream in downstream_networks:
+        consumer_reference = EntityReference(
+            "downstream-consumer", f"consumer:{downstream.id}"
+        )
         downstream_source = ConnectivityEndpoint(
             symbolic=f"network:downstream:{downstream.vlan}",
-            resolved=(ResolvedEndpoint(downstream.interface_name, downstream.cidr),),
+            resolved=(
+                ResolvedEndpoint(
+                    downstream.interface_name,
+                    downstream.cidr,
+                    consumer_reference,
+                ),
+            ),
         )
-        downstream_bastion = ConnectivityEndpoint(
+        downstream_dns = ConnectivityEndpoint(
             symbolic=f"service:dns@bastion:same-vlan:{downstream.vlan}",
             resolved=(
                 ResolvedEndpoint(
                     f"{bastion_host}:{downstream.interface_name}",
                     downstream.bastion_address,
+                    EntityReference("service", f"dns:{downstream.interface_name}"),
+                ),
+            ),
+        )
+        downstream_dhcp = ConnectivityEndpoint(
+            symbolic=f"service:dhcp@bastion:same-vlan:{downstream.vlan}",
+            resolved=(
+                ResolvedEndpoint(
+                    f"{bastion_host}:{downstream.interface_name}",
+                    downstream.bastion_address,
+                    EntityReference("service", f"dhcp:{downstream.interface_name}"),
                 ),
             ),
         )
@@ -510,7 +1377,7 @@ def build_desired_topology(config):
                 ConnectivityRule(
                     id=f"{DOWNSTREAM_DNS_RULE.id}:{downstream.interface_name}",
                     source=downstream_source,
-                    destination=downstream_bastion,
+                    destination=downstream_dns,
                     protocols=DOWNSTREAM_DNS_RULE.protocols,
                     source_ports=DOWNSTREAM_DNS_RULE.source_ports,
                     destination_ports=DOWNSTREAM_DNS_RULE.destination_ports,
@@ -527,7 +1394,13 @@ def build_desired_topology(config):
                     ),
                     destination=ConnectivityEndpoint(
                         symbolic=f"network:downstream:{downstream.vlan}",
-                        resolved=(ResolvedEndpoint(downstream.interface_name, downstream.cidr),),
+                        resolved=(
+                            ResolvedEndpoint(
+                                downstream.interface_name,
+                                downstream.cidr,
+                                consumer_reference,
+                            ),
+                        ),
                     ),
                     protocols=RANCHER_DOWNSTREAM_SSH_RULE.protocols,
                     source_ports=RANCHER_DOWNSTREAM_SSH_RULE.source_ports,
@@ -542,7 +1415,7 @@ def build_desired_topology(config):
                     source=downstream_source,
                     destination=ConnectivityEndpoint(
                         symbolic=f"service:dhcp@bastion:same-vlan:{downstream.vlan}",
-                        resolved=downstream_bastion.resolved,
+                        resolved=downstream_dhcp.resolved,
                     ),
                     protocols=DOWNSTREAM_DHCP_REQUEST_RULE.protocols,
                     source_ports=DOWNSTREAM_DHCP_REQUEST_RULE.source_ports,
@@ -556,7 +1429,7 @@ def build_desired_topology(config):
                     id=f"{DOWNSTREAM_DHCP_RESPONSE_RULE.id}:{downstream.interface_name}",
                     source=ConnectivityEndpoint(
                         symbolic=f"service:dhcp@bastion:same-vlan:{downstream.vlan}",
-                        resolved=downstream_bastion.resolved,
+                        resolved=downstream_dhcp.resolved,
                     ),
                     destination=downstream_source,
                     protocols=DOWNSTREAM_DHCP_RESPONSE_RULE.protocols,
@@ -568,6 +1441,265 @@ def build_desired_topology(config):
                     verification_status=DOWNSTREAM_DHCP_RESPONSE_RULE.verification_status,
                 ),
             ]
+        )
+
+    def add_connectivity_rule(
+        rule_id,
+        source_symbolic,
+        source_resolved,
+        destination_symbolic,
+        destination_resolved,
+        protocols,
+        source_ports,
+        destination_ports,
+        purpose,
+        provenance=RINSTALL_ARCHITECTURE,
+        requirement_sources=(RINSTALL_ARCHITECTURE,),
+    ):
+        connectivity_rules.append(
+            ConnectivityRule(
+                id=rule_id,
+                source=ConnectivityEndpoint(
+                    symbolic=source_symbolic,
+                    resolved=tuple(source_resolved),
+                ),
+                destination=ConnectivityEndpoint(
+                    symbolic=destination_symbolic,
+                    resolved=tuple(destination_resolved),
+                ),
+                protocols=tuple(protocols),
+                source_ports=tuple(source_ports),
+                destination_ports=tuple(destination_ports),
+                purpose=purpose,
+                requirement_sources=tuple(requirement_sources),
+                required=True,
+                verification_status=EXTERNAL_UNVERIFIED,
+                provenance=provenance,
+            )
+        )
+
+    operator_endpoint = ResolvedEndpoint(
+        "operator-workstation",
+        "operator workstation",
+        EntityReference("actor", "actor:operator-workstation"),
+    )
+    if jump_endpoint_id is not None:
+        jump_endpoint = ResolvedEndpoint(
+            jump_alias,
+            jump_alias,
+            EntityReference("endpoint", jump_endpoint_id),
+        )
+        add_connectivity_rule(
+            "admin-ssh:operator-jump",
+            "actor:operator-workstation",
+            (operator_endpoint,),
+            "endpoint:configured-ssh-jump",
+            (jump_endpoint,),
+            ("SSH",),
+            (),
+            (),
+            "Operator SSH access through configured external jump alias",
+            provenance=DERIVED,
+        )
+
+    for path in access_paths:
+        destination_host = next(host for host in hosts if host.id == path.destination.id)
+        destination_endpoint = ResolvedEndpoint(
+            destination_host.id,
+            path.target,
+            EntityReference("host", destination_host.id),
+        )
+        if not path.hops:
+            source_symbolic = "actor:operator-workstation"
+            source_resolved = (operator_endpoint,)
+            rule_id = f"admin-ssh:operator:{destination_host.id}"
+            purpose = f"Direct operator SSH access to {destination_host.id}"
+        elif path.hops[-1].kind == "host":
+            source_host = next(host for host in hosts if host.id == path.hops[-1].id)
+            source_symbolic = f"host:{source_host.id}"
+            source_resolved = (
+                ResolvedEndpoint(
+                    source_host.id,
+                    source_host.ssh_target or "unknown",
+                    EntityReference("host", source_host.id),
+                ),
+            )
+            rule_id = f"admin-ssh:bastion:{destination_host.id}"
+            purpose = f"Bastion SSH transit to {destination_host.id}"
+        else:
+            source_symbolic = "endpoint:configured-ssh-jump"
+            source_resolved = (
+                ResolvedEndpoint(
+                    jump_alias,
+                    jump_alias,
+                    EntityReference("endpoint", jump_endpoint_id),
+                ),
+            )
+            rule_id = f"admin-ssh:jump:{destination_host.id}"
+            purpose = f"External jump SSH access to {destination_host.id}"
+        add_connectivity_rule(
+            rule_id,
+            source_symbolic,
+            source_resolved,
+            f"host:{destination_host.id}",
+            (destination_endpoint,),
+            ("TCP",),
+            (),
+            (22,),
+            purpose,
+            provenance=DERIVED,
+        )
+
+    non_bastion_hosts = tuple(host for host in hosts if host.id != bastion_host)
+    if non_bastion_hosts and bastion_host in config["local_vlan"]["dns_nodes"]:
+        add_connectivity_rule(
+            "core-dns:local-nodes",
+            "hosts:local-core",
+            tuple(
+                ResolvedEndpoint(
+                    host.id,
+                    host.local_ip or host.primary_ip or "unknown",
+                    EntityReference("host", host.id),
+                )
+                for host in non_bastion_hosts
+            ),
+            "service:dns:local",
+            (
+                ResolvedEndpoint(
+                    "dns:local",
+                    bastion_service_ip,
+                    EntityReference("service", "dns:local"),
+                ),
+            ),
+            ("TCP", "UDP"),
+            (),
+            (53,),
+            "Local nodes use bastion DNS",
+        )
+
+    if dns_upstream_endpoint_ids:
+        add_connectivity_rule(
+            "core-dns:upstream",
+            "service:dns:local",
+            (
+                ResolvedEndpoint(
+                    "dns:local",
+                    bastion_service_ip,
+                    EntityReference("service", "dns:local"),
+                ),
+            ),
+            "endpoints:dns-upstream",
+            tuple(
+                ResolvedEndpoint(
+                    endpoint_id.removeprefix("endpoint:dns-upstream:"),
+                    endpoint_id.removeprefix("endpoint:dns-upstream:"),
+                    EntityReference("endpoint", endpoint_id),
+                )
+                for endpoint_id in dns_upstream_endpoint_ids
+            ),
+            ("TCP", "UDP"),
+            (),
+            (53,),
+            "Bastion DNS forwards to configured upstream resolvers",
+        )
+
+    add_connectivity_rule(
+        "core-proxy:rancher-nodes",
+        "cluster:rke2-rancher",
+        rancher_sources,
+        "service:proxy:squid",
+        (
+            ResolvedEndpoint(
+                "proxy:squid",
+                bastion_service_ip,
+                EntityReference("service", "proxy:squid"),
+            ),
+        ),
+        ("TCP",),
+        (),
+        (config["bastion"]["squid_http_port"],),
+        "RKE2 and Rancher nodes use configured bastion Squid proxy",
+    )
+
+    primary_host = next(host for host in rancher_hosts if host.id == rke2_primary_host)
+    join_hosts = tuple(host for host in rancher_hosts if host.id != rke2_primary_host)
+    if join_hosts:
+        add_connectivity_rule(
+            "rke2:join-primary",
+            "cluster:rke2-rancher:join-members",
+            tuple(
+                ResolvedEndpoint(
+                    host.id,
+                    host.local_ip or host.primary_ip or "unknown",
+                    EntityReference("host", host.id),
+                )
+                for host in join_hosts
+            ),
+            "cluster:rke2-rancher:primary",
+            (
+                ResolvedEndpoint(
+                    primary_host.id,
+                    primary_host.local_ip or primary_host.primary_ip or "unknown",
+                    EntityReference("host", primary_host.id),
+                ),
+            ),
+            ("TCP",),
+            (),
+            (9345,),
+            "RKE2 server join connection to primary",
+        )
+
+    bastion = next(host for host in hosts if host.id == bastion_host)
+    add_connectivity_rule(
+        "rke2:bastion-kubernetes-api",
+        f"host:{bastion_host}",
+        (
+            ResolvedEndpoint(
+                bastion.id,
+                bastion.local_ip or bastion.primary_ip or "unknown",
+                EntityReference("host", bastion.id),
+            ),
+        ),
+        "cluster:rke2-rancher:primary-api",
+        (
+            ResolvedEndpoint(
+                primary_host.id,
+                primary_host.local_ip or primary_host.primary_ip or "unknown",
+                EntityReference("host", primary_host.id),
+            ),
+        ),
+        ("TCP",),
+        (),
+        (6443,),
+        "Bastion administrative tooling uses the primary Kubernetes API",
+    )
+
+    for downstream in downstream_networks:
+        consumer_id = f"consumer:{downstream.id}"
+        add_connectivity_rule(
+            f"downstream-rancher-agent:{downstream.interface_name}",
+            f"consumer:{downstream.interface_name}:rancher-agents",
+            (
+                ResolvedEndpoint(
+                    downstream.interface_name,
+                    downstream.cidr,
+                    EntityReference("downstream-consumer", consumer_id),
+                ),
+            ),
+            "endpoint:rancher:https",
+            (
+                ResolvedEndpoint(
+                    config["rancher_url"],
+                    config["rancher_url"],
+                    EntityReference("endpoint", rancher_endpoint_id),
+                ),
+            ),
+            ("TCP",),
+            (),
+            (443,),
+            "Downstream Rancher agents connect to the Rancher endpoint",
+            provenance=UPSTREAM_REQUIREMENT,
+            requirement_sources=(UPSTREAM_PROTOCOL,),
         )
 
     notes = [
@@ -585,7 +1717,7 @@ def build_desired_topology(config):
                 notes.append(f"Host {host.id} management address is unknown in desired config.")
 
     metadata = TopologyMetadata(
-        topology_schema_version=1,
+        topology_schema_version=2,
         config_schema_version=config["schema_version"],
         topology_kind="desired",
         environment_id=environment_id,
@@ -598,7 +1730,7 @@ def build_desired_topology(config):
             "cert_manager": config["rancher"]["cert_manager_version"],
         },
     )
-    return EnvironmentTopology(
+    topology = EnvironmentTopology(
         metadata=metadata,
         hosts=tuple(hosts),
         interfaces=tuple(interfaces),
@@ -607,7 +1739,15 @@ def build_desired_topology(config):
         downstream_networks=tuple(downstream_networks),
         connectivity_rules=tuple(connectivity_rules),
         notes=tuple(notes),
+        clusters=clusters,
+        endpoints=tuple(endpoints),
+        actors=actors,
+        access_paths=tuple(access_paths),
+        downstream_consumers=downstream_consumers,
+        deployment_context=deployment_context,
     )
+    validate_topology(topology)
+    return topology
 
 
 def render_topology_json(topology):
@@ -1081,8 +2221,8 @@ def _render_topology_markdown(topology):
             "| --- | --- | --- | --- | --- | --- |",
         ]
     )
-    if topology.connectivity_rules:
-        for rule in topology.connectivity_rules:
+    if topology.renderer_connectivity_rules:
+        for rule in topology.renderer_connectivity_rules:
             lines.append(
                 f"| {_markdown(_endpoint_text(rule.source))} | "
                 f"{_markdown(_endpoint_text(rule.destination))} | {_protocol_port(rule)} | "
@@ -1282,8 +2422,8 @@ def render_topology_markdown(topology):
             "| --- | --- | --- | --- |",
         ]
     )
-    if topology.connectivity_rules:
-        for rule in topology.connectivity_rules:
+    if topology.renderer_connectivity_rules:
+        for rule in topology.renderer_connectivity_rules:
             lines.append(
                 f"| {_markdown(_endpoint_text(rule.source))} | "
                 f"{_markdown(_endpoint_text(rule.destination))} | {_protocol_port(rule)} | "
