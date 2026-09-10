@@ -314,6 +314,7 @@ def test_topology_outputs_exclude_sensitive_config_values(tmp_path):
     first_json = (output_dir / "topology.json").read_bytes()
     first_markdown = (output_dir / "topology.md").read_bytes()
     first_mermaid = (output_dir / "topology.mmd").read_bytes()
+    first_connectivity = (output_dir / "connectivity.mmd").read_bytes()
     subprocess.run(
         command,
         check=True,
@@ -323,15 +324,18 @@ def test_topology_outputs_exclude_sensitive_config_values(tmp_path):
         (output_dir / "topology.json").read_text()
         + (output_dir / "topology.md").read_text()
         + (output_dir / "topology.mmd").read_text()
+        + (output_dir / "connectivity.mmd").read_text()
     )
     assert (output_dir / "topology.json").read_bytes() == first_json
     assert (output_dir / "topology.md").read_bytes() == first_markdown
     assert (output_dir / "topology.mmd").read_bytes() == first_mermaid
+    assert (output_dir / "connectivity.mmd").read_bytes() == first_connectivity
     assert all(secret not in outputs for secret in secrets)
     assert output_dir.stat().st_mode & 0o777 == 0o700
     assert (output_dir / "topology.json").stat().st_mode & 0o777 == 0o600
     assert (output_dir / "topology.md").stat().st_mode & 0o777 == 0o600
     assert (output_dir / "topology.mmd").stat().st_mode & 0o777 == 0o600
+    assert (output_dir / "connectivity.mmd").stat().st_mode & 0o777 == 0o600
 
 
 def test_markdown_escapes_configured_table_values():

@@ -51,6 +51,20 @@ def test_full_reference_topology_has_expected_same_vlan_dns_and_ssh_rules():
     assert all(rule.destination_ports == (22,) for rule in ssh_rules)
 
 
+def test_full_reference_bastion_is_multihomed_and_core_nodes_use_customer_only():
+    topology = reference_topology()
+    bastion_interfaces = [interface for interface in topology.interfaces if interface.host == "bastion1"]
+    core_interfaces = [interface for interface in topology.interfaces if interface.host != "bastion1"]
+
+    assert [interface.network for interface in bastion_interfaces] == [
+        "customer",
+        "management",
+        "downstream:vlan565",
+        "downstream:vlan566",
+    ]
+    assert all(interface.network == "customer" for interface in core_interfaces)
+
+
 def test_full_reference_generated_outputs_are_deterministic_and_sanitized():
     topology = reference_topology()
     expected = {
