@@ -805,122 +805,136 @@ def render_topology_svg(topology):
         host for host in topology.hosts if "prometheus" in host.roles or "monitoring" in host.roles
     ]
     ranchers = [host for host in topology.hosts if "rancher" in host.roles]
+    width = 980
+    management_box = (350, 20, 170, 54)
+    bastion_box = (325, 100, 220, 82)
+    customer_box = (80, 235, 200, 58)
+    monitoring_box = (45, 340, 190, 48 + max(1, len(prometheus)) * 20)
+    rancher_box = (270, 340, 260, 48 + max(1, len(ranchers)) * 20)
+    columns = 1 if len(topology.downstream_networks) <= 1 else 2
+    rows = (len(topology.downstream_networks) + columns - 1) // columns
+    downstream_card_width = 174
+    downstream_card_height = 88
+    downstream_gap = 14
+    downstream_group = (
+        570,
+        215,
+        32 + columns * downstream_card_width + (columns - 1) * downstream_gap,
+        48 + rows * downstream_card_height + max(0, rows - 1) * downstream_gap,
+    )
+    core_bottom = max(monitoring_box[1] + monitoring_box[3], rancher_box[1] + rancher_box[3])
+    downstream_bottom = downstream_group[1] + downstream_group[3] if rows else 0
+    height = int(max(475, core_bottom + 30, downstream_bottom + 25))
 
-    width = 1200
-    margin = 40
-    box_width = 200
-    box_height = 92
-    center_x = width / 2
-    management_y = 35
-    bastion_y = 165
-    customer_y = 325
-    core_y = 455
-    downstream_y = core_y + box_height + 95
-    columns = min(5, max(1, len(topology.downstream_networks)))
-    downstream_gap = 20
-    downstream_width = (width - 2 * margin - (columns - 1) * downstream_gap) / columns
-    downstream_height = 118
-    downstream_rows = (
-        (len(topology.downstream_networks) + columns - 1) // columns
-        if topology.downstream_networks
-        else 0
-    )
-    height = downstream_y + max(1, downstream_rows) * downstream_height + max(0, downstream_rows - 1) * 28 + 55
-    elements = []
-    elements.append(
+    elements = [
         f'<svg xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc" '
-        f'viewBox="0 0 {width} {height}" width="{width}" height="{height}">'
-    )
-    elements.append('<title id="title">Desired infrastructure topology</title>')
-    elements.append(
-        f'<desc id="desc">Environment {_plain(metadata.environment_id)} infrastructure attachment map</desc>'
-    )
-    elements.append(
+        f'viewBox="0 0 {width} {height}" width="{width}" height="{height}">',
+        "<title id=\"title\">Desired infrastructure topology</title>",
+        f'<desc id="desc">Environment {xml_escape(_plain(metadata.environment_id))} infrastructure attachment map</desc>',
         """<style>
           .background { fill: #ffffff; }
-          .network { fill: #f1f3f5; stroke: #6b7280; stroke-width: 2; }
           .management { fill: #e8eefc; stroke: #4969a8; stroke-width: 2; }
           .bastion { fill: #fff1c7; stroke: #8a6420; stroke-width: 2.5; }
-          .host { fill: #ffffff; stroke: #52606d; stroke-width: 2; }
-          .rancher { fill: #e5f0ff; stroke: #315a8a; stroke-width: 2; }
+          .network { fill: #f1f3f5; stroke: #6b7280; stroke-width: 2; }
           .monitoring { fill: #e4f5eb; stroke: #39735a; stroke-width: 2; }
+          .rancher-cluster { fill: #e5f0ff; stroke: #315a8a; stroke-width: 2; }
+          .downstream-group { fill: #faf7fd; stroke: #9b83ad; stroke-width: 1.5; stroke-dasharray: 6 4; }
           .downstream { fill: #f3e8ff; stroke: #76508f; stroke-width: 2; }
-          .group { fill: none; stroke: #9aa5b1; stroke-width: 1.5; stroke-dasharray: 7 5; }
           .connector { stroke: #475569; stroke-width: 2.5; fill: none; }
-          .heading { font: 600 16px sans-serif; fill: #1f2937; text-anchor: middle; }
+          .heading { font: 600 15px sans-serif; fill: #1f2937; text-anchor: middle; }
           .box-label { font: 13px sans-serif; fill: #17202a; text-anchor: middle; }
-          .small-label { font: 12px sans-serif; fill: #4b5563; text-anchor: middle; }
-        </style>"""
-    )
-    elements.append(f'<rect class="background" x="0" y="0" width="{width}" height="{height}" />')
-
-    def center(box_x):
-        return box_x + box_width / 2
-
-    mgmt_x = center_x - box_width / 2
-    bastion_x = center_x - box_width / 2
-    customer_x = center_x - box_width / 2
-    if management is not None and _known_network(topology, management):
-        elements.append(_svg_box(mgmt_x, management_y, box_width, box_height, "management", [
-            "Management", management.cidr or "unknown"
-        ]))
-        elements.append(f'<line class="connector" x1="{center_x}" y1="{management_y + box_height}" x2="{center_x}" y2="{bastion_y}" />')
-    bastion_lines = [
-        bastion.id,
-        f"customer: {_host_network_address(topology, bastion, customer.id)}",
+          .row-name { font: 600 12px sans-serif; fill: #17202a; text-anchor: start; }
+          .row-value { font: 12px sans-serif; fill: #334155; text-anchor: end; }
+        </style>""",
+        f'<rect class="background" x="0" y="0" width="{width}" height="{height}" />',
     ]
+
+    def add_card(card, css_class, card_lines, element_id):
+        x, y, card_width, card_height = card
+        elements.append(f'<g id="{element_id}">')
+        elements.append(
+            f'<rect class="{css_class}" x="{x}" y="{y}" width="{card_width}" height="{card_height}" rx="9" />'
+        )
+        elements.append(_svg_text(card_lines, x + card_width / 2, y + 23, "box-label", 18))
+        elements.append("</g>")
+
+    if management is not None and _known_network(topology, management):
+        add_card(management_box, "management", ["Management", management.cidr or "unknown"], "management-network")
+        elements.append(
+            '<polyline class="connector" data-connection="management-bastion" points="435,74 435,100" />'
+        )
+    bastion_lines = [bastion.id, f"customer: {_host_network_address(topology, bastion, customer.id)}"]
     if management is not None:
         bastion_lines.append(f"management: {_host_network_address(topology, bastion, management.id)}")
-    elements.append(_svg_box(bastion_x, bastion_y, box_width, box_height + 18, "bastion", bastion_lines))
-    elements.append(f'<line class="connector" x1="{center_x}" y1="{bastion_y + box_height + 18}" x2="{center_x}" y2="{customer_y}" />')
-    elements.append(_svg_box(customer_x, customer_y, box_width, box_height, "network", [
-        "Customer network", customer.cidr or "unknown"
-    ]))
+    add_card(bastion_box, "bastion", bastion_lines, "bastion")
+    add_card(customer_box, "network", ["Customer network", customer.cidr or "unknown"], "customer-network")
 
-    core_hosts = [*prometheus, *ranchers]
-    core_width = 230 if len(core_hosts) <= 4 else 250
-    core_gap = 22
-    core_total = len(core_hosts) * core_width + max(0, len(core_hosts) - 1) * core_gap
-    core_start = max(margin, (width - core_total) / 2)
-    bus_y = customer_y + box_height + 35
-    elements.append(f'<line class="connector" x1="{center_x}" y1="{customer_y + box_height}" x2="{center_x}" y2="{bus_y}" />')
-    if core_hosts:
-        elements.append(f'<line class="connector" x1="{center(core_start)}" y1="{bus_y}" x2="{center(core_start + core_total - core_width)}" y2="{bus_y}" />')
-    for index, host in enumerate(core_hosts):
-        x = core_start + index * (core_width + core_gap)
-        host_class = "monitoring" if host in prometheus else "rancher"
-        role_label = "Monitoring" if host in prometheus else "Rancher"
-        elements.append(_svg_box(x, core_y, core_width, box_height, host_class, [
-            f"{role_label}: {host.id}", _host_address(host)
-        ]))
-        elements.append(f'<line class="connector" x1="{center(x)}" y1="{bus_y}" x2="{center(x)}" y2="{core_y}" />')
-    if ranchers:
-        group_x = core_start + len(prometheus) * (core_width + core_gap) - 12
-        group_width = len(ranchers) * (core_width + core_gap) - core_gap + 24
-        elements.append(f'<rect class="group" x="{group_x}" y="{core_y - 28}" width="{group_width}" height="{box_height + 45}" rx="8" />')
-        elements.append(f'<text class="heading" x="{group_x + group_width / 2}" y="{core_y - 10}">Rancher cluster</text>')
+    elements.append(
+        '<polyline class="connector" data-connection="bastion-customer" '
+        'points="325,141 180,141 180,235" />'
+    )
+    elements.append(
+        '<polyline class="connector" data-connection="customer-monitoring" '
+        'points="150,293 150,340" />'
+    )
+    elements.append(
+        '<polyline class="connector" data-connection="customer-rancher" '
+        'points="250,293 250,320 400,320 400,340" />'
+    )
+
+    mx, my, mw, mh = monitoring_box
+    elements.append('<g id="monitoring">')
+    elements.append(f'<rect class="monitoring" x="{mx}" y="{my}" width="{mw}" height="{mh}" rx="9" />')
+    elements.append(f'<text class="heading" x="{mx + mw / 2}" y="{my + 22}">Monitoring</text>')
+    for index, host in enumerate(prometheus or (None,)):
+        y = my + 45 + index * 20
+        if host is None:
+            elements.append(f'<text class="box-label" x="{mx + mw / 2}" y="{y}">none</text>')
+        else:
+            elements.append(f'<text class="row-name" x="{mx + 14}" y="{y}">{xml_escape(host.id)}</text>')
+            elements.append(f'<text class="row-value" x="{mx + mw - 14}" y="{y}">{xml_escape(_host_address(host))}</text>')
+    elements.append("</g>")
+
+    rx, ry, rw, rh = rancher_box
+    elements.append('<g id="rancher-cluster">')
+    elements.append(f'<rect class="rancher-cluster" x="{rx}" y="{ry}" width="{rw}" height="{rh}" rx="9" />')
+    elements.append(f'<text class="heading" x="{rx + rw / 2}" y="{ry + 22}">Rancher cluster</text>')
+    for index, host in enumerate(ranchers or (None,)):
+        y = ry + 45 + index * 20
+        if host is None:
+            elements.append(f'<text class="box-label" x="{rx + rw / 2}" y="{y}">none</text>')
+        else:
+            elements.append(f'<text class="row-name" x="{rx + 16}" y="{y}">{xml_escape(host.id)}</text>')
+            elements.append(f'<text class="row-value" x="{rx + rw - 16}" y="{y}">{xml_escape(_host_address(host))}</text>')
+    elements.append("</g>")
 
     if topology.downstream_networks:
-        elements.append(f'<text class="heading" x="{center_x}" y="{downstream_y - 32}">Downstream networks</text>')
-        downstream_bus_y = downstream_y - 12
-        downstream_entry_x = width - margin - 35
-        bastion_middle_y = bastion_y + (box_height + 18) / 2
-        elements.append(f'<line class="connector" x1="{bastion_x + box_width}" y1="{bastion_middle_y}" x2="{downstream_entry_x}" y2="{bastion_middle_y}" />')
-        elements.append(f'<line class="connector" x1="{downstream_entry_x}" y1="{bastion_middle_y}" x2="{downstream_entry_x}" y2="{downstream_bus_y}" />')
-        first_x = margin
-        last_x = margin + (columns - 1) * (downstream_width + downstream_gap) + downstream_width
-        elements.append(f'<line class="connector" x1="{first_x + downstream_width / 2}" y1="{downstream_bus_y}" x2="{last_x - downstream_width / 2}" y2="{downstream_bus_y}" />')
-        elements.append(f'<line class="connector" x1="{last_x - downstream_width / 2}" y1="{downstream_bus_y}" x2="{downstream_entry_x}" y2="{downstream_bus_y}" />')
+        gx, gy, gw, gh = downstream_group
+        elements.append('<g id="downstream-networks">')
+        elements.append(
+            f'<rect class="downstream-group" x="{gx}" y="{gy}" width="{gw}" height="{gh}" rx="10" />'
+        )
+        elements.append(f'<text class="heading" x="{gx + gw / 2}" y="{gy + 23}">Downstream networks</text>')
         for index, downstream in enumerate(topology.downstream_networks):
             row, column = divmod(index, columns)
-            x = margin + column * (downstream_width + downstream_gap)
-            y = downstream_y + row * (downstream_height + 28)
-            elements.append(_svg_box(x, y, downstream_width, downstream_height, "downstream", [
-                f"VLAN {downstream.vlan}", downstream.cidr,
-                f"bastion: {downstream.bastion_address}", f"gateway: {downstream.gateway}",
-            ]))
-            cx = center(x)
-            elements.append(f'<line class="connector" x1="{cx}" y1="{downstream_bus_y}" x2="{cx}" y2="{y}" />')
+            x = gx + 16 + column * (downstream_card_width + downstream_gap)
+            y = gy + 34 + row * (downstream_card_height + downstream_gap)
+            add_card(
+                (x, y, downstream_card_width, downstream_card_height),
+                "downstream",
+                [
+                    f"VLAN {downstream.vlan}",
+                    downstream.cidr,
+                    f"bastion {downstream.bastion_address}",
+                    f"gateway {downstream.gateway}",
+                ],
+                f"downstream-vlan-{downstream.vlan}",
+            )
+        elements.append("</g>")
+        elements.append(
+            '<polyline class="connector" data-connection="bastion-downstream" '
+            'points="545,141 558,141 558,245 570,245" />'
+        )
     elements.append("</svg>")
     return "\n".join(elements) + "\n"
 
@@ -1596,10 +1610,129 @@ def _render_support_topology_markdown(topology):
 
 
 def render_topology_markdown(topology):
-    document = _render_support_topology_markdown(topology)
-    interfaces_start = document.index("\n## Interfaces / Details")
-    networks_start = document.index("\n## Networks", interfaces_start)
-    interfaces = document[interfaces_start:networks_start]
-    document = document[:interfaces_start] + document[networks_start:]
-    services_start = document.index("\n## Bastion Services")
-    return document[:services_start] + interfaces + document[services_start:]
+    metadata = topology.metadata
+    lines = [
+        "# Desired Topology",
+        "",
+        "> Status: desired configuration only; runtime state and reachability are not verified.",
+        "",
+        "## Infrastructure Map",
+        "",
+        render_topology_svg(topology).rstrip(),
+        "",
+        "## Environment",
+        "",
+        "| Environment | Rancher URL | Domain | RKE2 | Rancher | cert-manager |",
+        "| --- | --- | --- | --- | --- | --- |",
+        f"| {_markdown(metadata.environment_id)} | {_markdown(metadata.rancher_url)} | "
+        f"{_markdown(metadata.domain)} | {_markdown(metadata.versions['rke2'])} | "
+        f"{_markdown(metadata.versions['rancher'])} | {_markdown(metadata.versions['cert_manager'])} |",
+        "",
+        "## Hosts",
+        "",
+        "| Host | FQDN | Roles | Customer IP | Management IP | SSH target |",
+        "| --- | --- | --- | --- | --- | --- |",
+    ]
+    for host in topology.hosts:
+        lines.append(
+            f"| {_markdown(host.id)} | {_markdown(host.fqdn)} | {_markdown(', '.join(host.roles))} | "
+            f"{_markdown(host.local_ip or 'unknown')} | {_markdown(_management_display(topology, host))} | "
+            f"{_markdown(host.ssh_target or 'unknown')} |"
+        )
+
+    lines.extend(
+        [
+            "",
+            "## Networks",
+            "",
+            "| Network | Kind | VMware network | CIDR | VLAN | Bastion IP | Gateway |",
+            "| --- | --- | --- | --- | --- | --- | --- |",
+        ]
+    )
+    downstream_by_id = {network.id: network for network in topology.downstream_networks}
+    for network in topology.networks:
+        downstream = downstream_by_id.get(network.id)
+        lines.append(
+            f"| {_markdown(network.id)} | {_markdown(network.kind)} | {_markdown(network.vmware_network)} | "
+            f"{_markdown(network.cidr or 'unknown')} | "
+            f"{_markdown(network.vlan if network.vlan is not None else '-')} | "
+            f"{_markdown(downstream.bastion_address if downstream else '-')} | "
+            f"{_markdown(network.gateway or '-')} |"
+        )
+
+    lines.extend(
+        [
+            "",
+            "## Key Connectivity",
+            "",
+            "```text",
+            "Rancher nodes -> Downstream nodes       TCP/22",
+            "Downstream -> same-VLAN bastion IP      TCP/UDP 53",
+            "Downstream -> bastion DHCP service      UDP 67/68",
+            "```",
+            "",
+            "## Resolved Connectivity",
+            "",
+            "| Source | Destination | Protocol | Purpose |",
+            "| --- | --- | --- | --- |",
+        ]
+    )
+    if topology.connectivity_rules:
+        for rule in topology.connectivity_rules:
+            lines.append(
+                f"| {_markdown(_endpoint_text(rule.source))} | "
+                f"{_markdown(_endpoint_text(rule.destination))} | {_protocol_port(rule)} | "
+                f"{_markdown(rule.purpose)} |"
+            )
+    else:
+        lines.append("| - | - | - | No downstream connectivity rules |")
+
+    lines.extend(
+        [
+            "",
+            "<details>",
+            "<summary>Interface and bastion service details</summary>",
+            "",
+            "| Host | Interface | Network | Kind | Address | Addressing |",
+            "| --- | --- | --- | --- | --- | --- |",
+        ]
+    )
+    for interface in topology.interfaces:
+        address = (
+            f"{interface.address}/{interface.prefix}"
+            if interface.address is not None and interface.prefix is not None
+            else "unknown"
+        )
+        lines.append(
+            f"| {_markdown(interface.host)} | {_markdown(interface.logical_name)} | "
+            f"{_markdown(interface.network)} | {_markdown(interface.network_kind)} | "
+            f"{_markdown(address)} | {_markdown(interface.addressing)} |"
+        )
+    lines.extend(
+        [
+            "",
+            "| Service | Network | Endpoint | Proto/Port | Purpose |",
+            "| --- | --- | --- | --- | --- |",
+        ]
+    )
+    for service in topology.services:
+        lines.append(
+            f"| {_markdown(service.kind)} | {_markdown(service.network or 'unknown')} | "
+            f"{_markdown(service.address)} | {'/'.join(service.protocols)} "
+            f"{'/'.join(str(port) for port in service.ports)} | {_markdown(service.purpose)} |"
+        )
+    lines.extend(
+        [
+            "",
+            "</details>",
+            "",
+            "## Notes",
+            "",
+            *[f"- {_markdown(note)}" for note in topology.notes],
+            "- `not attached` means that the host has no interface on that network.",
+            "- External SSH jump-host details are intentionally not represented here.",
+            "- `topology.mmd`, `connectivity.mmd`, and `topology.txt` are secondary support artifacts.",
+            "",
+        ]
+    )
+    return "\n".join(lines)

@@ -189,7 +189,7 @@ def test_json_and_markdown_share_one_topology_and_are_deterministic():
     assert "TCP 22" in first_markdown
 
 
-def test_ascii_and_mermaid_are_deterministic_and_embedded_from_same_topology():
+def test_ascii_and_mermaid_are_deterministic_secondary_artifacts():
     topology = topology_with(downstream_network(565, "10.20.56.32/27"))
 
     ascii_overview = render_topology_ascii_overview(topology)
@@ -201,10 +201,13 @@ def test_ascii_and_mermaid_are_deterministic_and_embedded_from_same_topology():
     assert render_topology_ascii_overview(topology) == ascii_overview
     assert "<svg " in markdown
     assert mermaid not in markdown
-    assert "```mermaid\n" + connectivity.rstrip() + "\n```" in markdown
-    assert "```text\n" + ascii_overview.rstrip() + "\n```" in markdown
-    assert markdown.index("## Infrastructure Topology") < markdown.index("## Environment Overview")
-    assert markdown.index("## Resolved Connectivity") < markdown.index("## Terminal ASCII Overview")
+    assert connectivity not in markdown
+    assert ascii_overview not in markdown
+    assert "## Infrastructure Map" in markdown
+    assert "## Key Connectivity" in markdown
+    assert "Rancher nodes -> Downstream nodes       TCP/22" in markdown
+    assert markdown.index("## Infrastructure Map") < markdown.index("## Environment")
+    assert markdown.index("## Key Connectivity") < markdown.index("## Resolved Connectivity")
     assert "bastion1" in ascii_overview
     assert "management  192.0.2.10/24" in ascii_overview
     assert "vlan565     10.20.56.34/27" in ascii_overview
@@ -297,12 +300,88 @@ def test_svg_is_deterministic_hierarchical_and_has_no_service_edges():
     second = render_topology_svg(topology)
 
     assert first == second
-    assert 'viewBox="0 0 1200 ' in first
+    assert 'viewBox="0 0 980 478"' in first
     assert "bastion1" in first and "prom1" in first
     assert all(name in first for name in ("rancher1", "rancher2", "rancher3"))
     assert all(value in first for value in ("192.0.2.0/24", "10.14.17.0/28", "10.20.56.34", "10.20.56.66"))
     assert all(value not in first for value in ("TCP/22", "DNS", "DHCP", "SSH"))
     assert "Bastion IP" not in first
+    assert first.count('class="rancher-cluster"') == 1
+    assert first.count('data-connection="') == 5
+
+    root = ET.fromstring(first)
+    namespace = "{http://www.w3.org/2000/svg}"
+    connectors = {
+        item.attrib["data-connection"]: [
+            tuple(map(int, point.split(","))) for point in item.attrib["points"].split()
+        ]
+        for item in root.iter(f"{namespace}polyline")
+    }
+    assert connectors == {
+        "management-bastion": [(435, 74), (435, 100)],
+        "bastion-customer": [(325, 141), (180, 141), (180, 235)],
+        "customer-monitoring": [(150, 293), (150, 340)],
+        "customer-rancher": [(250, 293), (250, 320), (400, 320), (400, 340)],
+        "bastion-downstream": [(545, 141), (558, 141), (558, 245), (570, 245)],
+    }
+    assert not list(root.iter(f"{namespace}line"))
+    for coordinates in connectors.values():
+        assert all(x1 == x2 or y1 == y2 for (x1, y1), (x2, y2) in zip(coordinates, coordinates[1:]))
+        assert all(x < 600 and y < 350 for x, y in coordinates)
+
+    groups = {
+        group.attrib["id"]: group
+        for group in root.iter(f"{namespace}g")
+        if "id" in group.attrib
+    }
+
+    def on_boundary(point, group_id):
+        rect = next(groups[group_id].iter(f"{namespace}rect"))
+        x, y, width, height = (float(rect.attrib[name]) for name in ("x", "y", "width", "height"))
+        px, py = point
+        return (
+            (px in (x, x + width) and y <= py <= y + height)
+            or (py in (y, y + height) and x <= px <= x + width)
+        )
+
+    endpoints = {
+        "management-bastion": ("management-network", "bastion"),
+        "bastion-customer": ("bastion", "customer-network"),
+        "customer-monitoring": ("customer-network", "monitoring"),
+        "customer-rancher": ("customer-network", "rancher-cluster"),
+        "bastion-downstream": ("bastion", "downstream-networks"),
+    }
+    assert all(
+        on_boundary(connectors[name][0], source) and on_boundary(connectors[name][-1], destination)
+        for name, (source, destination) in endpoints.items()
+    )
+
+    def intersects(first, second):
+        (ax1, ay1), (ax2, ay2) = first
+        (bx1, by1), (bx2, by2) = second
+        if ax1 == ax2 and bx1 == bx2:
+            return ax1 == bx1 and max(min(ay1, ay2), min(by1, by2)) <= min(
+                max(ay1, ay2), max(by1, by2)
+            )
+        if ay1 == ay2 and by1 == by2:
+            return ay1 == by1 and max(min(ax1, ax2), min(bx1, bx2)) <= min(
+                max(ax1, ax2), max(bx1, bx2)
+            )
+        if ay1 == ay2:
+            return min(ax1, ax2) <= bx1 <= max(ax1, ax2) and min(by1, by2) <= ay1 <= max(by1, by2)
+        return min(bx1, bx2) <= ax1 <= max(bx1, bx2) and min(ay1, ay2) <= by1 <= max(ay1, ay2)
+
+    connector_segments = {
+        name: list(zip(points, points[1:])) for name, points in connectors.items()
+    }
+    names = list(connector_segments)
+    assert not any(
+        intersects(first, second)
+        for index, name in enumerate(names)
+        for other_name in names[index + 1 :]
+        for first in connector_segments[name]
+        for second in connector_segments[other_name]
+    )
 
 
 def test_svg_wraps_five_and_ten_downstream_networks_without_overlap():
@@ -332,7 +411,8 @@ def test_svg_wraps_five_and_ten_downstream_networks_without_overlap():
         root = ET.fromstring(svg)
         viewbox = [float(value) for value in root.attrib["viewBox"].split()]
         assert viewbox[:2] == [0.0, 0.0]
-        assert viewbox[2] == 1200.0
+        assert viewbox[2] == 980.0
+        assert viewbox[3] <= (500.0 if count <= 2 else 800.0)
         boxes = [
             (float(rect.attrib["x"]), float(rect.attrib["y"]), float(rect.attrib["width"]), float(rect.attrib["height"]))
             for rect in root.iter("{http://www.w3.org/2000/svg}rect")
@@ -374,6 +454,7 @@ def test_topology_outputs_exclude_sensitive_config_values(tmp_path):
     )
     first_json = (output_dir / "topology.json").read_bytes()
     first_markdown = (output_dir / "topology.md").read_bytes()
+    first_text = (output_dir / "topology.txt").read_bytes()
     first_mermaid = (output_dir / "topology.mmd").read_bytes()
     first_connectivity = (output_dir / "connectivity.mmd").read_bytes()
     first_svg = (output_dir / "topology.svg").read_bytes()
@@ -385,12 +466,14 @@ def test_topology_outputs_exclude_sensitive_config_values(tmp_path):
     outputs = (
         (output_dir / "topology.json").read_text()
         + (output_dir / "topology.md").read_text()
+        + (output_dir / "topology.txt").read_text()
         + (output_dir / "topology.mmd").read_text()
         + (output_dir / "connectivity.mmd").read_text()
         + (output_dir / "topology.svg").read_text()
     )
     assert (output_dir / "topology.json").read_bytes() == first_json
     assert (output_dir / "topology.md").read_bytes() == first_markdown
+    assert (output_dir / "topology.txt").read_bytes() == first_text
     assert (output_dir / "topology.mmd").read_bytes() == first_mermaid
     assert (output_dir / "connectivity.mmd").read_bytes() == first_connectivity
     assert (output_dir / "topology.svg").read_bytes() == first_svg
@@ -398,6 +481,7 @@ def test_topology_outputs_exclude_sensitive_config_values(tmp_path):
     assert output_dir.stat().st_mode & 0o777 == 0o700
     assert (output_dir / "topology.json").stat().st_mode & 0o777 == 0o600
     assert (output_dir / "topology.md").stat().st_mode & 0o777 == 0o600
+    assert (output_dir / "topology.txt").stat().st_mode & 0o777 == 0o600
     assert (output_dir / "topology.mmd").stat().st_mode & 0o777 == 0o600
     assert (output_dir / "connectivity.mmd").stat().st_mode & 0o777 == 0o600
     assert (output_dir / "topology.svg").stat().st_mode & 0o777 == 0o600

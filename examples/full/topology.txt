@@ -1,0 +1,22 @@
+bastion1
+  customer    198.51.100.4/28
+  management  192.0.2.10/24
+  vlan565     203.0.113.34/27
+  vlan566     203.0.113.66/27
+
+Core nodes
+  prom1       198.51.100.6
+  rancher1    198.51.100.11
+  rancher2    198.51.100.12
+  rancher3    198.51.100.13
+
+Networks
+  customer    198.51.100.0/28
+  management  192.0.2.0/24
+  VLAN 565   203.0.113.32/27 bastion=203.0.113.34
+  VLAN 566   203.0.113.64/27 bastion=203.0.113.66
+
+Required connectivity
+  rancher* -> VLAN 565/566  TCP/22
+  VLAN 565   -> 203.0.113.34    DNS, DHCP
+  VLAN 566   -> 203.0.113.66    DNS, DHCP

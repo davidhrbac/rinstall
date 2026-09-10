@@ -5,6 +5,7 @@ from lib.env_config import load_env
 from lib.topology import (
     render_topology_json,
     render_topology_markdown,
+    render_topology_ascii_overview,
     render_topology_connectivity_mermaid,
     render_topology_infrastructure_mermaid,
     render_topology_svg,
@@ -71,6 +72,7 @@ def test_full_reference_generated_outputs_are_deterministic_and_sanitized():
     expected = {
         "topology.json": render_topology_json(topology),
         "topology.md": render_topology_markdown(topology),
+        "topology.txt": render_topology_ascii_overview(topology),
         "topology.mmd": render_topology_infrastructure_mermaid(topology),
         "connectivity.mmd": render_topology_connectivity_mermaid(topology),
         "topology.svg": render_topology_svg(topology),
@@ -96,7 +98,8 @@ def test_full_reference_outputs_show_both_downstream_visual_attachments():
     assert connectivity.count('-->|"TCP/22 SSH"|') == 1
     assert connectivity.count('-->|"TCP/UDP 53 DNS"|') == 1
     svg = (REFERENCE_OUTPUT / "topology.svg").read_text()
-    assert 'viewBox="0 0 1200 ' in svg
+    assert 'viewBox="0 0 980 478"' in svg
+    assert svg.count('data-connection="') == 5
     assert "<svg " in markdown
     assert "TCP/22" not in svg and "DNS" not in svg and "DHCP" not in svg
     assert "network_downstream_vlan565" in mermaid
