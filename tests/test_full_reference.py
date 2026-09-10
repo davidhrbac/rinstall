@@ -89,8 +89,8 @@ def test_full_reference_outputs_show_both_downstream_visual_attachments():
 
     assert "VLAN 565" in markdown and "VLAN 566" in markdown
     assert "203.0.113.34" in markdown and "203.0.113.66" in markdown
-    assert mermaid.count('-->|"TCP 22"|') == 0
-    assert connectivity.count('-->|"TCP 22"|') == 2
-    assert connectivity.count('-->|"DNS TCP/UDP 53 @') == 2
+    assert mermaid.count('-->|"TCP/22 SSH"|') == 0
+    assert connectivity.count('-->|"TCP/22 SSH"|') == 1
+    assert connectivity.count('-->|"TCP/UDP 53 DNS"|') == 1
     assert "network_downstream_vlan565" in mermaid
     assert "network_downstream_vlan566" in mermaid

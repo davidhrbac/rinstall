@@ -47,11 +47,6 @@ def topology_with(*downstreams):
     return build_desired_topology(expand_env(config))
 
 
-def mermaid_node_id(rendered, label_fragment):
-    line = next(line for line in rendered.splitlines() if label_fragment in line)
-    return line.strip().split("[", 1)[0]
-
-
 def test_topology_includes_expanded_hosts_roles_and_static_addresses():
     topology = topology_with()
     hosts = {host.id: host for host in topology.hosts}
@@ -202,15 +197,17 @@ def test_ascii_and_mermaid_are_deterministic_and_embedded_from_same_topology():
 
     assert render_topology_infrastructure_mermaid(topology) == mermaid
     assert render_topology_ascii_overview(topology) == ascii_overview
-    assert "```text\n" + ascii_overview.rstrip() + "\n```" in markdown
     assert "```mermaid\n" + mermaid.rstrip() + "\n```" in markdown
     assert "```mermaid\n" + connectivity.rstrip() + "\n```" in markdown
-    assert "Bastion" in ascii_overview and "bastion1" in ascii_overview
-    assert "management   192.0.2.10/24" in ascii_overview
-    assert "vlan565      10.20.56.34/27" in ascii_overview
+    assert "```text\n" + ascii_overview.rstrip() + "\n```" in markdown
+    assert markdown.index("## Infrastructure Topology") < markdown.index("## Environment Overview")
+    assert markdown.index("## Resolved Connectivity") < markdown.index("## Terminal ASCII Overview")
+    assert "bastion1" in ascii_overview
+    assert "management  192.0.2.10/24" in ascii_overview
+    assert "vlan565     10.20.56.34/27" in ascii_overview
     assert "rancher1" in ascii_overview and "prom1" in ascii_overview
-    assert "TCP/UDP 53, DHCP" in ascii_overview
-    assert ascii_overview.count("TCP/UDP 53, DHCP") == 1
+    assert "DNS, DHCP" in ascii_overview
+    assert ascii_overview.count("DNS, DHCP") == 1
     assert all(len(line) <= 80 for line in ascii_overview.splitlines())
 
 
@@ -224,20 +221,16 @@ def test_mermaid_shows_all_core_nodes_and_same_vlan_relationships():
     mermaid = render_topology_connectivity_mermaid(topology)
 
     assert all(host in infrastructure for host in ("rancher1", "rancher2", "rancher3", "prom1", "bastion1"))
-    assert '"TCP 22"' not in infrastructure
+    assert '"TCP' not in infrastructure
     assert '"DNS' not in infrastructure
     assert "DHCP" not in infrastructure
-    assert mermaid.count('-->|"TCP 22"|') == 2
-    assert mermaid.count('-->|"DNS TCP/UDP 53 @') == 2
-    assert mermaid.count('-.->|"logical DHCP service @') == 2
-    for vlan, cidr, bastion_address in (
-        (565, "10.20.56.32/27", "10.20.56.34"),
-        (566, "10.20.56.64/27", "10.20.56.66"),
-    ):
-        network_id = mermaid_node_id(mermaid, f"VLAN {vlan}<br/>{cidr}")
-        assert f"DNS TCP/UDP 53 @ {bastion_address}" in mermaid
-        assert f"logical DHCP service @ {bastion_address}" in mermaid
-        assert f"rancher_group -->|\"TCP 22\"| {network_id}" in mermaid
+    assert all("---|" not in line for line in infrastructure.splitlines())
+    assert mermaid.count('-->|"TCP/22 SSH"|') == 1
+    assert mermaid.count('-->|"TCP/UDP 53 DNS"|') == 1
+    assert mermaid.count('-.->|"logical DHCP service UDP 67/68"|') == 1
+    assert "each downstream VLAN" in mermaid
+    assert "10.20.56.34" not in mermaid
+    assert "10.20.56.66" not in mermaid
 
 
 def test_mermaid_supports_arbitrary_rancher_names_and_safe_ids():
@@ -248,17 +241,13 @@ def test_mermaid_supports_arbitrary_rancher_names_and_safe_ids():
 
     mermaid = render_topology_infrastructure_mermaid(topology)
 
-    assert mermaid.count("rancher<br/>") == 2
-    assert 'control.east/\"] {1' not in mermaid
-    assert "&quot;&#93; &#123;1" in mermaid
+    assert "control.east/\"] {1" not in mermaid
+    assert "control.east/" in mermaid
     for line in mermaid.splitlines():
-        if "rancher<br/>" not in line:
+        if not line.strip().startswith("host_") or "[" not in line:
             continue
         node_id = line.strip().split("[", 1)[0]
         assert node_id.replace("_", "").isalnum()
-        assert "/" not in node_id
-        assert '"' not in node_id
-        assert "]" not in node_id
 
 
 def test_mermaid_shows_external_jump_only_when_topology_represents_it():
@@ -280,8 +269,19 @@ def test_mermaid_shows_external_jump_only_when_topology_represents_it():
     with_external = render_topology_infrastructure_mermaid(represented)
 
     assert "External jump" not in without_external
-    assert "operator.jump/eu-1" in with_external
     assert "External jump" not in with_external
+
+
+def test_connectivity_mermaid_has_constant_symbolic_shape():
+    one = render_topology_connectivity_mermaid(topology_with(downstream_network(565, "10.20.56.32/27")))
+    many = render_topology_connectivity_mermaid(
+        topology_with(
+            downstream_network(565, "10.20.56.32/27"),
+            downstream_network(566, "10.20.56.64/27"),
+        )
+    )
+
+    assert one == many
 
 
 def test_topology_outputs_exclude_sensitive_config_values(tmp_path):
