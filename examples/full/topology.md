@@ -55,19 +55,6 @@ flowchart TB
 | rancher2 | rancher2.rancher.full-example.example.invalid | rancher | 198.51.100.12 | unknown | 198.51.100.12 |
 | rancher3 | rancher3.rancher.full-example.example.invalid | rancher | 198.51.100.13 | unknown | 198.51.100.13 |
 
-## Interfaces
-
-| Host | Interface | Network | Kind | Address | Addressing |
-| --- | --- | --- | --- | --- | --- |
-| bastion1 | customer | customer | local/customer | 198.51.100.4/28 | static |
-| bastion1 | management | management | management | 192.0.2.10/24 | static |
-| prom1 | customer | customer | local/customer | 198.51.100.6/28 | static |
-| rancher1 | customer | customer | local/customer | 198.51.100.11/28 | static |
-| rancher2 | customer | customer | local/customer | 198.51.100.12/28 | static |
-| rancher3 | customer | customer | local/customer | 198.51.100.13/28 | static |
-| bastion1 | vlan565 | downstream:vlan565 | downstream | 203.0.113.34/27 | static |
-| bastion1 | vlan566 | downstream:vlan566 | downstream | 203.0.113.66/27 | static |
-
 ## Networks
 
 | Network | Kind | VMware network | CIDR | VLAN | Gateway |
@@ -108,6 +95,19 @@ flowchart LR
 | rancher1 (198.51.100.11), rancher2 (198.51.100.12), rancher3 (198.51.100.13) | vlan566 (203.0.113.64/27) | TCP 22 | Administrator SSH from Rancher nodes to downstream nodes | RINSTALL_ARCHITECTURE | external/unverified |
 | vlan566 (203.0.113.64/27) | bastion1:vlan566 (203.0.113.66) | UDP 68 -> 67 | Downstream DHCP request | RINSTALL_CODE+UPSTREAM_PROTOCOL | external/unverified |
 | bastion1:vlan566 (203.0.113.66) | vlan566 (203.0.113.64/27) | UDP 67 -> 68 | Downstream DHCP response | RINSTALL_CODE+UPSTREAM_PROTOCOL | external/unverified |
+
+## Interfaces / Details
+
+| Host | Interface | Network | Kind | Address | Addressing |
+| --- | --- | --- | --- | --- | --- |
+| bastion1 | customer | customer | local/customer | 198.51.100.4/28 | static |
+| bastion1 | management | management | management | 192.0.2.10/24 | static |
+| prom1 | customer | customer | local/customer | 198.51.100.6/28 | static |
+| rancher1 | customer | customer | local/customer | 198.51.100.11/28 | static |
+| rancher2 | customer | customer | local/customer | 198.51.100.12/28 | static |
+| rancher3 | customer | customer | local/customer | 198.51.100.13/28 | static |
+| bastion1 | vlan565 | downstream:vlan565 | downstream | 203.0.113.34/27 | static |
+| bastion1 | vlan566 | downstream:vlan566 | downstream | 203.0.113.66/27 | static |
 
 ## Bastion Services
 

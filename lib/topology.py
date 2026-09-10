@@ -1296,7 +1296,7 @@ def render_topology_ascii_overview(topology):
     return "\n".join(lines) + "\n"
 
 
-def render_topology_markdown(topology):
+def _render_support_topology_markdown(topology):
     metadata = topology.metadata
     lines = [
         f"# Desired Topology: {metadata.environment_id}",
@@ -1331,7 +1331,7 @@ def render_topology_markdown(topology):
     lines.extend(
         [
             "",
-            "## Interfaces",
+            "## Interfaces / Details",
             "",
             "| Host | Interface | Network | Kind | Address | Addressing |",
             "| --- | --- | --- | --- | --- | --- |",
@@ -1441,3 +1441,13 @@ def render_topology_markdown(topology):
         ]
     )
     return "\n".join(lines)
+
+
+def render_topology_markdown(topology):
+    document = _render_support_topology_markdown(topology)
+    interfaces_start = document.index("\n## Interfaces / Details")
+    networks_start = document.index("\n## Networks", interfaces_start)
+    interfaces = document[interfaces_start:networks_start]
+    document = document[:interfaces_start] + document[networks_start:]
+    services_start = document.index("\n## Bastion Services")
+    return document[:services_start] + interfaces + document[services_start:]
