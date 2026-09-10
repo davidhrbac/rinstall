@@ -1,7 +1,15 @@
+from dataclasses import dataclass
 import os
 from pathlib import Path
 
 from lib.env_config import load_env
+
+
+@dataclass(frozen=True)
+class SshJumpHop:
+    alias: str
+    hostname: str | None = None
+    port: int | None = None
 
 
 def build_dir_for_env(env_config_path):
@@ -33,6 +41,54 @@ def node_ssh_hops(config, node_name, node):
     if node_name == bastion_name or node["role"] not in set(ssh.get("bastion_proxy_roles", [])):
         return (jump_alias,)
     return (jump_alias, bastion_name)
+
+
+def configured_ssh_jump_hops(config):
+    """Return only jump structure declared in config, without resolving SSH aliases."""
+    ssh = config.get("ssh", {})
+    jump_host = ssh.get("jump_host")
+    if not jump_host:
+        return ()
+
+    extra_hosts = ssh.get("extra_hosts", {})
+
+    def expand_alias(alias, active_aliases=()):
+        if alias in active_aliases:
+            raise ValueError(f"cyclic SSH proxy_jump configuration at {alias!r}")
+        definition = extra_hosts.get(alias, {})
+        nested = expand_expression(
+            definition.get("proxy_jump"), (*active_aliases, alias)
+        )
+        return (
+            *nested,
+            SshJumpHop(
+                alias=alias,
+                hostname=definition.get("hostname") or definition.get("host"),
+                port=definition.get("port"),
+            ),
+        )
+
+    def expand_expression(expression, active_aliases=()):
+        if not expression:
+            return ()
+        return tuple(
+            hop
+            for alias in str(expression).split(",")
+            for hop in expand_alias(alias, active_aliases)
+        )
+
+    if isinstance(jump_host, str):
+        return expand_expression(jump_host)
+
+    alias = jump_host.get("alias", "rancher-env-jump")
+    return (
+        *expand_expression(jump_host.get("proxy_jump"), (alias,)),
+        SshJumpHop(
+            alias=alias,
+            hostname=jump_host.get("hostname") or jump_host.get("host"),
+            port=jump_host.get("port"),
+        ),
+    )
 
 
 def node_proxy_command(config, node_name, node, known_hosts_file=None):
