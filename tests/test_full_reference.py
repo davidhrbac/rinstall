@@ -7,6 +7,7 @@ from lib.topology import (
     render_topology_markdown,
     render_topology_connectivity_mermaid,
     render_topology_infrastructure_mermaid,
+    render_topology_svg,
     build_desired_topology,
 )
 
@@ -72,6 +73,7 @@ def test_full_reference_generated_outputs_are_deterministic_and_sanitized():
         "topology.md": render_topology_markdown(topology),
         "topology.mmd": render_topology_infrastructure_mermaid(topology),
         "connectivity.mmd": render_topology_connectivity_mermaid(topology),
+        "topology.svg": render_topology_svg(topology),
     }
 
     assert all((REFERENCE_OUTPUT / name).read_text() == content for name, content in expected.items())
@@ -89,8 +91,13 @@ def test_full_reference_outputs_show_both_downstream_visual_attachments():
 
     assert "VLAN 565" in markdown and "VLAN 566" in markdown
     assert "203.0.113.34" in markdown and "203.0.113.66" in markdown
+    assert "| prom1 |" in markdown and "| not attached |" in markdown
     assert mermaid.count('-->|"TCP/22 SSH"|') == 0
     assert connectivity.count('-->|"TCP/22 SSH"|') == 1
     assert connectivity.count('-->|"TCP/UDP 53 DNS"|') == 1
+    svg = (REFERENCE_OUTPUT / "topology.svg").read_text()
+    assert 'viewBox="0 0 1200 ' in svg
+    assert "<svg " in markdown
+    assert "TCP/22" not in svg and "DNS" not in svg and "DHCP" not in svg
     assert "network_downstream_vlan565" in mermaid
     assert "network_downstream_vlan566" in mermaid

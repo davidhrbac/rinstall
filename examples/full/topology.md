@@ -4,40 +4,66 @@
 
 ## Infrastructure Topology
 
-```mermaid
-flowchart TB
-  network_management_288965a1f2["Management<br/>192.0.2.0/24"]
-  host_bastion1_fd65cf69ce["bastion1<br/>customer: 198.51.100.4/28<br/>management: 192.0.2.10/24"]
-  network_customer_b6c4586387["Customer network<br/>198.51.100.0/28"]
-  subgraph monitoring["Monitoring"]
-    host_prom1_abf2e7bd7a["prom1<br/>198.51.100.6/28"]
-  end
-  subgraph rancher_cluster["Rancher cluster"]
-    host_rancher1_d47e6b0e07["rancher1<br/>198.51.100.11/28"]
-    host_rancher2_bcc55a020f["rancher2<br/>198.51.100.12/28"]
-    host_rancher3_bbbf0c319b["rancher3<br/>198.51.100.13/28"]
-  end
-  subgraph downstream["Downstream networks"]
-    network_downstream_vlan565_8ed6786137["VLAN 565<br/>203.0.113.32/27<br/>bastion: 203.0.113.34<br/>gateway: 203.0.113.33"]
-    network_downstream_vlan566_d2bd8ff235["VLAN 566<br/>203.0.113.64/27<br/>bastion: 203.0.113.66<br/>gateway: 203.0.113.65"]
-  end
-  network_management_288965a1f2 --- host_bastion1_fd65cf69ce
-  host_bastion1_fd65cf69ce --- network_customer_b6c4586387
-  network_customer_b6c4586387 --- host_prom1_abf2e7bd7a
-  network_customer_b6c4586387 --- host_rancher1_d47e6b0e07
-  network_customer_b6c4586387 --- host_rancher2_bcc55a020f
-  network_customer_b6c4586387 --- host_rancher3_bbbf0c319b
-  host_bastion1_fd65cf69ce --- network_downstream_vlan565_8ed6786137
-  host_bastion1_fd65cf69ce --- network_downstream_vlan566_d2bd8ff235
-  classDef bastion fill:#f7c873,stroke:#5b4636,color:#201a16
-  classDef rancher fill:#d8e8ff,stroke:#315a8a,color:#172433
-  classDef monitoring fill:#d9f2e6,stroke:#39735a,color:#193326
-  classDef network fill:#eeeeee,stroke:#666666,color:#222222
-  class host_bastion1_fd65cf69ce bastion
-  class host_rancher1_d47e6b0e07,host_rancher2_bcc55a020f,host_rancher3_bbbf0c319b rancher
-  class host_prom1_abf2e7bd7a monitoring
-  class network_customer_b6c4586387,network_management_288965a1f2,network_downstream_vlan565_8ed6786137,network_downstream_vlan566_d2bd8ff235 network
-```
+<svg xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc" viewBox="0 0 1200 815" width="1200" height="815">
+<title id="title">Desired infrastructure topology</title>
+<desc id="desc">Environment full-example infrastructure attachment map</desc>
+<style>
+          .background { fill: #ffffff; }
+          .network { fill: #f1f3f5; stroke: #6b7280; stroke-width: 2; }
+          .management { fill: #e8eefc; stroke: #4969a8; stroke-width: 2; }
+          .bastion { fill: #fff1c7; stroke: #8a6420; stroke-width: 2.5; }
+          .host { fill: #ffffff; stroke: #52606d; stroke-width: 2; }
+          .rancher { fill: #e5f0ff; stroke: #315a8a; stroke-width: 2; }
+          .monitoring { fill: #e4f5eb; stroke: #39735a; stroke-width: 2; }
+          .downstream { fill: #f3e8ff; stroke: #76508f; stroke-width: 2; }
+          .group { fill: none; stroke: #9aa5b1; stroke-width: 1.5; stroke-dasharray: 7 5; }
+          .connector { stroke: #475569; stroke-width: 2.5; fill: none; }
+          .heading { font: 600 16px sans-serif; fill: #1f2937; text-anchor: middle; }
+          .box-label { font: 13px sans-serif; fill: #17202a; text-anchor: middle; }
+          .small-label { font: 12px sans-serif; fill: #4b5563; text-anchor: middle; }
+        </style>
+<rect class="background" x="0" y="0" width="1200" height="815" />
+<rect class="management" x="500.0" y="35" width="200" height="92" rx="10" /><text class="box-label" x="600.0" y="60">Management</text>
+<text class="box-label" x="600.0" y="78">192.0.2.0/24</text>
+<line class="connector" x1="600.0" y1="127" x2="600.0" y2="165" />
+<rect class="bastion" x="500.0" y="165" width="200" height="110" rx="10" /><text class="box-label" x="600.0" y="190">bastion1</text>
+<text class="box-label" x="600.0" y="208">customer: 198.51.100.4/28</text>
+<text class="box-label" x="600.0" y="226">management: 192.0.2.10/24</text>
+<line class="connector" x1="600.0" y1="275" x2="600.0" y2="325" />
+<rect class="network" x="500.0" y="325" width="200" height="92" rx="10" /><text class="box-label" x="600.0" y="350">Customer network</text>
+<text class="box-label" x="600.0" y="368">198.51.100.0/28</text>
+<line class="connector" x1="600.0" y1="417" x2="600.0" y2="452" />
+<line class="connector" x1="207.0" y1="452" x2="963.0" y2="452" />
+<rect class="monitoring" x="107.0" y="455" width="230" height="92" rx="10" /><text class="box-label" x="222.0" y="480">Monitoring: prom1</text>
+<text class="box-label" x="222.0" y="498">198.51.100.6</text>
+<line class="connector" x1="207.0" y1="452" x2="207.0" y2="455" />
+<rect class="rancher" x="359.0" y="455" width="230" height="92" rx="10" /><text class="box-label" x="474.0" y="480">Rancher: rancher1</text>
+<text class="box-label" x="474.0" y="498">198.51.100.11</text>
+<line class="connector" x1="459.0" y1="452" x2="459.0" y2="455" />
+<rect class="rancher" x="611.0" y="455" width="230" height="92" rx="10" /><text class="box-label" x="726.0" y="480">Rancher: rancher2</text>
+<text class="box-label" x="726.0" y="498">198.51.100.12</text>
+<line class="connector" x1="711.0" y1="452" x2="711.0" y2="455" />
+<rect class="rancher" x="863.0" y="455" width="230" height="92" rx="10" /><text class="box-label" x="978.0" y="480">Rancher: rancher3</text>
+<text class="box-label" x="978.0" y="498">198.51.100.13</text>
+<line class="connector" x1="963.0" y1="452" x2="963.0" y2="455" />
+<rect class="group" x="347.0" y="427" width="758" height="137" rx="8" />
+<text class="heading" x="726.0" y="445">Rancher cluster</text>
+<text class="heading" x="600.0" y="610">Downstream networks</text>
+<line class="connector" x1="700.0" y1="220.0" x2="1125" y2="220.0" />
+<line class="connector" x1="1125" y1="220.0" x2="1125" y2="630" />
+<line class="connector" x1="315.0" y1="630" x2="885.0" y2="630" />
+<line class="connector" x1="885.0" y1="630" x2="1125" y2="630" />
+<rect class="downstream" x="40.0" y="642" width="550.0" height="118" rx="10" /><text class="box-label" x="315.0" y="667">VLAN 565</text>
+<text class="box-label" x="315.0" y="685">203.0.113.32/27</text>
+<text class="box-label" x="315.0" y="703">bastion: 203.0.113.34</text>
+<text class="box-label" x="315.0" y="721">gateway: 203.0.113.33</text>
+<line class="connector" x1="140.0" y1="630" x2="140.0" y2="642" />
+<rect class="downstream" x="610.0" y="642" width="550.0" height="118" rx="10" /><text class="box-label" x="885.0" y="667">VLAN 566</text>
+<text class="box-label" x="885.0" y="685">203.0.113.64/27</text>
+<text class="box-label" x="885.0" y="703">bastion: 203.0.113.66</text>
+<text class="box-label" x="885.0" y="721">gateway: 203.0.113.65</text>
+<line class="connector" x1="710.0" y1="630" x2="710.0" y2="642" />
+</svg>
 
 ## Environment Overview
 
@@ -50,10 +76,10 @@ flowchart TB
 | Host | FQDN | Roles | Local IP | Management IP | SSH target |
 | --- | --- | --- | --- | --- | --- |
 | bastion1 | bastion1.rancher.full-example.example.invalid | bastion | 198.51.100.4 | 192.0.2.10 | 192.0.2.10 |
-| prom1 | prom1.rancher.full-example.example.invalid | prometheus | 198.51.100.6 | unknown | 198.51.100.6 |
-| rancher1 | rancher1.rancher.full-example.example.invalid | rancher | 198.51.100.11 | unknown | 198.51.100.11 |
-| rancher2 | rancher2.rancher.full-example.example.invalid | rancher | 198.51.100.12 | unknown | 198.51.100.12 |
-| rancher3 | rancher3.rancher.full-example.example.invalid | rancher | 198.51.100.13 | unknown | 198.51.100.13 |
+| prom1 | prom1.rancher.full-example.example.invalid | prometheus | 198.51.100.6 | not attached | 198.51.100.6 |
+| rancher1 | rancher1.rancher.full-example.example.invalid | rancher | 198.51.100.11 | not attached | 198.51.100.11 |
+| rancher2 | rancher2.rancher.full-example.example.invalid | rancher | 198.51.100.12 | not attached | 198.51.100.12 |
+| rancher3 | rancher3.rancher.full-example.example.invalid | rancher | 198.51.100.13 | not attached | 198.51.100.13 |
 
 ## Networks
 

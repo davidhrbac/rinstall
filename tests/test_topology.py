@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import subprocess
 import sys
+import xml.etree.ElementTree as ET
 
 import yaml
 
@@ -16,6 +17,7 @@ from lib.topology import (
     render_topology_ascii_overview,
     render_topology_connectivity_mermaid,
     render_topology_infrastructure_mermaid,
+    render_topology_svg,
 )
 
 
@@ -197,7 +199,8 @@ def test_ascii_and_mermaid_are_deterministic_and_embedded_from_same_topology():
 
     assert render_topology_infrastructure_mermaid(topology) == mermaid
     assert render_topology_ascii_overview(topology) == ascii_overview
-    assert "```mermaid\n" + mermaid.rstrip() + "\n```" in markdown
+    assert "<svg " in markdown
+    assert mermaid not in markdown
     assert "```mermaid\n" + connectivity.rstrip() + "\n```" in markdown
     assert "```text\n" + ascii_overview.rstrip() + "\n```" in markdown
     assert markdown.index("## Infrastructure Topology") < markdown.index("## Environment Overview")
@@ -284,6 +287,64 @@ def test_connectivity_mermaid_has_constant_symbolic_shape():
     assert one == many
 
 
+def test_svg_is_deterministic_hierarchical_and_has_no_service_edges():
+    topology = topology_with(
+        downstream_network(565, "10.20.56.32/27"),
+        downstream_network(566, "10.20.56.64/27"),
+    )
+
+    first = render_topology_svg(topology)
+    second = render_topology_svg(topology)
+
+    assert first == second
+    assert 'viewBox="0 0 1200 ' in first
+    assert "bastion1" in first and "prom1" in first
+    assert all(name in first for name in ("rancher1", "rancher2", "rancher3"))
+    assert all(value in first for value in ("192.0.2.0/24", "10.14.17.0/28", "10.20.56.34", "10.20.56.66"))
+    assert all(value not in first for value in ("TCP/22", "DNS", "DHCP", "SSH"))
+    assert "Bastion IP" not in first
+
+
+def test_svg_wraps_five_and_ten_downstream_networks_without_overlap():
+    for count in (1, 2, 5, 10):
+        if count <= 8:
+            topology = topology_with(
+                *(downstream_network(565 + index, f"10.20.{56 + index}.0/27") for index in range(count))
+            )
+        else:
+            base = topology_with(
+                *(downstream_network(565 + index, f"10.20.{56 + index}.0/27") for index in range(8))
+            )
+            extra = tuple(
+                replace(
+                    base.downstream_networks[0],
+                    id=f"downstream:vlan{565 + index}",
+                    interface_name=f"vlan{565 + index}",
+                    vlan=565 + index,
+                    cidr=f"10.20.{56 + index}.0/27",
+                    bastion_address=f"10.20.{56 + index}.2",
+                    gateway=f"10.20.{56 + index}.1",
+                )
+                for index in range(8, count)
+            )
+            topology = replace(base, downstream_networks=base.downstream_networks + extra)
+        svg = render_topology_svg(topology)
+        root = ET.fromstring(svg)
+        viewbox = [float(value) for value in root.attrib["viewBox"].split()]
+        assert viewbox[:2] == [0.0, 0.0]
+        assert viewbox[2] == 1200.0
+        boxes = [
+            (float(rect.attrib["x"]), float(rect.attrib["y"]), float(rect.attrib["width"]), float(rect.attrib["height"]))
+            for rect in root.iter("{http://www.w3.org/2000/svg}rect")
+            if rect.attrib.get("class") == "downstream"
+        ]
+        assert len(boxes) == count
+        assert all(x + width <= viewbox[2] and y + height <= viewbox[3] for x, y, width, height in boxes)
+        for index, (x, y, width, height) in enumerate(boxes):
+            for other_x, other_y, other_width, other_height in boxes[index + 1 :]:
+                assert x + width <= other_x or other_x + other_width <= x or y + height <= other_y or other_y + other_height <= y
+
+
 def test_topology_outputs_exclude_sensitive_config_values(tmp_path):
     config = raw_config()
     secrets = [
@@ -315,6 +376,7 @@ def test_topology_outputs_exclude_sensitive_config_values(tmp_path):
     first_markdown = (output_dir / "topology.md").read_bytes()
     first_mermaid = (output_dir / "topology.mmd").read_bytes()
     first_connectivity = (output_dir / "connectivity.mmd").read_bytes()
+    first_svg = (output_dir / "topology.svg").read_bytes()
     subprocess.run(
         command,
         check=True,
@@ -325,17 +387,20 @@ def test_topology_outputs_exclude_sensitive_config_values(tmp_path):
         + (output_dir / "topology.md").read_text()
         + (output_dir / "topology.mmd").read_text()
         + (output_dir / "connectivity.mmd").read_text()
+        + (output_dir / "topology.svg").read_text()
     )
     assert (output_dir / "topology.json").read_bytes() == first_json
     assert (output_dir / "topology.md").read_bytes() == first_markdown
     assert (output_dir / "topology.mmd").read_bytes() == first_mermaid
     assert (output_dir / "connectivity.mmd").read_bytes() == first_connectivity
+    assert (output_dir / "topology.svg").read_bytes() == first_svg
     assert all(secret not in outputs for secret in secrets)
     assert output_dir.stat().st_mode & 0o777 == 0o700
     assert (output_dir / "topology.json").stat().st_mode & 0o777 == 0o600
     assert (output_dir / "topology.md").stat().st_mode & 0o777 == 0o600
     assert (output_dir / "topology.mmd").stat().st_mode & 0o777 == 0o600
     assert (output_dir / "connectivity.mmd").stat().st_mode & 0o777 == 0o600
+    assert (output_dir / "topology.svg").stat().st_mode & 0o777 == 0o600
 
 
 def test_markdown_escapes_configured_table_values():
