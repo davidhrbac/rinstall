@@ -4,7 +4,6 @@ import json
 from pathlib import Path
 import subprocess
 import sys
-import xml.etree.ElementTree as ET
 
 import yaml
 
@@ -15,9 +14,7 @@ from lib.topology import (
     render_topology_json,
     render_topology_markdown,
     render_topology_ascii_overview,
-    render_topology_connectivity_mermaid,
     render_topology_infrastructure_mermaid,
-    render_topology_svg,
 )
 
 
@@ -41,6 +38,11 @@ def downstream_network(vlan, subnet):
         "gateway": 1,
         "dhcp": {"start": 4, "end": -2, "lease_time": "12h"},
     }
+
+
+def mermaid_id_for_label(diagram, label):
+    line = next(line for line in diagram.splitlines() if f'["{label}' in line)
+    return line.strip().split("[", 1)[0]
 
 
 def topology_with(*downstreams):
@@ -194,20 +196,19 @@ def test_ascii_and_mermaid_are_deterministic_secondary_artifacts():
 
     ascii_overview = render_topology_ascii_overview(topology)
     mermaid = render_topology_infrastructure_mermaid(topology)
-    connectivity = render_topology_connectivity_mermaid(topology)
     markdown = render_topology_markdown(topology)
 
     assert render_topology_infrastructure_mermaid(topology) == mermaid
     assert render_topology_ascii_overview(topology) == ascii_overview
-    assert "<svg " in markdown
-    assert mermaid not in markdown
-    assert connectivity not in markdown
+    assert "<svg" not in markdown
+    assert "```mermaid\n" + mermaid.rstrip() + "\n```" in markdown
     assert ascii_overview not in markdown
-    assert "## Infrastructure Map" in markdown
+    assert "## Infrastructure Topology" in markdown
     assert "## Key Connectivity" in markdown
     assert "Rancher nodes -> Downstream nodes       TCP/22" in markdown
-    assert markdown.index("## Infrastructure Map") < markdown.index("## Environment")
+    assert markdown.index("## Infrastructure Topology") < markdown.index("## Environment")
     assert markdown.index("## Key Connectivity") < markdown.index("## Resolved Connectivity")
+    assert markdown.index("## Resolved Connectivity") < markdown.index("## Details")
     assert "bastion1" in ascii_overview
     assert "management  192.0.2.10/24" in ascii_overview
     assert "vlan565     10.20.56.34/27" in ascii_overview
@@ -217,26 +218,38 @@ def test_ascii_and_mermaid_are_deterministic_secondary_artifacts():
     assert all(len(line) <= 80 for line in ascii_overview.splitlines())
 
 
-def test_mermaid_shows_all_core_nodes_and_same_vlan_relationships():
+def test_mermaid_shows_only_hierarchical_attachment_relationships():
     topology = topology_with(
         downstream_network(565, "10.20.56.32/27"),
         downstream_network(566, "10.20.56.64/27"),
     )
 
-    infrastructure = render_topology_infrastructure_mermaid(topology)
-    mermaid = render_topology_connectivity_mermaid(topology)
+    mermaid = render_topology_infrastructure_mermaid(topology)
 
-    assert all(host in infrastructure for host in ("rancher1", "rancher2", "rancher3", "prom1", "bastion1"))
-    assert '"TCP' not in infrastructure
-    assert '"DNS' not in infrastructure
-    assert "DHCP" not in infrastructure
-    assert all("---|" not in line for line in infrastructure.splitlines())
-    assert mermaid.count('-->|"TCP/22 SSH"|') == 1
-    assert mermaid.count('-->|"TCP/UDP 53 DNS"|') == 1
-    assert mermaid.count('-.->|"logical DHCP service UDP 67/68"|') == 1
-    assert "each downstream VLAN" in mermaid
-    assert "10.20.56.34" not in mermaid
-    assert "10.20.56.66" not in mermaid
+    assert mermaid.startswith("flowchart TB\n")
+    assert 'subgraph rancher_cluster["Rancher cluster"]\n    direction LR' in mermaid
+    assert 'subgraph downstream["Downstream networks"]\n    direction LR' in mermaid
+    management_id = mermaid_id_for_label(mermaid, "Management")
+    bastion_id = mermaid_id_for_label(mermaid, "bastion1")
+    customer_id = mermaid_id_for_label(mermaid, "Customer network")
+    prometheus_id = mermaid_id_for_label(mermaid, "prom1")
+    assert f"{management_id} --- {bastion_id}" in mermaid
+    assert f"{bastion_id} --- {customer_id}" in mermaid
+    assert f"{customer_id} --- {prometheus_id}" in mermaid
+    assert all(
+        f"{customer_id} --- {mermaid_id_for_label(mermaid, f'rancher{index}')}" in mermaid
+        for index in range(1, 4)
+    )
+    assert all(
+        f"{bastion_id} --- {mermaid_id_for_label(mermaid, f'VLAN {vlan}')}" in mermaid
+        for vlan in (565, 566)
+    )
+    assert all(host in mermaid for host in ("rancher1", "rancher2", "rancher3", "prom1"))
+    assert all(address in mermaid for address in ("192.0.2.0/24", "10.14.17.0/28", "10.20.56.34", "10.20.56.66"))
+    assert all(value not in mermaid for value in ("TCP/22", "DNS", "DHCP", "SSH jump"))
+    assert "bastion_ip" not in mermaid.lower()
+    assert "-->|" not in mermaid and "-.->" not in mermaid
+    assert all("---|" not in line for line in mermaid.splitlines())
 
 
 def test_mermaid_supports_arbitrary_rancher_names_and_safe_ids():
@@ -254,6 +267,23 @@ def test_mermaid_supports_arbitrary_rancher_names_and_safe_ids():
             continue
         node_id = line.strip().split("[", 1)[0]
         assert node_id.replace("_", "").isalnum()
+
+
+def test_mermaid_connects_every_rancher_for_arbitrary_count():
+    config = raw_config()
+    config["local"]["rancher_nodes"]["count"] = 5
+    config["local"]["rancher_nodes"]["start_host"] = 7
+    topology = build_desired_topology(expand_env(config))
+
+    mermaid = render_topology_infrastructure_mermaid(topology)
+
+    assert mermaid.count('subgraph rancher_cluster["Rancher cluster"]') == 1
+    assert all(f"rancher{index}" in mermaid for index in range(1, 6))
+    customer_id = mermaid_id_for_label(mermaid, "Customer network")
+    assert all(
+        f"{customer_id} --- {mermaid_id_for_label(mermaid, f'rancher{index}')}" in mermaid
+        for index in range(1, 6)
+    )
 
 
 def test_mermaid_shows_external_jump_only_when_topology_represents_it():
@@ -278,114 +308,8 @@ def test_mermaid_shows_external_jump_only_when_topology_represents_it():
     assert "External jump" not in with_external
 
 
-def test_connectivity_mermaid_has_constant_symbolic_shape():
-    one = render_topology_connectivity_mermaid(topology_with(downstream_network(565, "10.20.56.32/27")))
-    many = render_topology_connectivity_mermaid(
-        topology_with(
-            downstream_network(565, "10.20.56.32/27"),
-            downstream_network(566, "10.20.56.64/27"),
-        )
-    )
-
-    assert one == many
-
-
-def test_svg_is_deterministic_hierarchical_and_has_no_service_edges():
-    topology = topology_with(
-        downstream_network(565, "10.20.56.32/27"),
-        downstream_network(566, "10.20.56.64/27"),
-    )
-
-    first = render_topology_svg(topology)
-    second = render_topology_svg(topology)
-
-    assert first == second
-    assert 'viewBox="0 0 980 478"' in first
-    assert "bastion1" in first and "prom1" in first
-    assert all(name in first for name in ("rancher1", "rancher2", "rancher3"))
-    assert all(value in first for value in ("192.0.2.0/24", "10.14.17.0/28", "10.20.56.34", "10.20.56.66"))
-    assert all(value not in first for value in ("TCP/22", "DNS", "DHCP", "SSH"))
-    assert "Bastion IP" not in first
-    assert first.count('class="rancher-cluster"') == 1
-    assert first.count('data-connection="') == 5
-
-    root = ET.fromstring(first)
-    namespace = "{http://www.w3.org/2000/svg}"
-    connectors = {
-        item.attrib["data-connection"]: [
-            tuple(map(int, point.split(","))) for point in item.attrib["points"].split()
-        ]
-        for item in root.iter(f"{namespace}polyline")
-    }
-    assert connectors == {
-        "management-bastion": [(435, 74), (435, 100)],
-        "bastion-customer": [(325, 141), (180, 141), (180, 235)],
-        "customer-monitoring": [(150, 293), (150, 340)],
-        "customer-rancher": [(250, 293), (250, 320), (400, 320), (400, 340)],
-        "bastion-downstream": [(545, 141), (558, 141), (558, 245), (570, 245)],
-    }
-    assert not list(root.iter(f"{namespace}line"))
-    for coordinates in connectors.values():
-        assert all(x1 == x2 or y1 == y2 for (x1, y1), (x2, y2) in zip(coordinates, coordinates[1:]))
-        assert all(x < 600 and y < 350 for x, y in coordinates)
-
-    groups = {
-        group.attrib["id"]: group
-        for group in root.iter(f"{namespace}g")
-        if "id" in group.attrib
-    }
-
-    def on_boundary(point, group_id):
-        rect = next(groups[group_id].iter(f"{namespace}rect"))
-        x, y, width, height = (float(rect.attrib[name]) for name in ("x", "y", "width", "height"))
-        px, py = point
-        return (
-            (px in (x, x + width) and y <= py <= y + height)
-            or (py in (y, y + height) and x <= px <= x + width)
-        )
-
-    endpoints = {
-        "management-bastion": ("management-network", "bastion"),
-        "bastion-customer": ("bastion", "customer-network"),
-        "customer-monitoring": ("customer-network", "monitoring"),
-        "customer-rancher": ("customer-network", "rancher-cluster"),
-        "bastion-downstream": ("bastion", "downstream-networks"),
-    }
-    assert all(
-        on_boundary(connectors[name][0], source) and on_boundary(connectors[name][-1], destination)
-        for name, (source, destination) in endpoints.items()
-    )
-
-    def intersects(first, second):
-        (ax1, ay1), (ax2, ay2) = first
-        (bx1, by1), (bx2, by2) = second
-        if ax1 == ax2 and bx1 == bx2:
-            return ax1 == bx1 and max(min(ay1, ay2), min(by1, by2)) <= min(
-                max(ay1, ay2), max(by1, by2)
-            )
-        if ay1 == ay2 and by1 == by2:
-            return ay1 == by1 and max(min(ax1, ax2), min(bx1, bx2)) <= min(
-                max(ax1, ax2), max(bx1, bx2)
-            )
-        if ay1 == ay2:
-            return min(ax1, ax2) <= bx1 <= max(ax1, ax2) and min(by1, by2) <= ay1 <= max(by1, by2)
-        return min(bx1, bx2) <= ax1 <= max(bx1, bx2) and min(ay1, ay2) <= by1 <= max(ay1, ay2)
-
-    connector_segments = {
-        name: list(zip(points, points[1:])) for name, points in connectors.items()
-    }
-    names = list(connector_segments)
-    assert not any(
-        intersects(first, second)
-        for index, name in enumerate(names)
-        for other_name in names[index + 1 :]
-        for first in connector_segments[name]
-        for second in connector_segments[other_name]
-    )
-
-
-def test_svg_wraps_five_and_ten_downstream_networks_without_overlap():
-    for count in (1, 2, 5, 10):
+def test_mermaid_supports_zero_one_two_five_and_ten_downstream_networks():
+    for count in (0, 1, 2, 5, 10):
         if count <= 8:
             topology = topology_with(
                 *(downstream_network(565 + index, f"10.20.{56 + index}.0/27") for index in range(count))
@@ -406,23 +330,34 @@ def test_svg_wraps_five_and_ten_downstream_networks_without_overlap():
                 )
                 for index in range(8, count)
             )
-            topology = replace(base, downstream_networks=base.downstream_networks + extra)
-        svg = render_topology_svg(topology)
-        root = ET.fromstring(svg)
-        viewbox = [float(value) for value in root.attrib["viewBox"].split()]
-        assert viewbox[:2] == [0.0, 0.0]
-        assert viewbox[2] == 980.0
-        assert viewbox[3] <= (500.0 if count <= 2 else 800.0)
-        boxes = [
-            (float(rect.attrib["x"]), float(rect.attrib["y"]), float(rect.attrib["width"]), float(rect.attrib["height"]))
-            for rect in root.iter("{http://www.w3.org/2000/svg}rect")
-            if rect.attrib.get("class") == "downstream"
-        ]
-        assert len(boxes) == count
-        assert all(x + width <= viewbox[2] and y + height <= viewbox[3] for x, y, width, height in boxes)
-        for index, (x, y, width, height) in enumerate(boxes):
-            for other_x, other_y, other_width, other_height in boxes[index + 1 :]:
-                assert x + width <= other_x or other_x + other_width <= x or y + height <= other_y or other_y + other_height <= y
+            network_template = next(
+                network for network in base.networks if network.id == base.downstream_networks[0].id
+            )
+            extra_networks = tuple(
+                replace(
+                    network_template,
+                    id=item.id,
+                    vmware_network=f"DS-{item.vlan}",
+                    cidr=item.cidr,
+                    vlan=item.vlan,
+                    gateway=item.gateway,
+                )
+                for item in extra
+            )
+            topology = replace(
+                base,
+                downstream_networks=base.downstream_networks + extra,
+                networks=base.networks + extra_networks,
+            )
+        mermaid = render_topology_infrastructure_mermaid(topology)
+        assert render_topology_infrastructure_mermaid(topology) == mermaid
+        assert ('subgraph downstream["Downstream networks"]' in mermaid) is (count > 0)
+        bastion_id = mermaid_id_for_label(mermaid, "bastion1")
+        for index in range(count):
+            vlan = 565 + index
+            assert f"VLAN {vlan}<br/>" in mermaid
+            downstream_id = mermaid_id_for_label(mermaid, f"VLAN {vlan}")
+            assert f"{bastion_id} --- {downstream_id}" in mermaid
 
 
 def test_topology_outputs_exclude_sensitive_config_values(tmp_path):
@@ -456,8 +391,6 @@ def test_topology_outputs_exclude_sensitive_config_values(tmp_path):
     first_markdown = (output_dir / "topology.md").read_bytes()
     first_text = (output_dir / "topology.txt").read_bytes()
     first_mermaid = (output_dir / "topology.mmd").read_bytes()
-    first_connectivity = (output_dir / "connectivity.mmd").read_bytes()
-    first_svg = (output_dir / "topology.svg").read_bytes()
     subprocess.run(
         command,
         check=True,
@@ -468,23 +401,19 @@ def test_topology_outputs_exclude_sensitive_config_values(tmp_path):
         + (output_dir / "topology.md").read_text()
         + (output_dir / "topology.txt").read_text()
         + (output_dir / "topology.mmd").read_text()
-        + (output_dir / "connectivity.mmd").read_text()
-        + (output_dir / "topology.svg").read_text()
     )
     assert (output_dir / "topology.json").read_bytes() == first_json
     assert (output_dir / "topology.md").read_bytes() == first_markdown
     assert (output_dir / "topology.txt").read_bytes() == first_text
     assert (output_dir / "topology.mmd").read_bytes() == first_mermaid
-    assert (output_dir / "connectivity.mmd").read_bytes() == first_connectivity
-    assert (output_dir / "topology.svg").read_bytes() == first_svg
+    assert not (output_dir / "connectivity.mmd").exists()
+    assert not (output_dir / "topology.svg").exists()
     assert all(secret not in outputs for secret in secrets)
     assert output_dir.stat().st_mode & 0o777 == 0o700
     assert (output_dir / "topology.json").stat().st_mode & 0o777 == 0o600
     assert (output_dir / "topology.md").stat().st_mode & 0o777 == 0o600
     assert (output_dir / "topology.txt").stat().st_mode & 0o777 == 0o600
     assert (output_dir / "topology.mmd").stat().st_mode & 0o777 == 0o600
-    assert (output_dir / "connectivity.mmd").stat().st_mode & 0o777 == 0o600
-    assert (output_dir / "topology.svg").stat().st_mode & 0o777 == 0o600
 
 
 def test_markdown_escapes_configured_table_values():

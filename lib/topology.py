@@ -4,7 +4,6 @@ from html import escape
 from ipaddress import ip_interface, ip_network
 import json
 import re
-from xml.sax.saxutils import escape as xml_escape
 
 RINSTALL_ARCHITECTURE = "RINSTALL_ARCHITECTURE"
 RINSTALL_CODE = "RINSTALL_CODE"
@@ -682,62 +681,6 @@ def render_topology_infrastructure_mermaid(topology):
     return "\n".join(lines) + "\n"
 
 
-def _rule_for_downstream(topology, prefix, downstream):
-    return next(
-        rule
-        for rule in topology.connectivity_rules
-        if rule.id == f"{prefix}:{downstream.interface_name}"
-    )
-
-
-def render_topology_connectivity_mermaid(topology):
-    metadata = topology.metadata
-    hosts_by_id = {host.id: host for host in topology.hosts}
-    host_ids, network_ids = _topology_ids(topology)
-    bastion = hosts_by_id[metadata.bastion_host]
-    ranchers = [host for host in topology.hosts if "rancher" in host.roles]
-    rancher_label = ", ".join(host.id for host in ranchers) or "none"
-    lines = [
-        "flowchart LR",
-        f'  rancher_group[["Rancher nodes ({len(ranchers)})<br/>{_mermaid(rancher_label)}"]]',
-        f'  bastion["Bastion<br/>{_mermaid(bastion.id)}<br/>{_mermaid(_host_address(bastion))}"]',
-    ]
-    for downstream in topology.downstream_networks:
-        network_id = network_ids[downstream.id]
-        lines.append(
-            f'  {network_id}["VLAN {_mermaid(downstream.vlan)}<br/>{_mermaid(downstream.cidr)}<br/>'
-            f'bastion {_mermaid(downstream.bastion_address)}"]'
-        )
-        ssh_rule = _rule_for_downstream(topology, "rancher-downstream-ssh", downstream)
-        dns_rule = _rule_for_downstream(topology, "downstream-dns", downstream)
-        dhcp_rule = _rule_for_downstream(topology, "downstream-dhcp-request", downstream)
-        lines.append(
-            f'  rancher_group -->|"{_mermaid(_protocol_port(ssh_rule))}"| {network_id}'
-        )
-        lines.append(
-            f'  {network_id} -->|"DNS {_mermaid(_protocol_port(dns_rule))} @ '
-            f'{_mermaid(dns_rule.destination.resolved[0].address)}"| bastion'
-        )
-        lines.append(
-            f'  {network_id} -.->|"logical DHCP service @ {_mermaid(dhcp_rule.destination.resolved[0].address)} '
-            f'(UDP 67/68)"| bastion'
-        )
-    lines.extend(
-        [
-            "  classDef bastion fill:#f7c873,stroke:#5b4636,color:#201a16",
-            "  classDef rancher fill:#d8e8ff,stroke:#315a8a,color:#172433",
-            "  classDef downstream fill:#f2e2ff,stroke:#76508f,color:#2e1f38",
-            "  class bastion bastion",
-            "  class rancher_group rancher",
-        ]
-    )
-    if topology.downstream_networks:
-        lines.append(
-            f"  class {','.join(network_ids[item.id] for item in topology.downstream_networks)} downstream"
-        )
-    return "\n".join(lines) + "\n"
-
-
 def render_topology_ascii_overview(topology):
     metadata = topology.metadata
     hosts_by_id = {host.id: host for host in topology.hosts}
@@ -778,165 +721,6 @@ def render_topology_ascii_overview(topology):
     else:
         lines.append("  none")
     return "\n".join(lines) + "\n"
-
-
-def _svg_text(lines, x, y, css_class, line_height=18):
-    return "\n".join(
-        f'<text class="{css_class}" x="{x}" y="{y + index * line_height}">{xml_escape(str(line))}</text>'
-        for index, line in enumerate(lines)
-    )
-
-
-def _svg_box(x, y, width, height, css_class, lines):
-    text_y = y + 25
-    return (
-        f'<rect class="{css_class}" x="{x}" y="{y}" width="{width}" height="{height}" rx="10" />'
-        + _svg_text(lines, x + width / 2, text_y, "box-label")
-    )
-
-
-def render_topology_svg(topology):
-    metadata = topology.metadata
-    hosts_by_id = {host.id: host for host in topology.hosts}
-    bastion = hosts_by_id[metadata.bastion_host]
-    customer = next(network for network in topology.networks if network.kind == "local/customer")
-    management = next((network for network in topology.networks if network.kind == "management"), None)
-    prometheus = [
-        host for host in topology.hosts if "prometheus" in host.roles or "monitoring" in host.roles
-    ]
-    ranchers = [host for host in topology.hosts if "rancher" in host.roles]
-    width = 980
-    management_box = (350, 20, 170, 54)
-    bastion_box = (325, 100, 220, 82)
-    customer_box = (80, 235, 200, 58)
-    monitoring_box = (45, 340, 190, 48 + max(1, len(prometheus)) * 20)
-    rancher_box = (270, 340, 260, 48 + max(1, len(ranchers)) * 20)
-    columns = 1 if len(topology.downstream_networks) <= 1 else 2
-    rows = (len(topology.downstream_networks) + columns - 1) // columns
-    downstream_card_width = 174
-    downstream_card_height = 88
-    downstream_gap = 14
-    downstream_group = (
-        570,
-        215,
-        32 + columns * downstream_card_width + (columns - 1) * downstream_gap,
-        48 + rows * downstream_card_height + max(0, rows - 1) * downstream_gap,
-    )
-    core_bottom = max(monitoring_box[1] + monitoring_box[3], rancher_box[1] + rancher_box[3])
-    downstream_bottom = downstream_group[1] + downstream_group[3] if rows else 0
-    height = int(max(475, core_bottom + 30, downstream_bottom + 25))
-
-    elements = [
-        f'<svg xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc" '
-        f'viewBox="0 0 {width} {height}" width="{width}" height="{height}">',
-        "<title id=\"title\">Desired infrastructure topology</title>",
-        f'<desc id="desc">Environment {xml_escape(_plain(metadata.environment_id))} infrastructure attachment map</desc>',
-        """<style>
-          .background { fill: #ffffff; }
-          .management { fill: #e8eefc; stroke: #4969a8; stroke-width: 2; }
-          .bastion { fill: #fff1c7; stroke: #8a6420; stroke-width: 2.5; }
-          .network { fill: #f1f3f5; stroke: #6b7280; stroke-width: 2; }
-          .monitoring { fill: #e4f5eb; stroke: #39735a; stroke-width: 2; }
-          .rancher-cluster { fill: #e5f0ff; stroke: #315a8a; stroke-width: 2; }
-          .downstream-group { fill: #faf7fd; stroke: #9b83ad; stroke-width: 1.5; stroke-dasharray: 6 4; }
-          .downstream { fill: #f3e8ff; stroke: #76508f; stroke-width: 2; }
-          .connector { stroke: #475569; stroke-width: 2.5; fill: none; }
-          .heading { font: 600 15px sans-serif; fill: #1f2937; text-anchor: middle; }
-          .box-label { font: 13px sans-serif; fill: #17202a; text-anchor: middle; }
-          .row-name { font: 600 12px sans-serif; fill: #17202a; text-anchor: start; }
-          .row-value { font: 12px sans-serif; fill: #334155; text-anchor: end; }
-        </style>""",
-        f'<rect class="background" x="0" y="0" width="{width}" height="{height}" />',
-    ]
-
-    def add_card(card, css_class, card_lines, element_id):
-        x, y, card_width, card_height = card
-        elements.append(f'<g id="{element_id}">')
-        elements.append(
-            f'<rect class="{css_class}" x="{x}" y="{y}" width="{card_width}" height="{card_height}" rx="9" />'
-        )
-        elements.append(_svg_text(card_lines, x + card_width / 2, y + 23, "box-label", 18))
-        elements.append("</g>")
-
-    if management is not None and _known_network(topology, management):
-        add_card(management_box, "management", ["Management", management.cidr or "unknown"], "management-network")
-        elements.append(
-            '<polyline class="connector" data-connection="management-bastion" points="435,74 435,100" />'
-        )
-    bastion_lines = [bastion.id, f"customer: {_host_network_address(topology, bastion, customer.id)}"]
-    if management is not None:
-        bastion_lines.append(f"management: {_host_network_address(topology, bastion, management.id)}")
-    add_card(bastion_box, "bastion", bastion_lines, "bastion")
-    add_card(customer_box, "network", ["Customer network", customer.cidr or "unknown"], "customer-network")
-
-    elements.append(
-        '<polyline class="connector" data-connection="bastion-customer" '
-        'points="325,141 180,141 180,235" />'
-    )
-    elements.append(
-        '<polyline class="connector" data-connection="customer-monitoring" '
-        'points="150,293 150,340" />'
-    )
-    elements.append(
-        '<polyline class="connector" data-connection="customer-rancher" '
-        'points="250,293 250,320 400,320 400,340" />'
-    )
-
-    mx, my, mw, mh = monitoring_box
-    elements.append('<g id="monitoring">')
-    elements.append(f'<rect class="monitoring" x="{mx}" y="{my}" width="{mw}" height="{mh}" rx="9" />')
-    elements.append(f'<text class="heading" x="{mx + mw / 2}" y="{my + 22}">Monitoring</text>')
-    for index, host in enumerate(prometheus or (None,)):
-        y = my + 45 + index * 20
-        if host is None:
-            elements.append(f'<text class="box-label" x="{mx + mw / 2}" y="{y}">none</text>')
-        else:
-            elements.append(f'<text class="row-name" x="{mx + 14}" y="{y}">{xml_escape(host.id)}</text>')
-            elements.append(f'<text class="row-value" x="{mx + mw - 14}" y="{y}">{xml_escape(_host_address(host))}</text>')
-    elements.append("</g>")
-
-    rx, ry, rw, rh = rancher_box
-    elements.append('<g id="rancher-cluster">')
-    elements.append(f'<rect class="rancher-cluster" x="{rx}" y="{ry}" width="{rw}" height="{rh}" rx="9" />')
-    elements.append(f'<text class="heading" x="{rx + rw / 2}" y="{ry + 22}">Rancher cluster</text>')
-    for index, host in enumerate(ranchers or (None,)):
-        y = ry + 45 + index * 20
-        if host is None:
-            elements.append(f'<text class="box-label" x="{rx + rw / 2}" y="{y}">none</text>')
-        else:
-            elements.append(f'<text class="row-name" x="{rx + 16}" y="{y}">{xml_escape(host.id)}</text>')
-            elements.append(f'<text class="row-value" x="{rx + rw - 16}" y="{y}">{xml_escape(_host_address(host))}</text>')
-    elements.append("</g>")
-
-    if topology.downstream_networks:
-        gx, gy, gw, gh = downstream_group
-        elements.append('<g id="downstream-networks">')
-        elements.append(
-            f'<rect class="downstream-group" x="{gx}" y="{gy}" width="{gw}" height="{gh}" rx="10" />'
-        )
-        elements.append(f'<text class="heading" x="{gx + gw / 2}" y="{gy + 23}">Downstream networks</text>')
-        for index, downstream in enumerate(topology.downstream_networks):
-            row, column = divmod(index, columns)
-            x = gx + 16 + column * (downstream_card_width + downstream_gap)
-            y = gy + 34 + row * (downstream_card_height + downstream_gap)
-            add_card(
-                (x, y, downstream_card_width, downstream_card_height),
-                "downstream",
-                [
-                    f"VLAN {downstream.vlan}",
-                    downstream.cidr,
-                    f"bastion {downstream.bastion_address}",
-                    f"gateway {downstream.gateway}",
-                ],
-                f"downstream-vlan-{downstream.vlan}",
-            )
-        elements.append("</g>")
-        elements.append(
-            '<polyline class="connector" data-connection="bastion-downstream" '
-            'points="545,141 558,141 558,245 570,245" />'
-        )
-    elements.append("</svg>")
-    return "\n".join(elements) + "\n"
 
 
 def render_topology_ascii(topology):
@@ -1366,19 +1150,18 @@ def render_topology_infrastructure_mermaid(topology):
         host for host in topology.hosts if "prometheus" in host.roles or "monitoring" in host.roles
     ]
     ranchers = [host for host in topology.hosts if "rancher" in host.roles]
-    if prometheus:
-        lines.append('  subgraph monitoring["Monitoring"]')
-        for host in prometheus:
-            address = _host_network_address(topology, host, customer.id)
-            lines.append(f'    {host_ids[host.id]}["{_mermaid(host.id)}<br/>{_mermaid(address)}"]')
-        lines.append("  end")
+    for host in prometheus:
+        address = _host_address(host)
+        lines.append(f'  {host_ids[host.id]}["{_mermaid(host.id)}<br/>{_mermaid(address)}"]')
     lines.append('  subgraph rancher_cluster["Rancher cluster"]')
+    lines.append("    direction LR")
     for host in ranchers:
-        address = _host_network_address(topology, host, customer.id)
+        address = _host_address(host)
         lines.append(f'    {host_ids[host.id]}["{_mermaid(host.id)}<br/>{_mermaid(address)}"]')
     lines.append("  end")
     if topology.downstream_networks:
         lines.append('  subgraph downstream["Downstream networks"]')
+        lines.append("    direction LR")
         for network in topology.downstream_networks:
             lines.append(
                 f'    {network_ids[network.id]}["VLAN {_mermaid(network.vlan)}<br/>'
@@ -1393,42 +1176,7 @@ def render_topology_infrastructure_mermaid(topology):
         lines.append(f"  {network_ids[customer.id]} --- {host_ids[host.id]}")
     for network in topology.downstream_networks:
         lines.append(f"  {host_ids[bastion.id]} --- {network_ids[network.id]}")
-    lines.extend(
-        [
-            "  classDef bastion fill:#f7c873,stroke:#5b4636,color:#201a16",
-            "  classDef rancher fill:#d8e8ff,stroke:#315a8a,color:#172433",
-            "  classDef monitoring fill:#d9f2e6,stroke:#39735a,color:#193326",
-            "  classDef network fill:#eeeeee,stroke:#666666,color:#222222",
-            f"  class {host_ids[bastion.id]} bastion",
-        ]
-    )
-    if ranchers:
-        lines.append(f"  class {','.join(host_ids[host.id] for host in ranchers)} rancher")
-    if prometheus:
-        lines.append(f"  class {','.join(host_ids[host.id] for host in prometheus)} monitoring")
-    network_class_ids = [network_ids[customer.id]]
-    if management is not None and _known_network(topology, management):
-        network_class_ids.append(network_ids[management.id])
-    network_class_ids.extend(network_ids[item.id] for item in topology.downstream_networks)
-    lines.append(f"  class {','.join(network_class_ids)} network")
     return "\n".join(lines) + "\n"
-
-
-def render_topology_connectivity_mermaid(topology):
-    ranchers = [host for host in topology.hosts if "rancher" in host.roles]
-    rancher_label = ", ".join(host.id for host in ranchers) or "none"
-    return "\n".join(
-        [
-            "flowchart LR",
-            f'  rancher_group[["Rancher nodes<br/>{_mermaid(rancher_label)}"]]',
-            '  downstream_nodes["Downstream nodes<br/>each downstream VLAN"]',
-            '  bastion_services["Bastion<br/>same-VLAN interface"]',
-            '  rancher_group -->|"TCP/22 SSH"| downstream_nodes',
-            '  downstream_nodes -->|"TCP/UDP 53 DNS"| bastion_services',
-            '  downstream_nodes -.->|"logical DHCP service UDP 67/68"| bastion_services',
-            "",
-        ]
-    )
 
 
 def render_topology_ascii_overview(topology):
@@ -1464,7 +1212,7 @@ def render_topology_ascii_overview(topology):
     return "\n".join(lines) + "\n"
 
 
-def _render_support_topology_markdown(topology):
+def render_topology_markdown(topology):
     metadata = topology.metadata
     lines = [
         f"# Desired Topology: {metadata.environment_id}",
@@ -1473,152 +1221,9 @@ def _render_support_topology_markdown(topology):
         "",
         "## Infrastructure Topology",
         "",
-        render_topology_svg(topology).rstrip(),
-        "",
-        "## Environment Overview",
-        "",
-        "| Environment | Rancher URL | Domain | RKE2 | Rancher | cert-manager |",
-        "| --- | --- | --- | --- | --- | --- |",
-        f"| {_markdown(metadata.environment_id)} | {_markdown(metadata.rancher_url)} | "
-        f"{_markdown(metadata.domain)} | {_markdown(metadata.versions['rke2'])} | "
-        f"{_markdown(metadata.versions['rancher'])} | {_markdown(metadata.versions['cert_manager'])} |",
-        "",
-        "## Hosts And Roles",
-        "",
-        "| Host | FQDN | Roles | Local IP | Management IP | SSH target |",
-        "| --- | --- | --- | --- | --- | --- |",
-    ]
-    for host in topology.hosts:
-        lines.append(
-            f"| {_markdown(host.id)} | {_markdown(host.fqdn)} | {_markdown(', '.join(host.roles))} | "
-            f"{_markdown(host.local_ip or 'unknown')} | {_markdown(_management_display(topology, host))} | "
-            f"{_markdown(host.ssh_target or 'unknown')} |"
-        )
-    lines.extend(
-        [
-            "",
-            "## Interfaces / Details",
-            "",
-            "| Host | Interface | Network | Kind | Address | Addressing |",
-            "| --- | --- | --- | --- | --- | --- |",
-        ]
-    )
-    for interface in topology.interfaces:
-        address = (
-            f"{interface.address}/{interface.prefix}"
-            if interface.address is not None and interface.prefix is not None
-            else "unknown"
-        )
-        lines.append(
-            f"| {_markdown(interface.host)} | {_markdown(interface.logical_name)} | {_markdown(interface.network)} | "
-            f"{_markdown(interface.network_kind)} | {_markdown(address)} | {_markdown(interface.addressing)} |"
-        )
-    lines.extend(
-        [
-            "",
-            "## Networks",
-            "",
-            "| Network | Kind | VMware network | CIDR | VLAN | Gateway |",
-            "| --- | --- | --- | --- | --- | --- |",
-        ]
-    )
-    for network in topology.networks:
-        lines.append(
-            f"| {_markdown(network.id)} | {_markdown(network.kind)} | {_markdown(network.vmware_network)} | "
-            f"{_markdown(network.cidr or 'unknown')} | {_markdown(network.vlan if network.vlan is not None else '-')} | "
-            f"{_markdown(network.gateway or 'unknown')} |"
-        )
-    lines.extend(
-        [
-            "",
-            "## Downstream Networks",
-            "",
-            "| VLAN | VMware network | CIDR | Bastion IP | Gateway | DHCP pool | Lease |",
-            "| --- | --- | --- | --- | --- | --- | --- |",
-        ]
-    )
-    if topology.downstream_networks:
-        for downstream in topology.downstream_networks:
-            lines.append(
-                f"| {_markdown(downstream.vlan)} | {_markdown(downstream.vmware_network)} | "
-                f"{_markdown(downstream.cidr)} | {_markdown(downstream.bastion_address)} | "
-                f"{_markdown(downstream.gateway)} | {_markdown(f'{downstream.dhcp_start}-{downstream.dhcp_end}')} | "
-                f"{_markdown(downstream.dhcp_lease)} |"
-            )
-    else:
-        lines.append("| - | - | - | - | - | No downstream networks configured | - |")
-    lines.extend(
-        [
-            "",
-            "## Required Connectivity",
-            "",
-            "```mermaid",
-            render_topology_connectivity_mermaid(topology).rstrip(),
-            "```",
-            "",
-            "## Resolved Connectivity",
-            "",
-            "| Source | Destination | Proto/Port | Purpose | Requirement | Verification |",
-            "| --- | --- | --- | --- | --- | --- |",
-        ]
-    )
-    if topology.connectivity_rules:
-        for rule in topology.connectivity_rules:
-            lines.append(
-                f"| {_markdown(_endpoint_text(rule.source))} | {_markdown(_endpoint_text(rule.destination))} | "
-                f"{_protocol_port(rule)} | {_markdown(rule.purpose)} | "
-                f"{_markdown('+'.join(rule.requirement_sources))} | {_markdown(rule.verification_status)} |"
-            )
-    else:
-        lines.append("| - | - | - | No downstream connectivity rules | - | - |")
-    lines.extend(
-        [
-            "",
-            "## Bastion Services",
-            "",
-            f"Host {_markdown(metadata.bastion_host)} provides jump-host, DNS, DHCP, and proxy capabilities.",
-            "",
-            "| Service | Network | Endpoint | Proto/Port | Purpose |",
-            "| --- | --- | --- | --- | --- |",
-        ]
-    )
-    for service in topology.services:
-        lines.append(
-            f"| {_markdown(service.kind)} | {_markdown(service.network or 'unknown')} | {_markdown(service.address)} | "
-            f"{'/'.join(service.protocols)} {'/'.join(str(port) for port in service.ports)} | "
-            f"{_markdown(service.purpose)} |"
-        )
-    notes = list(topology.notes)
-    if not _external_jump_hosts(topology):
-        notes.append("External SSH jump host is configured as an operator SSH alias and is not represented here.")
-    lines.extend(
-        [
-            "",
-            "## Terminal ASCII Overview",
-            "",
-            "```text",
-            render_topology_ascii_overview(topology).rstrip(),
-            "```",
-            "",
-            "## Notes / Unknowns",
-            "",
-            *[f"- {_markdown(note)}" for note in notes],
-            "",
-        ]
-    )
-    return "\n".join(lines)
-
-
-def render_topology_markdown(topology):
-    metadata = topology.metadata
-    lines = [
-        "# Desired Topology",
-        "",
-        "> Status: desired configuration only; runtime state and reachability are not verified.",
-        "",
-        "## Infrastructure Map",
-        "",
-        render_topology_svg(topology).rstrip(),
+        "```mermaid",
+        render_topology_infrastructure_mermaid(topology).rstrip(),
+        "```",
         "",
         "## Environment",
         "",
@@ -1690,6 +1295,8 @@ def render_topology_markdown(topology):
     lines.extend(
         [
             "",
+            "## Details",
+            "",
             "<details>",
             "<summary>Interface and bastion service details</summary>",
             "",
@@ -1731,7 +1338,7 @@ def render_topology_markdown(topology):
             *[f"- {_markdown(note)}" for note in topology.notes],
             "- `not attached` means that the host has no interface on that network.",
             "- External SSH jump-host details are intentionally not represented here.",
-            "- `topology.mmd`, `connectivity.mmd`, and `topology.txt` are secondary support artifacts.",
+            "- `topology.mmd` and `topology.txt` are secondary support artifacts.",
             "",
         ]
     )

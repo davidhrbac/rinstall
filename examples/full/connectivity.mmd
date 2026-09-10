@@ -1,7 +1,0 @@
-flowchart LR
-  rancher_group[["Rancher nodes<br/>rancher1, rancher2, rancher3"]]
-  downstream_nodes["Downstream nodes<br/>each downstream VLAN"]
-  bastion_services["Bastion<br/>same-VLAN interface"]
-  rancher_group -->|"TCP/22 SSH"| downstream_nodes
-  downstream_nodes -->|"TCP/UDP 53 DNS"| bastion_services
-  downstream_nodes -.->|"logical DHCP service UDP 67/68"| bastion_services
