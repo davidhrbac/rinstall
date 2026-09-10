@@ -71,6 +71,17 @@ provisioning configuration, even though it contains sanitized GitLab backend
 metadata; use a real instance configuration and runtime credentials for
 provisioning.
 
+The full public schema-v1 reference is `examples/full/config.yaml`. It includes
+static customer and management addressing, the expanded three-node Rancher
+pool, Prometheus, two downstream VLANs, bastion DNS/DHCP/proxy settings,
+connection aliases, vSphere placement, RKE2, Rancher, and sanitized SSH
+topology metadata. Its generated public topology examples are kept beside it
+as `topology.json`, `topology.md`, and `topology.mmd`; they are rendered by the
+normal topology generator and contain synthetic values only.
+The `ssh.jump_host` value is intentionally only a safe OpenSSH alias: its real
+definition remains in the operator's SSH config and is therefore not rendered
+as an external node in desired topology output.
+
 ```bash
 make render-infra-vars ENV=envs/example
 make ssh-config ENV=envs/example

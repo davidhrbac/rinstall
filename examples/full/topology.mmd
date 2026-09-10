@@ -1,0 +1,53 @@
+flowchart LR
+  subgraph group_core_0d45f5fd46["Core nodes"]
+    direction TB
+    host_bastion1_fd65cf69ce["Bastion / jump<br/>bastion1<br/>198.51.100.4"]
+    host_prom1_abf2e7bd7a["Monitoring<br/>prom1<br/>198.51.100.6"]
+    host_rancher1_d47e6b0e07["Rancher<br/>rancher1<br/>198.51.100.11"]
+    host_rancher2_bcc55a020f["Rancher<br/>rancher2<br/>198.51.100.12"]
+    host_rancher3_bbbf0c319b["Rancher<br/>rancher3<br/>198.51.100.13"]
+  end
+  subgraph group_networks_a19db4951f["Core networks"]
+    direction TB
+    network_customer_b6c4586387["local/customer<br/>customer<br/>198.51.100.0/28"]
+    network_management_288965a1f2["management<br/>management<br/>192.0.2.0/24"]
+  end
+  subgraph group_downstream_5b64f97477["Downstream networks"]
+    direction TB
+    network_downstream_vlan565_8ed6786137["VLAN 565<br/>203.0.113.32/27"]
+    bastion_ip_downstream_vlan565_8ed6786137[["Bastion IP<br/>203.0.113.34"]]
+    network_downstream_vlan566_d2bd8ff235["VLAN 566<br/>203.0.113.64/27"]
+    bastion_ip_downstream_vlan566_d2bd8ff235[["Bastion IP<br/>203.0.113.66"]]
+  end
+  host_bastion1_fd65cf69ce --- network_customer_b6c4586387
+  host_bastion1_fd65cf69ce --- network_management_288965a1f2
+  host_prom1_abf2e7bd7a --- network_customer_b6c4586387
+  host_rancher1_d47e6b0e07 --- network_customer_b6c4586387
+  host_rancher2_bcc55a020f --- network_customer_b6c4586387
+  host_rancher3_bbbf0c319b --- network_customer_b6c4586387
+  host_bastion1_fd65cf69ce -.->|SSH jump path| host_prom1_abf2e7bd7a
+  host_bastion1_fd65cf69ce -.->|SSH jump path| host_rancher1_d47e6b0e07
+  host_bastion1_fd65cf69ce -.->|SSH jump path| host_rancher2_bcc55a020f
+  host_bastion1_fd65cf69ce -.->|SSH jump path| host_rancher3_bbbf0c319b
+  host_bastion1_fd65cf69ce ---|attached| bastion_ip_downstream_vlan565_8ed6786137
+  host_bastion1_fd65cf69ce ---|attached| bastion_ip_downstream_vlan566_d2bd8ff235
+  network_downstream_vlan565_8ed6786137 -->|TCP/UDP 53 DNS| bastion_ip_downstream_vlan565_8ed6786137
+  host_rancher1_d47e6b0e07 -->|TCP 22| network_downstream_vlan565_8ed6786137
+  host_rancher2_bcc55a020f -->|TCP 22| network_downstream_vlan565_8ed6786137
+  host_rancher3_bbbf0c319b -->|TCP 22| network_downstream_vlan565_8ed6786137
+  network_downstream_vlan565_8ed6786137 -.->|DHCP UDP 68 -&gt; 67| bastion_ip_downstream_vlan565_8ed6786137
+  network_downstream_vlan566_d2bd8ff235 -->|TCP/UDP 53 DNS| bastion_ip_downstream_vlan566_d2bd8ff235
+  host_rancher1_d47e6b0e07 -->|TCP 22| network_downstream_vlan566_d2bd8ff235
+  host_rancher2_bcc55a020f -->|TCP 22| network_downstream_vlan566_d2bd8ff235
+  host_rancher3_bbbf0c319b -->|TCP 22| network_downstream_vlan566_d2bd8ff235
+  network_downstream_vlan566_d2bd8ff235 -.->|DHCP UDP 68 -&gt; 67| bastion_ip_downstream_vlan566_d2bd8ff235
+  classDef bastion fill:#f7c873,stroke:#5b4636,color:#201a16
+  classDef rancher fill:#d8e8ff,stroke:#315a8a,color:#172433
+  classDef monitoring fill:#d9f2e6,stroke:#39735a,color:#193326
+  classDef network fill:#eeeeee,stroke:#666666,color:#222222
+  classDef downstream fill:#f2e2ff,stroke:#76508f,color:#2e1f38
+  class host_bastion1_fd65cf69ce bastion
+  class host_rancher1_d47e6b0e07,host_rancher2_bcc55a020f,host_rancher3_bbbf0c319b rancher
+  class host_prom1_abf2e7bd7a monitoring
+  class network_customer_b6c4586387,network_management_288965a1f2 network
+  class network_downstream_vlan565_8ed6786137,bastion_ip_downstream_vlan565_8ed6786137,network_downstream_vlan566_d2bd8ff235,bastion_ip_downstream_vlan566_d2bd8ff235 downstream

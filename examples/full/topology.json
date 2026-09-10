@@ -1,0 +1,688 @@
+{
+  "metadata": {
+    "topology_schema_version": 1,
+    "config_schema_version": 1,
+    "topology_kind": "desired",
+    "environment_id": "full-example",
+    "rancher_url": "rancher.full-example.example.invalid",
+    "domain": "full-example.example.invalid",
+    "bastion_host": "bastion1",
+    "versions": {
+      "rke2": "v1.35.7+rke2r1",
+      "rancher": "2.14.4",
+      "cert_manager": "v1.21.1"
+    }
+  },
+  "hosts": [
+    {
+      "id": "bastion1",
+      "hostname": "bastion1",
+      "fqdn": "bastion1.rancher.full-example.example.invalid",
+      "roles": [
+        "bastion"
+      ],
+      "capabilities": [
+        "jump-host",
+        "dns",
+        "dhcp",
+        "proxy"
+      ],
+      "primary_ip": "198.51.100.4",
+      "local_ip": "198.51.100.4",
+      "management_ip": "192.0.2.10",
+      "ssh_target": "192.0.2.10"
+    },
+    {
+      "id": "prom1",
+      "hostname": "prom1",
+      "fqdn": "prom1.rancher.full-example.example.invalid",
+      "roles": [
+        "prometheus"
+      ],
+      "capabilities": [],
+      "primary_ip": "198.51.100.6",
+      "local_ip": "198.51.100.6",
+      "management_ip": null,
+      "ssh_target": "198.51.100.6"
+    },
+    {
+      "id": "rancher1",
+      "hostname": "rancher1",
+      "fqdn": "rancher1.rancher.full-example.example.invalid",
+      "roles": [
+        "rancher"
+      ],
+      "capabilities": [],
+      "primary_ip": "198.51.100.11",
+      "local_ip": "198.51.100.11",
+      "management_ip": null,
+      "ssh_target": "198.51.100.11"
+    },
+    {
+      "id": "rancher2",
+      "hostname": "rancher2",
+      "fqdn": "rancher2.rancher.full-example.example.invalid",
+      "roles": [
+        "rancher"
+      ],
+      "capabilities": [],
+      "primary_ip": "198.51.100.12",
+      "local_ip": "198.51.100.12",
+      "management_ip": null,
+      "ssh_target": "198.51.100.12"
+    },
+    {
+      "id": "rancher3",
+      "hostname": "rancher3",
+      "fqdn": "rancher3.rancher.full-example.example.invalid",
+      "roles": [
+        "rancher"
+      ],
+      "capabilities": [],
+      "primary_ip": "198.51.100.13",
+      "local_ip": "198.51.100.13",
+      "management_ip": null,
+      "ssh_target": "198.51.100.13"
+    }
+  ],
+  "interfaces": [
+    {
+      "id": "bastion1:0",
+      "host": "bastion1",
+      "nic_index": 0,
+      "logical_name": "customer",
+      "network": "customer",
+      "network_kind": "local/customer",
+      "address": "198.51.100.4",
+      "prefix": 28,
+      "addressing": "static"
+    },
+    {
+      "id": "bastion1:1",
+      "host": "bastion1",
+      "nic_index": 1,
+      "logical_name": "management",
+      "network": "management",
+      "network_kind": "management",
+      "address": "192.0.2.10",
+      "prefix": 24,
+      "addressing": "static"
+    },
+    {
+      "id": "prom1:0",
+      "host": "prom1",
+      "nic_index": 0,
+      "logical_name": "customer",
+      "network": "customer",
+      "network_kind": "local/customer",
+      "address": "198.51.100.6",
+      "prefix": 28,
+      "addressing": "static"
+    },
+    {
+      "id": "rancher1:0",
+      "host": "rancher1",
+      "nic_index": 0,
+      "logical_name": "customer",
+      "network": "customer",
+      "network_kind": "local/customer",
+      "address": "198.51.100.11",
+      "prefix": 28,
+      "addressing": "static"
+    },
+    {
+      "id": "rancher2:0",
+      "host": "rancher2",
+      "nic_index": 0,
+      "logical_name": "customer",
+      "network": "customer",
+      "network_kind": "local/customer",
+      "address": "198.51.100.12",
+      "prefix": 28,
+      "addressing": "static"
+    },
+    {
+      "id": "rancher3:0",
+      "host": "rancher3",
+      "nic_index": 0,
+      "logical_name": "customer",
+      "network": "customer",
+      "network_kind": "local/customer",
+      "address": "198.51.100.13",
+      "prefix": 28,
+      "addressing": "static"
+    },
+    {
+      "id": "bastion1:vlan565",
+      "host": "bastion1",
+      "nic_index": 2,
+      "logical_name": "vlan565",
+      "network": "downstream:vlan565",
+      "network_kind": "downstream",
+      "address": "203.0.113.34",
+      "prefix": 27,
+      "addressing": "static"
+    },
+    {
+      "id": "bastion1:vlan566",
+      "host": "bastion1",
+      "nic_index": 3,
+      "logical_name": "vlan566",
+      "network": "downstream:vlan566",
+      "network_kind": "downstream",
+      "address": "203.0.113.66",
+      "prefix": 27,
+      "addressing": "static"
+    }
+  ],
+  "networks": [
+    {
+      "id": "customer",
+      "kind": "local/customer",
+      "cidr": "198.51.100.0/28",
+      "vlan": null,
+      "vmware_network": "EXAMPLE_CUSTOMER_NETWORK",
+      "gateway": "198.51.100.1",
+      "interface_ids": [
+        "bastion1:0",
+        "prom1:0",
+        "rancher1:0",
+        "rancher2:0",
+        "rancher3:0"
+      ]
+    },
+    {
+      "id": "management",
+      "kind": "management",
+      "cidr": "192.0.2.0/24",
+      "vlan": null,
+      "vmware_network": "EXAMPLE_MANAGEMENT_NETWORK",
+      "gateway": null,
+      "interface_ids": [
+        "bastion1:1"
+      ]
+    },
+    {
+      "id": "downstream:vlan565",
+      "kind": "downstream",
+      "cidr": "203.0.113.32/27",
+      "vlan": 565,
+      "vmware_network": "EXAMPLE_DOWNSTREAM_NETWORK_565",
+      "gateway": "203.0.113.33",
+      "interface_ids": [
+        "bastion1:vlan565"
+      ]
+    },
+    {
+      "id": "downstream:vlan566",
+      "kind": "downstream",
+      "cidr": "203.0.113.64/27",
+      "vlan": 566,
+      "vmware_network": "EXAMPLE_DOWNSTREAM_NETWORK_566",
+      "gateway": "203.0.113.65",
+      "interface_ids": [
+        "bastion1:vlan566"
+      ]
+    }
+  ],
+  "services": [
+    {
+      "id": "proxy:squid",
+      "kind": "proxy",
+      "host": "bastion1",
+      "network": "customer",
+      "address": "198.51.100.4",
+      "protocols": [
+        "TCP"
+      ],
+      "ports": [
+        3128
+      ],
+      "purpose": "HTTP and HTTPS forward proxy for local services"
+    },
+    {
+      "id": "dns:local",
+      "kind": "dns",
+      "host": "bastion1",
+      "network": "customer",
+      "address": "198.51.100.4",
+      "protocols": [
+        "TCP",
+        "UDP"
+      ],
+      "ports": [
+        53
+      ],
+      "purpose": "DNS for local nodes"
+    },
+    {
+      "id": "dns:vlan565",
+      "kind": "dns",
+      "host": "bastion1",
+      "network": "downstream:vlan565",
+      "address": "203.0.113.34",
+      "protocols": [
+        "TCP",
+        "UDP"
+      ],
+      "ports": [
+        53
+      ],
+      "purpose": "DNS for downstream nodes on the same VLAN"
+    },
+    {
+      "id": "dhcp:vlan565",
+      "kind": "dhcp",
+      "host": "bastion1",
+      "network": "downstream:vlan565",
+      "address": "203.0.113.34",
+      "protocols": [
+        "UDP"
+      ],
+      "ports": [
+        67,
+        68
+      ],
+      "purpose": "DHCP for downstream nodes on the same VLAN"
+    },
+    {
+      "id": "dns:vlan566",
+      "kind": "dns",
+      "host": "bastion1",
+      "network": "downstream:vlan566",
+      "address": "203.0.113.66",
+      "protocols": [
+        "TCP",
+        "UDP"
+      ],
+      "ports": [
+        53
+      ],
+      "purpose": "DNS for downstream nodes on the same VLAN"
+    },
+    {
+      "id": "dhcp:vlan566",
+      "kind": "dhcp",
+      "host": "bastion1",
+      "network": "downstream:vlan566",
+      "address": "203.0.113.66",
+      "protocols": [
+        "UDP"
+      ],
+      "ports": [
+        67,
+        68
+      ],
+      "purpose": "DHCP for downstream nodes on the same VLAN"
+    }
+  ],
+  "downstream_networks": [
+    {
+      "id": "downstream:vlan565",
+      "interface_name": "vlan565",
+      "vlan": 565,
+      "vmware_network": "EXAMPLE_DOWNSTREAM_NETWORK_565",
+      "cidr": "203.0.113.32/27",
+      "bastion_host": "bastion1",
+      "bastion_address": "203.0.113.34",
+      "gateway": "203.0.113.33",
+      "dhcp_start": "203.0.113.36",
+      "dhcp_end": "203.0.113.61",
+      "dhcp_lease": "12h",
+      "lifecycle": {
+        "collection": "append-only",
+        "identity": "immutable-after-create",
+        "mutable_fields": [
+          "dhcp.start",
+          "dhcp.end",
+          "dhcp.lease_time"
+        ],
+        "immutable_fields": [
+          "vlan",
+          "vmware_network",
+          "subnet",
+          "bastion_address",
+          "gateway",
+          "attachment_order"
+        ]
+      }
+    },
+    {
+      "id": "downstream:vlan566",
+      "interface_name": "vlan566",
+      "vlan": 566,
+      "vmware_network": "EXAMPLE_DOWNSTREAM_NETWORK_566",
+      "cidr": "203.0.113.64/27",
+      "bastion_host": "bastion1",
+      "bastion_address": "203.0.113.66",
+      "gateway": "203.0.113.65",
+      "dhcp_start": "203.0.113.68",
+      "dhcp_end": "203.0.113.93",
+      "dhcp_lease": "12h",
+      "lifecycle": {
+        "collection": "append-only",
+        "identity": "immutable-after-create",
+        "mutable_fields": [
+          "dhcp.start",
+          "dhcp.end",
+          "dhcp.lease_time"
+        ],
+        "immutable_fields": [
+          "vlan",
+          "vmware_network",
+          "subnet",
+          "bastion_address",
+          "gateway",
+          "attachment_order"
+        ]
+      }
+    }
+  ],
+  "connectivity_rules": [
+    {
+      "id": "downstream-dns:vlan565",
+      "source": {
+        "symbolic": "network:downstream:565",
+        "resolved": [
+          {
+            "id": "vlan565",
+            "address": "203.0.113.32/27"
+          }
+        ]
+      },
+      "destination": {
+        "symbolic": "service:dns@bastion:same-vlan:565",
+        "resolved": [
+          {
+            "id": "bastion1:vlan565",
+            "address": "203.0.113.34"
+          }
+        ]
+      },
+      "protocols": [
+        "TCP",
+        "UDP"
+      ],
+      "source_ports": [],
+      "destination_ports": [
+        53
+      ],
+      "purpose": "DNS for downstream nodes",
+      "requirement_sources": [
+        "RINSTALL_ARCHITECTURE"
+      ],
+      "required": true,
+      "verification_status": "external/unverified"
+    },
+    {
+      "id": "rancher-downstream-ssh:vlan565",
+      "source": {
+        "symbolic": "role:rancher",
+        "resolved": [
+          {
+            "id": "rancher1",
+            "address": "198.51.100.11"
+          },
+          {
+            "id": "rancher2",
+            "address": "198.51.100.12"
+          },
+          {
+            "id": "rancher3",
+            "address": "198.51.100.13"
+          }
+        ]
+      },
+      "destination": {
+        "symbolic": "network:downstream:565",
+        "resolved": [
+          {
+            "id": "vlan565",
+            "address": "203.0.113.32/27"
+          }
+        ]
+      },
+      "protocols": [
+        "TCP"
+      ],
+      "source_ports": [],
+      "destination_ports": [
+        22
+      ],
+      "purpose": "Administrator SSH from Rancher nodes to downstream nodes",
+      "requirement_sources": [
+        "RINSTALL_ARCHITECTURE"
+      ],
+      "required": true,
+      "verification_status": "external/unverified"
+    },
+    {
+      "id": "downstream-dhcp-request:vlan565",
+      "source": {
+        "symbolic": "network:downstream:565",
+        "resolved": [
+          {
+            "id": "vlan565",
+            "address": "203.0.113.32/27"
+          }
+        ]
+      },
+      "destination": {
+        "symbolic": "service:dhcp@bastion:same-vlan:565",
+        "resolved": [
+          {
+            "id": "bastion1:vlan565",
+            "address": "203.0.113.34"
+          }
+        ]
+      },
+      "protocols": [
+        "UDP"
+      ],
+      "source_ports": [
+        68
+      ],
+      "destination_ports": [
+        67
+      ],
+      "purpose": "Downstream DHCP request",
+      "requirement_sources": [
+        "RINSTALL_CODE",
+        "UPSTREAM_PROTOCOL"
+      ],
+      "required": true,
+      "verification_status": "external/unverified"
+    },
+    {
+      "id": "downstream-dhcp-response:vlan565",
+      "source": {
+        "symbolic": "service:dhcp@bastion:same-vlan:565",
+        "resolved": [
+          {
+            "id": "bastion1:vlan565",
+            "address": "203.0.113.34"
+          }
+        ]
+      },
+      "destination": {
+        "symbolic": "network:downstream:565",
+        "resolved": [
+          {
+            "id": "vlan565",
+            "address": "203.0.113.32/27"
+          }
+        ]
+      },
+      "protocols": [
+        "UDP"
+      ],
+      "source_ports": [
+        67
+      ],
+      "destination_ports": [
+        68
+      ],
+      "purpose": "Downstream DHCP response",
+      "requirement_sources": [
+        "RINSTALL_CODE",
+        "UPSTREAM_PROTOCOL"
+      ],
+      "required": true,
+      "verification_status": "external/unverified"
+    },
+    {
+      "id": "downstream-dns:vlan566",
+      "source": {
+        "symbolic": "network:downstream:566",
+        "resolved": [
+          {
+            "id": "vlan566",
+            "address": "203.0.113.64/27"
+          }
+        ]
+      },
+      "destination": {
+        "symbolic": "service:dns@bastion:same-vlan:566",
+        "resolved": [
+          {
+            "id": "bastion1:vlan566",
+            "address": "203.0.113.66"
+          }
+        ]
+      },
+      "protocols": [
+        "TCP",
+        "UDP"
+      ],
+      "source_ports": [],
+      "destination_ports": [
+        53
+      ],
+      "purpose": "DNS for downstream nodes",
+      "requirement_sources": [
+        "RINSTALL_ARCHITECTURE"
+      ],
+      "required": true,
+      "verification_status": "external/unverified"
+    },
+    {
+      "id": "rancher-downstream-ssh:vlan566",
+      "source": {
+        "symbolic": "role:rancher",
+        "resolved": [
+          {
+            "id": "rancher1",
+            "address": "198.51.100.11"
+          },
+          {
+            "id": "rancher2",
+            "address": "198.51.100.12"
+          },
+          {
+            "id": "rancher3",
+            "address": "198.51.100.13"
+          }
+        ]
+      },
+      "destination": {
+        "symbolic": "network:downstream:566",
+        "resolved": [
+          {
+            "id": "vlan566",
+            "address": "203.0.113.64/27"
+          }
+        ]
+      },
+      "protocols": [
+        "TCP"
+      ],
+      "source_ports": [],
+      "destination_ports": [
+        22
+      ],
+      "purpose": "Administrator SSH from Rancher nodes to downstream nodes",
+      "requirement_sources": [
+        "RINSTALL_ARCHITECTURE"
+      ],
+      "required": true,
+      "verification_status": "external/unverified"
+    },
+    {
+      "id": "downstream-dhcp-request:vlan566",
+      "source": {
+        "symbolic": "network:downstream:566",
+        "resolved": [
+          {
+            "id": "vlan566",
+            "address": "203.0.113.64/27"
+          }
+        ]
+      },
+      "destination": {
+        "symbolic": "service:dhcp@bastion:same-vlan:566",
+        "resolved": [
+          {
+            "id": "bastion1:vlan566",
+            "address": "203.0.113.66"
+          }
+        ]
+      },
+      "protocols": [
+        "UDP"
+      ],
+      "source_ports": [
+        68
+      ],
+      "destination_ports": [
+        67
+      ],
+      "purpose": "Downstream DHCP request",
+      "requirement_sources": [
+        "RINSTALL_CODE",
+        "UPSTREAM_PROTOCOL"
+      ],
+      "required": true,
+      "verification_status": "external/unverified"
+    },
+    {
+      "id": "downstream-dhcp-response:vlan566",
+      "source": {
+        "symbolic": "service:dhcp@bastion:same-vlan:566",
+        "resolved": [
+          {
+            "id": "bastion1:vlan566",
+            "address": "203.0.113.66"
+          }
+        ]
+      },
+      "destination": {
+        "symbolic": "network:downstream:566",
+        "resolved": [
+          {
+            "id": "vlan566",
+            "address": "203.0.113.64/27"
+          }
+        ]
+      },
+      "protocols": [
+        "UDP"
+      ],
+      "source_ports": [
+        67
+      ],
+      "destination_ports": [
+        68
+      ],
+      "purpose": "Downstream DHCP response",
+      "requirement_sources": [
+        "RINSTALL_CODE",
+        "UPSTREAM_PROTOCOL"
+      ],
+      "required": true,
+      "verification_status": "external/unverified"
+    }
+  ],
+  "notes": [
+    "Desired topology only; provider state, guest runtime state, and network reachability are not verified."
+  ]
+}
