@@ -3,7 +3,7 @@ from pathlib import Path
 import yaml
 
 from lib.env_config import expand_env, load_env
-from lib.ssh_config import render_admin_ssh_config, render_ssh_config, write_ssh_config
+from lib.ssh_config import node_ssh_hops, render_admin_ssh_config, render_ssh_config, write_ssh_config
 
 
 EXAMPLE_ENV = Path(__file__).parents[1] / "envs/example/env.yaml"
@@ -73,6 +73,17 @@ def test_generated_ssh_config_routes_nodes_through_configured_jump_host(tmp_path
 
     assert "Host admin-jump" not in rendered
     assert "UserKnownHostsFile" not in render_admin_ssh_config(config)
+    assert node_ssh_hops(config, "bastion1", config["nodes"]["bastion1"]) == (
+        "admin-jump",
+    )
+    assert node_ssh_hops(config, "prom1", config["nodes"]["prom1"]) == (
+        "admin-jump",
+        "bastion1",
+    )
+    assert node_ssh_hops(config, "rancher1", config["nodes"]["rancher1"]) == (
+        "admin-jump",
+        "bastion1",
+    )
 
 
 def test_write_ssh_config_creates_private_runtime_known_hosts(tmp_path):

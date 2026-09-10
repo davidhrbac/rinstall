@@ -5,21 +5,36 @@ from pathlib import Path
 import subprocess
 import sys
 
+import pytest
 import yaml
 
-from lib.env_config import expand_env
+from lib.env_config import expand_env, load_env
 from lib.topology import (
+    CONFIGURED,
+    DERIVED,
+    DESIRED_ONLY,
+    EXTERNALLY_MANAGED,
+    EXTERNAL_UNRESOLVED,
+    REFERENCED_EXTERNAL,
+    RESOLVED,
+    RINSTALL_CONFIGURED,
+    RINSTALL_MANAGED,
+    RUNTIME_SUPPLIED,
+    SYMBOLIC,
+    EntityReference,
     HostTopology,
     build_desired_topology,
     render_topology_json,
     render_topology_markdown,
     render_topology_ascii_overview,
     render_topology_infrastructure_mermaid,
+    validate_topology,
 )
 
 
 ROOT = Path(__file__).parents[1]
 EXAMPLE_CONFIG = ROOT / "envs/example/env.yaml"
+FULL_CONFIG = ROOT / "examples/full/config.yaml"
 RENDER_TOPOLOGY = ROOT / "scripts/render-topology.py"
 
 
@@ -49,6 +64,178 @@ def topology_with(*downstreams):
     config = raw_config()
     config["bastion"]["downstream_networks"] = list(downstreams)
     return build_desired_topology(expand_env(config))
+
+
+def by_id(items):
+    return {item.id: item for item in items}
+
+
+def replace_at(items, index, item):
+    return (*items[:index], item, *items[index + 1 :])
+
+
+def invalid_duplicate_host(topology):
+    return replace(topology, hosts=(*topology.hosts, topology.hosts[0]))
+
+
+def invalid_interface_host(topology):
+    interface = replace(topology.interfaces[0], host="missing-host")
+    return replace(topology, interfaces=replace_at(topology.interfaces, 0, interface))
+
+
+def invalid_cluster_primary(topology):
+    cluster = replace(topology.clusters[0], primary_host_id="prom1")
+    return replace(topology, clusters=(cluster,))
+
+
+def invalid_endpoint_cluster(topology):
+    endpoint = replace(by_id(topology.endpoints)["endpoint:rancher"], cluster_id="missing-cluster")
+    endpoints = tuple(
+        endpoint if item.id == endpoint.id else item for item in topology.endpoints
+    )
+    return replace(topology, endpoints=endpoints)
+
+
+def invalid_access_hop(topology):
+    path = replace(
+        topology.access_paths[0],
+        hops=(EntityReference("endpoint", "missing-jump"),),
+    )
+    return replace(topology, access_paths=replace_at(topology.access_paths, 0, path))
+
+
+def invalid_service_network(topology):
+    service = replace(topology.services[0], network="missing-network")
+    return replace(topology, services=replace_at(topology.services, 0, service))
+
+
+def invalid_connectivity_reference(topology):
+    rule = topology.connectivity_rules[0]
+    resolved = replace(
+        rule.source.resolved[0],
+        reference=EntityReference("downstream-consumer", "missing-consumer"),
+    )
+    source = replace(rule.source, resolved=replace_at(rule.source.resolved, 0, resolved))
+    rule = replace(rule, source=source)
+    return replace(
+        topology,
+        connectivity_rules=replace_at(topology.connectivity_rules, 0, rule),
+    )
+
+
+def invalid_missing_consumer(topology):
+    return replace(topology, downstream_consumers=())
+
+
+def test_v2_rke2_rancher_cluster_is_derived_from_roles_and_primary():
+    topology = topology_with()
+    cluster = topology.clusters[0]
+
+    assert topology.metadata.topology_schema_version == 2
+    assert topology.metadata.config_schema_version == 1
+    assert cluster.kind == "rke2-rancher-control-cluster"
+    assert cluster.member_host_ids == ("rancher1", "rancher2", "rancher3")
+    assert cluster.primary_host_id == "rancher1"
+    assert cluster.join_host_ids == ("rancher2", "rancher3")
+    assert cluster.endpoint_ids == ("endpoint:rancher",)
+    assert cluster.versions == {
+        "rke2": "v1.35.7+rke2r1",
+        "rancher": "2.14.4",
+    }
+    assert (cluster.ownership, cluster.provenance, cluster.resolution) == (
+        RINSTALL_CONFIGURED,
+        DERIVED,
+        RESOLVED,
+    )
+
+
+def test_v2_rke2_cluster_supports_arbitrary_member_names_and_count():
+    config = raw_config()
+    config["local"]["rancher_nodes"].update(
+        {"name_prefix": "control", "count": 5, "start_host": 7}
+    )
+
+    topology = build_desired_topology(expand_env(config))
+    cluster = topology.clusters[0]
+
+    assert cluster.member_host_ids == tuple(f"control{index}" for index in range(1, 6))
+    assert cluster.primary_host_id == "control1"
+    assert cluster.join_host_ids == tuple(f"control{index}" for index in range(2, 6))
+
+
+def test_v2_rancher_endpoint_has_local_and_unresolved_external_resolution():
+    topology = topology_with()
+    endpoint = by_id(topology.endpoints)["endpoint:rancher"]
+    resolutions = {item.scope: item for item in endpoint.resolutions}
+
+    assert endpoint.kind == "rancher-https"
+    assert endpoint.name == "rancher.example.internal"
+    assert endpoint.protocols == ("HTTPS",)
+    assert endpoint.ports == (443,)
+    assert endpoint.cluster_id == topology.clusters[0].id
+    assert resolutions["local"].addresses == (
+        "10.14.17.11",
+        "10.14.17.12",
+        "10.14.17.13",
+    )
+    assert resolutions["local"].resolution == RESOLVED
+    assert resolutions["external"].addresses == ()
+    assert resolutions["external"].resolution == EXTERNAL_UNRESOLVED
+    assert resolutions["external"].ownership == EXTERNALLY_MANAGED
+    assert "VIP/load balancer" in resolutions["external"].reason
+
+
+def test_v2_monitoring_role_represents_host_only():
+    topology = topology_with()
+    prometheus = by_id(topology.hosts)["prom1"]
+
+    assert prometheus.roles == ("prometheus",)
+    assert prometheus.service_status == "host-only/not-modeled"
+    assert prometheus.ownership == RINSTALL_MANAGED
+    assert not any(service.kind == "prometheus" for service in topology.services)
+
+
+def test_v2_ownership_provenance_resolution_and_verification_are_separate():
+    topology = topology_with(downstream_network(565, "10.20.56.32/27"))
+    customer = by_id(topology.networks)["customer"]
+    interface = by_id(topology.interfaces)["bastion1:0"]
+    service = by_id(topology.services)["dns:vlan565"]
+    vcenter = by_id(topology.endpoints)["endpoint:vcenter"]
+
+    assert (customer.ownership, customer.provenance, customer.verification) == (
+        REFERENCED_EXTERNAL,
+        CONFIGURED,
+        DESIRED_ONLY,
+    )
+    assert (interface.ownership, interface.provenance, interface.resolution) == (
+        RINSTALL_MANAGED,
+        DERIVED,
+        RESOLVED,
+    )
+    assert service.ownership == RINSTALL_CONFIGURED
+    assert service.provenance == "RINSTALL_ARCHITECTURE"
+    assert vcenter.resolution == RUNTIME_SUPPLIED
+    assert vcenter.verification == "external/unverified"
+
+
+@pytest.mark.parametrize(
+    ("mutate", "message"),
+    [
+        (invalid_duplicate_host, "duplicate host id"),
+        (invalid_interface_host, "references missing host"),
+        (invalid_cluster_primary, "primary prom1 is not a member"),
+        (invalid_endpoint_cluster, "cluster reference is inconsistent"),
+        (invalid_access_hop, "references missing endpoint"),
+        (invalid_service_network, "references missing network"),
+        (invalid_connectivity_reference, "references missing downstream-consumer"),
+        (invalid_missing_consumer, "exactly one symbolic downstream consumer"),
+    ],
+)
+def test_v2_referential_integrity_fails_closed(mutate, message):
+    topology = topology_with(downstream_network(565, "10.20.56.32/27"))
+
+    with pytest.raises(ValueError, match=message):
+        validate_topology(mutate(topology))
 
 
 def test_topology_includes_expanded_hosts_roles_and_static_addresses():
@@ -103,6 +290,163 @@ def test_multiple_downstream_networks_and_services_remain_independent():
     ]
 
 
+def test_v2_external_ssh_alias_and_role_aware_access_paths(monkeypatch, tmp_path):
+    config = yaml.safe_load(FULL_CONFIG.read_text())
+    config["nodes"]["utility1"] = {
+        "role": "utility",
+        "template": "infra",
+        "host": 7,
+        "cpu": 1,
+        "memory_mb": 1024,
+        "disk_gb": 20,
+        "nics": [{"network": "customer"}],
+    }
+    config = expand_env(config)
+    monkeypatch.setenv("HOME", str(tmp_path / "home-without-ssh-config"))
+
+    def unexpected_file_access(*args, **kwargs):
+        raise AssertionError("topology derivation must not read external files")
+
+    monkeypatch.setattr("builtins.open", unexpected_file_access)
+    topology = build_desired_topology(config)
+    endpoints = by_id(topology.endpoints)
+    paths = {path.destination.id: path for path in topology.access_paths}
+
+    jump = endpoints["endpoint:ssh-jump"]
+    assert jump.name == "example-operator-jump"
+    assert jump.resolution == EXTERNAL_UNRESOLVED
+    assert jump.resolutions[0].addresses == ()
+    assert "example-operator-jump" not in by_id(topology.hosts)
+    assert paths["bastion1"].hops == (EntityReference("endpoint", jump.id),)
+    assert paths["utility1"].hops == (EntityReference("endpoint", jump.id),)
+    expected_core_hops = (
+        EntityReference("endpoint", jump.id),
+        EntityReference("host", "bastion1"),
+    )
+    assert paths["prom1"].hops == expected_core_hops
+    assert paths["rancher1"].hops == expected_core_hops
+    assert paths["bastion1"].target == "192.0.2.10"
+    assert paths["rancher1"].target == "198.51.100.11"
+
+
+def test_v2_access_paths_are_direct_without_configured_jump_alias():
+    topology = topology_with()
+
+    assert "endpoint:ssh-jump" not in by_id(topology.endpoints)
+    assert all(path.hops == () for path in topology.access_paths)
+    assert {path.destination.id for path in topology.access_paths} == {
+        host.id for host in topology.hosts
+    }
+
+
+def test_v2_symbolic_downstream_consumers_match_network_dhcp_and_gateway():
+    topology = build_desired_topology(load_env(FULL_CONFIG))
+    consumers = by_id(topology.downstream_consumers)
+    endpoints = by_id(topology.endpoints)
+
+    assert len(consumers) == len(topology.downstream_networks) == 2
+    for downstream in topology.downstream_networks:
+        consumer = consumers[f"consumer:{downstream.id}"]
+        gateway = endpoints[consumer.gateway_endpoint_id]
+        assert consumer.kind == "downstream-nodes-or-cluster"
+        assert consumer.network_id == downstream.id
+        assert (consumer.address_start, consumer.address_end) == (
+            downstream.dhcp_start,
+            downstream.dhcp_end,
+        )
+        assert consumer.identities_known is False
+        assert consumer.lifecycle == "external/downstream"
+        assert (consumer.ownership, consumer.resolution) == (EXTERNALLY_MANAGED, SYMBOLIC)
+        assert gateway.kind == "downstream-gateway"
+        assert gateway.resolutions[0].addresses == (downstream.gateway,)
+        assert gateway.ownership == REFERENCED_EXTERNAL
+        assert downstream.bastion_is_router is False
+        assert downstream.lifecycle_ownership == EXTERNALLY_MANAGED
+
+
+def test_v2_deployment_context_is_config_only_and_marks_vcenter_runtime_supplied():
+    topology = build_desired_topology(load_env(FULL_CONFIG))
+    context = topology.deployment_context
+    endpoints = by_id(topology.endpoints)
+
+    assert context.execution_actor_id == "actor:operator-workstation"
+    assert context.terraform_root == "rinstall/terraform/infra"
+    assert context.vsphere.datacenter == "EXAMPLE_DATACENTER"
+    assert context.vsphere.datastore == "EXAMPLE_DATASTORE"
+    assert context.vsphere.resource_pool == "EXAMPLE_CLUSTER/Resources"
+    assert context.vsphere.folder == "Rancher/full-example"
+    assert context.vsphere.clone_timeout_minutes == 60
+    assert context.vsphere.allow_unverified_ssl is False
+    assert (
+        context.vsphere.route.destination,
+        context.vsphere.route.gateway,
+        context.vsphere.route.connection,
+    ) == ("192.0.2.128/26", "192.0.2.1", "mgmt")
+    assert [(item.id, item.value) for item in context.vsphere.templates] == [
+        ("infra", "EXAMPLE_TEMPLATE_INFRA"),
+        ("rke2", "EXAMPLE_TEMPLATE_RKE2"),
+    ]
+    assert endpoints[context.vsphere.endpoint_id].resolution == "RUNTIME_SUPPLIED"
+    assert endpoints[context.vsphere.endpoint_id].resolutions[0].addresses == ()
+    assert context.terraform_backend.type == "gitlab"
+    assert context.terraform_backend.project_id == 123456
+    assert context.terraform_backend.state_name == "full-example-infra"
+    assert context.terraform_backend.state_address.endswith(
+        "/api/v4/projects/123456/terraform/state/full-example-infra"
+    )
+
+
+def test_v2_topology_ignores_runtime_environment_enrichment(monkeypatch):
+    config = load_env(FULL_CONFIG)
+    before = build_desired_topology(config)
+    monkeypatch.setenv("TF_VAR_vsphere_server", "secret-vcenter.example.invalid")
+    monkeypatch.setenv("TF_VAR_vsphere_user", "secret-user")
+    monkeypatch.setenv("TF_VAR_vsphere_password", "secret-password")
+    monkeypatch.setenv("TF_HTTP_PASSWORD", "secret-backend-token")
+
+    after = build_desired_topology(config)
+    serialized = render_topology_json(after)
+
+    assert after == before
+    assert all(
+        secret not in serialized
+        for secret in (
+            "secret-vcenter.example.invalid",
+            "secret-user",
+            "secret-password",
+            "secret-backend-token",
+        )
+    )
+
+
+def test_v2_operational_connectivity_registry_covers_core_and_downstream_contract():
+    topology = build_desired_topology(load_env(FULL_CONFIG))
+    rules = by_id(topology.connectivity_rules)
+
+    assert {
+        "admin-ssh:operator-jump",
+        "admin-ssh:jump:bastion1",
+        "admin-ssh:bastion:prom1",
+        "admin-ssh:bastion:rancher1",
+        "core-dns:local-nodes",
+        "core-dns:upstream",
+        "core-proxy:rancher-nodes",
+        "rke2:join-primary",
+        "rke2:bastion-kubernetes-api",
+        "downstream-rancher-agent:vlan565",
+        "downstream-rancher-agent:vlan566",
+    }.issubset(rules)
+    assert rules["rke2:join-primary"].destination_ports == (9345,)
+    assert rules["rke2:bastion-kubernetes-api"].destination_ports == (6443,)
+    assert rules["core-proxy:rancher-nodes"].destination_ports == (3128,)
+    assert rules["core-dns:upstream"].destination_ports == (53,)
+    assert rules["downstream-rancher-agent:vlan565"].destination_ports == (443,)
+    assert rules["downstream-rancher-agent:vlan565"].destination.resolved[
+        0
+    ].reference == EntityReference("endpoint", "endpoint:rancher")
+    assert all(rule.verification_status == "external/unverified" for rule in rules.values())
+
+
 def test_downstream_dns_uses_same_vlan_bastion_address():
     topology = topology_with(
         downstream_network(565, "10.20.56.32/27"),
@@ -117,6 +461,14 @@ def test_downstream_dns_uses_same_vlan_bastion_address():
     assert [rule.destination.resolved[0].address for rule in dns_rules] == [
         "10.20.56.34",
         "10.20.56.66",
+    ]
+    assert [rule.source.resolved[0].reference for rule in dns_rules] == [
+        EntityReference("downstream-consumer", "consumer:downstream:vlan565"),
+        EntityReference("downstream-consumer", "consumer:downstream:vlan566"),
+    ]
+    assert [rule.destination.resolved[0].reference for rule in dns_rules] == [
+        EntityReference("service", "dns:vlan565"),
+        EntityReference("service", "dns:vlan566"),
     ]
     assert all(
         rule.protocols == ("TCP", "UDP")
@@ -145,6 +497,19 @@ def test_every_rancher_host_has_required_ssh_rule_to_every_downstream_cidr():
         "10.20.56.64/27",
     ]
     assert all(
+        [endpoint.reference for endpoint in rule.source.resolved]
+        == [
+            EntityReference("host", "rancher1"),
+            EntityReference("host", "rancher2"),
+            EntityReference("host", "rancher3"),
+        ]
+        for rule in ssh_rules
+    )
+    assert [rule.destination.resolved[0].reference for rule in ssh_rules] == [
+        EntityReference("downstream-consumer", "consumer:downstream:vlan565"),
+        EntityReference("downstream-consumer", "consumer:downstream:vlan566"),
+    ]
+    assert all(
         rule.protocols == ("TCP",)
         and rule.source_ports == ()
         and rule.destination_ports == (22,)
@@ -169,6 +534,12 @@ def test_dhcp_rules_and_service_use_directional_upstream_protocol_ports():
     )
     assert request.destination.resolved[0].address == "10.20.56.34"
     assert response.source.resolved[0].address == "10.20.56.34"
+    assert request.source.resolved[0].reference == EntityReference(
+        "downstream-consumer", "consumer:downstream:vlan565"
+    )
+    assert request.destination.resolved[0].reference == EntityReference(
+        "service", "dhcp:vlan565"
+    )
     assert service.address == "10.20.56.34"
     assert service.ports == (67, 68)
 
@@ -189,6 +560,20 @@ def test_json_and_markdown_share_one_topology_and_are_deterministic():
     assert "bastion1:vlan565 (10.20.56.34)" in first_markdown
     assert "TCP/UDP 53" in first_markdown
     assert "TCP 22" in first_markdown
+
+
+def test_v2_independent_builds_and_existing_renderers_are_deterministic():
+    first = build_desired_topology(expand_env(raw_config()))
+    second = build_desired_topology(expand_env(raw_config()))
+
+    assert first == second
+    assert first.to_dict() == second.to_dict()
+    assert render_topology_json(first) == render_topology_json(second)
+    assert render_topology_markdown(first) == render_topology_markdown(second)
+    assert render_topology_ascii_overview(first) == render_topology_ascii_overview(second)
+    assert render_topology_infrastructure_mermaid(
+        first
+    ) == render_topology_infrastructure_mermaid(second)
 
 
 def test_ascii_and_mermaid_are_deterministic_secondary_artifacts():
@@ -366,10 +751,16 @@ def test_topology_outputs_exclude_sensitive_config_values(tmp_path):
         "rke2-token-secret",
         "rancher-bootstrap-secret",
         "/sensitive/operator/key",
+        "/sensitive/jump/key",
     ]
     config["rke2"]["token"] = secrets[0]
     config["rancher"]["bootstrap_password"] = secrets[1]
     config.setdefault("ssh", {})["private_key"] = secrets[2]
+    config["ssh"]["jump_host"] = {
+        "alias": "external-jump",
+        "hostname": "jump.example.invalid",
+        "private_key": secrets[3],
+    }
     config["bastion"]["downstream_networks"] = [downstream_network(565, "10.20.56.32/27")]
     config_path = tmp_path / "config.yaml"
     config_path.write_text(yaml.safe_dump(config))

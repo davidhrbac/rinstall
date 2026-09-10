@@ -51,6 +51,44 @@ def test_full_reference_topology_has_expected_same_vlan_dns_and_ssh_rules():
     assert all(rule.destination_ports == (22,) for rule in ssh_rules)
 
 
+def test_full_reference_v2_derives_operational_entities_without_extra_config():
+    config = load_env(REFERENCE_CONFIG)
+    topology = build_desired_topology(config)
+    endpoints = {endpoint.id: endpoint for endpoint in topology.endpoints}
+    paths = {path.destination.id: path for path in topology.access_paths}
+
+    assert config["schema_version"] == 1
+    assert topology.metadata.topology_schema_version == 2
+    assert topology.clusters[0].member_host_ids == ("rancher1", "rancher2", "rancher3")
+    assert topology.clusters[0].primary_host_id == "rancher1"
+    assert endpoints["endpoint:rancher"].name == "rancher.full-example.example.invalid"
+    assert endpoints["endpoint:rancher"].resolutions[0].addresses == (
+        "198.51.100.11",
+        "198.51.100.12",
+        "198.51.100.13",
+    )
+    assert endpoints["endpoint:rancher"].resolutions[1].addresses == ()
+    assert endpoints["endpoint:ssh-jump"].name == "example-operator-jump"
+    assert endpoints["endpoint:ssh-jump"].resolutions[0].addresses == ()
+    assert [hop.id for hop in paths["rancher1"].hops] == [
+        "endpoint:ssh-jump",
+        "bastion1",
+    ]
+    assert [consumer.network_id for consumer in topology.downstream_consumers] == [
+        "downstream:vlan565",
+        "downstream:vlan566",
+    ]
+    assert topology.deployment_context.vsphere.datacenter == "EXAMPLE_DATACENTER"
+    assert topology.deployment_context.terraform_backend.state_name == "full-example-infra"
+    serialized = render_topology_json(topology)
+    assert "EXAMPLE-ONLY-DUMMY-RKE2-TOKEN" not in serialized
+    assert "VIP" not in " ".join(
+        address
+        for resolution in endpoints["endpoint:rancher"].resolutions
+        for address in resolution.addresses
+    )
+
+
 def test_full_reference_bastion_is_multihomed_and_core_nodes_use_customer_only():
     topology = reference_topology()
     bastion_interfaces = [interface for interface in topology.interfaces if interface.host == "bastion1"]
