@@ -1,9 +1,18 @@
+from copy import deepcopy
+import os
 from pathlib import Path
 
 import yaml
 
 from lib.env_config import expand_env, load_env
-from lib.ssh_config import node_ssh_hops, render_admin_ssh_config, render_ssh_config, write_ssh_config
+from lib.ssh_config import (
+    node_proxy_command,
+    node_ssh_hops,
+    node_ssh_target,
+    render_admin_ssh_config,
+    render_ssh_config,
+    write_ssh_config,
+)
 
 
 EXAMPLE_ENV = Path(__file__).parents[1] / "envs/example/env.yaml"
@@ -12,6 +21,46 @@ EXAMPLE_ENV = Path(__file__).parents[1] / "envs/example/env.yaml"
 def raw_example():
     with EXAMPLE_ENV.open() as stream:
         return yaml.safe_load(stream)
+
+
+def legacy_node_proxy_command(config, node_name, node, known_hosts_file=None):
+    """Exact node_proxy_command implementation before node_ssh_hops extraction."""
+    ssh = config.get("ssh", {})
+    jump_host = ssh.get("jump_host")
+    if not jump_host:
+        return None
+
+    jump_alias = (
+        jump_host
+        if isinstance(jump_host, str)
+        else jump_host.get("alias", "rancher-env-jump")
+    )
+    bastion_name = config["bastion"]["service_node"]
+    bastion_proxy_roles = set(ssh.get("bastion_proxy_roles", []))
+    if node["role"] not in bastion_proxy_roles or node_name == bastion_name:
+        hops = str(jump_alias).split(",")
+        if len(hops) == 1:
+            return f"ssh -F ~/.ssh/config -W %h:%p {hops[0]}"
+        return (
+            f"ssh -F ~/.ssh/config -J {','.join(hops[:-1])} "
+            f"-W %h:%p {hops[-1]}"
+        )
+
+    bastion_node = config["nodes"][bastion_name]
+    bastion_ssh_target = node_ssh_target(bastion_node)
+    ssh_user = ssh.get("user", "root")
+    ssh_key = os.path.expanduser(ssh.get("private_key", "~/.ssh/id_rsa"))
+    host_key_options = ""
+    if known_hosts_file:
+        host_key_options = (
+            f" -o UserKnownHostsFile={known_hosts_file}"
+            " -o GlobalKnownHostsFile=/dev/null"
+            " -o StrictHostKeyChecking=accept-new"
+        )
+    return (
+        f"ssh -F ~/.ssh/config{host_key_options} -i {ssh_key} -l {ssh_user} "
+        f"-J {jump_alias} -W %h:%p {bastion_ssh_target}"
+    )
 
 
 def test_generated_ssh_config_uses_environment_aliases_and_management_ip(tmp_path):
@@ -84,6 +133,61 @@ def test_generated_ssh_config_routes_nodes_through_configured_jump_host(tmp_path
         "admin-jump",
         "bastion1",
     )
+
+
+def test_node_ssh_hops_extraction_preserves_every_legacy_proxy_command_case(tmp_path):
+    base = load_env(EXAMPLE_ENV)
+    jump_hosts = (
+        None,
+        "",
+        "admin-jump",
+        "edge-jump,admin-jump",
+        {"alias": "structured-jump", "hostname": "jump.example.invalid"},
+        {"hostname": "jump.example.invalid"},
+    )
+    proxy_role_sets = (
+        (),
+        ("rancher",),
+        ("prometheus", "rancher"),
+        ("bastion", "prometheus", "rancher"),
+    )
+    known_hosts_values = (None, tmp_path / "known_hosts")
+    credentials = (
+        (None, None),
+        ("support-user", "~/keys/support_rsa"),
+    )
+    comparisons = 0
+
+    for jump_host in jump_hosts:
+        for proxy_roles in proxy_role_sets:
+            for known_hosts in known_hosts_values:
+                for ssh_user, private_key in credentials:
+                    config = deepcopy(base)
+                    config["ssh"]["jump_host"] = deepcopy(jump_host)
+                    config["ssh"]["bastion_proxy_roles"] = list(proxy_roles)
+                    if ssh_user is None:
+                        config["ssh"].pop("user", None)
+                        config["ssh"].pop("private_key", None)
+                    else:
+                        config["ssh"]["user"] = ssh_user
+                        config["ssh"]["private_key"] = private_key
+
+                    for node_name, node in config["nodes"].items():
+                        expected = legacy_node_proxy_command(
+                            config, node_name, node, known_hosts
+                        )
+                        actual = node_proxy_command(config, node_name, node, known_hosts)
+                        assert actual == expected
+                        comparisons += 1
+
+    config_without_ssh = deepcopy(base)
+    config_without_ssh.pop("ssh")
+    for node_name, node in config_without_ssh["nodes"].items():
+        assert node_proxy_command(config_without_ssh, node_name, node) is None
+        assert legacy_node_proxy_command(config_without_ssh, node_name, node) is None
+        comparisons += 1
+
+    assert comparisons == 485
 
 
 def test_write_ssh_config_creates_private_runtime_known_hosts(tmp_path):
