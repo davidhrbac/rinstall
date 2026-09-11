@@ -329,7 +329,7 @@ class VsphereDeploymentTopology:
     templates: tuple[DeploymentMappingTopology, ...]
     networks: tuple[DeploymentMappingTopology, ...]
     route: VsphereRouteTopology
-    clone_timeout_minutes: int
+    clone_timeout_minutes: int | None
     allow_unverified_ssl: bool
     ownership: str = REFERENCED_EXTERNAL
     provenance: str = CONFIGURED
@@ -2129,8 +2129,8 @@ def build_desired_topology(config):
                 ),
                 resolution=RESOLVED if route_interface else PARTIAL,
             ),
-            clone_timeout_minutes=vsphere["clone_timeout"],
-            allow_unverified_ssl=vsphere["allow_unverified_ssl"],
+            clone_timeout_minutes=vsphere.get("clone_timeout"),
+            allow_unverified_ssl=vsphere.get("allow_unverified_ssl", False),
         ),
         terraform_backend=TerraformBackendTopology(
             endpoint_id="endpoint:terraform-backend",
@@ -3936,7 +3936,14 @@ def _render_support_topology_markdown(topology):
             ("vCenter endpoint", "runtime-supplied / unresolved"),
             ("Datacenter", vsphere.datacenter), ("Resource pool", vsphere.resource_pool),
             ("Datastore", vsphere.datastore), ("VM folder", vsphere.folder),
-            ("Clone timeout", f"{vsphere.clone_timeout_minutes} minutes"),
+            (
+                "Clone timeout",
+                (
+                    f"{vsphere.clone_timeout_minutes} minutes"
+                    if vsphere.clone_timeout_minutes is not None
+                    else "not configured (Terraform default: 60 minutes)"
+                ),
+            ),
             ("TLS verification", "disabled" if vsphere.allow_unverified_ssl else "enabled"),
             ("Terraform backend", f"{context.terraform_backend.type} ({context.terraform_backend.state_name})"),
         ]

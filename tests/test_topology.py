@@ -86,6 +86,48 @@ def topology_with(*downstreams):
     return build_desired_topology(expand_env(config))
 
 
+def test_existing_config_without_optional_vsphere_fields_builds_and_renders(tmp_path):
+    config = raw_config()
+    del config["infra"]["vsphere"]["clone_timeout"]
+    del config["infra"]["vsphere"]["allow_unverified_ssl"]
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(yaml.safe_dump(config))
+
+    expanded = load_env(config_path)
+    topology = build_desired_topology(expanded)
+    output_dir = tmp_path / ".rinstall"
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(RENDER_TOPOLOGY),
+            "--config",
+            str(config_path),
+            "--output-dir",
+            str(output_dir),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert topology.deployment_context.vsphere.clone_timeout_minutes is None
+    assert topology.deployment_context.vsphere.allow_unverified_ssl is False
+    for artifact in (
+        "topology.json",
+        "topology.md",
+        "topology.txt",
+        "topology.mmd",
+        "architecture.mmd",
+        "network-topology.dot",
+        "network-topology.mmd",
+        "network-topology.svg",
+    ):
+        assert (output_dir / artifact).is_file()
+    assert json.loads((output_dir / "topology.json").read_text())["deployment_context"]["vsphere"]["clone_timeout_minutes"] is None
+    assert "Terraform default: 60 minutes" in render_topology_markdown(topology)
+    assert str(output_dir / "topology.json") in result.stdout
+
+
 def by_id(items):
     return {item.id: item for item in items}
 
