@@ -110,7 +110,8 @@ static customer and management addressing, the expanded three-node Rancher
 pool, Prometheus, two downstream VLANs, bastion DNS/DHCP/proxy settings,
 connection aliases, vSphere placement, RKE2, Rancher, and sanitized SSH
 topology metadata. Its generated public topology examples are kept beside it
-as `topology.json`, `topology.md`, `topology.txt`, and `topology.mmd`; they are
+as `topology.json`, `topology.md`, `topology.txt`, `architecture.mmd`, and
+`network-topology.mmd`; they are
 rendered by the normal topology generator and
 contain synthetic values only.
 The `ssh.jump_host` value is intentionally only a safe OpenSSH alias: its real
@@ -491,7 +492,8 @@ make -f rinstall/Makefile topology
 The target does not run Terraform or pyinfra and does not require provisioned
 infrastructure. In an instance repository it writes `.rinstall/topology.json`,
 `.rinstall/topology.md`, terminal overview at `.rinstall/topology.txt`, and
-standalone Mermaid source at `.rinstall/topology.mmd`;
+standalone Mermaid sources at `.rinstall/architecture.mmd` and
+`.rinstall/network-topology.mmd`;
 standalone engine use writes the same files under
 `build/<environment.id>/`. All representations come from the same normalized
 desired topology object and have mode `0600` in a mode-`0700` runtime directory.

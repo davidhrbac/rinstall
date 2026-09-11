@@ -113,7 +113,7 @@ def test_topology_target_writes_private_instance_runtime_outputs(tmp_path):
     topology_json = runtime_dir / "topology.json"
     topology_markdown = runtime_dir / "topology.md"
     topology_text = runtime_dir / "topology.txt"
-    topology_mermaid = runtime_dir / "topology.mmd"
+    topology_mermaid = runtime_dir / "network-topology.mmd"
     assert str(topology_json) in result.stdout
     assert str(topology_markdown) in result.stdout
     assert str(topology_text) in result.stdout
@@ -129,6 +129,9 @@ def test_topology_target_writes_private_instance_runtime_outputs(tmp_path):
     assert topology_markdown.stat().st_mode & 0o777 == 0o600
     assert topology_text.stat().st_mode & 0o777 == 0o600
     assert topology_mermaid.stat().st_mode & 0o777 == 0o600
+    assert (runtime_dir / "architecture.mmd").exists()
+    assert (runtime_dir / "architecture.mmd").stat().st_mode & 0o777 == 0o600
+    assert not (runtime_dir / "topology.mmd").exists()
     assert not (runtime_dir / "network-topology.dot").exists()
     assert not (runtime_dir / "network-topology.svg").exists()
     assert "terraform" not in result.stdout.lower()

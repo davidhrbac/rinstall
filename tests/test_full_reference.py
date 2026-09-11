@@ -7,7 +7,6 @@ from lib.topology import (
     render_topology_architecture_mermaid,
     render_topology_markdown,
     render_topology_ascii_overview,
-    render_topology_infrastructure_mermaid,
     render_topology_network_mermaid,
     build_desired_topology,
 )
@@ -112,7 +111,6 @@ def test_full_reference_generated_outputs_are_deterministic_and_sanitized():
         "architecture.mmd": render_topology_architecture_mermaid(topology),
         "topology.md": render_topology_markdown(topology),
         "topology.txt": render_topology_ascii_overview(topology),
-        "topology.mmd": render_topology_infrastructure_mermaid(topology),
         "network-topology.mmd": render_topology_network_mermaid(topology),
     }
 
@@ -126,17 +124,16 @@ def test_full_reference_generated_outputs_are_deterministic_and_sanitized():
 
 def test_full_reference_outputs_show_both_downstream_visual_attachments():
     markdown = (REFERENCE_OUTPUT / "topology.md").read_text()
-    mermaid = (REFERENCE_OUTPUT / "topology.mmd").read_text()
+    mermaid = (REFERENCE_OUTPUT / "architecture.mmd").read_text()
+    network_mermaid = (REFERENCE_OUTPUT / "network-topology.mmd").read_text()
 
     assert "VLAN 565" in markdown and "VLAN 566" in markdown
     assert "203.0.113.34" in markdown and "203.0.113.66" in markdown
     assert "| Monitoring: prom1 |" in markdown
-    assert "TCP/22" not in mermaid and "DNS" not in mermaid and "DHCP" not in mermaid
-    network_mermaid = (REFERENCE_OUTPUT / "network-topology.mmd").read_text()
     assert "```mermaid\n" + network_mermaid.rstrip() + "\n```" in markdown
     assert "<svg" not in markdown
-    assert "network_downstream_vlan565" in mermaid
-    assert "network_downstream_vlan566" in mermaid
+    assert "network_downstream_vlan565" in network_mermaid
+    assert "network_downstream_vlan566" in network_mermaid
     assert not (REFERENCE_OUTPUT / "connectivity.mmd").exists()
     assert not (REFERENCE_OUTPUT / "topology.svg").exists()
 

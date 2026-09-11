@@ -12,7 +12,6 @@ from lib.topology import (
     render_topology_architecture_mermaid,
     render_topology_json,
     render_topology_markdown,
-    render_topology_infrastructure_mermaid,
     render_topology_network_mermaid,
     render_topology_ascii_overview,
 )
@@ -59,13 +58,11 @@ def main():
     json_path = output_dir / "topology.json"
     markdown_path = output_dir / "topology.md"
     text_path = output_dir / "topology.txt"
-    infrastructure_mermaid_path = output_dir / "topology.mmd"
     architecture_mermaid_path = output_dir / "architecture.mmd"
     network_mermaid_path = output_dir / "network-topology.mmd"
     write_private_text(json_path, render_topology_json(topology))
     write_private_text(markdown_path, render_topology_markdown(topology))
     write_private_text(text_path, render_topology_ascii_overview(topology))
-    write_private_text(infrastructure_mermaid_path, render_topology_infrastructure_mermaid(topology))
     write_private_text(architecture_mermaid_path, render_topology_architecture_mermaid(topology))
     write_private_text(network_mermaid_path, render_topology_network_mermaid(topology))
     if args.docs_dir:
@@ -77,7 +74,6 @@ def main():
     print(json_path)
     print(markdown_path)
     print(text_path)
-    print(infrastructure_mermaid_path)
     print(architecture_mermaid_path)
     print(network_mermaid_path)
     if args.docs_dir:

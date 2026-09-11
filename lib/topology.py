@@ -4109,7 +4109,7 @@ def _legacy_render_topology_markdown(topology):
             *[f"- {_markdown(note)}" for note in topology.notes],
             "- `not attached` means that the host has no interface on that network.",
             "- External SSH jump-host details are intentionally not represented here.",
-            "- `topology.mmd` and `topology.txt` are secondary support artifacts.",
+            "- `architecture.mmd`, `network-topology.mmd`, and `topology.txt` are support artifacts.",
             "",
         ]
     )

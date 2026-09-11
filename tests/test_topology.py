@@ -113,7 +113,6 @@ def test_existing_config_without_optional_vsphere_fields_builds_and_renders(tmp_
         "topology.json",
         "topology.md",
         "topology.txt",
-        "topology.mmd",
         "architecture.mmd",
         "network-topology.mmd",
     ):
@@ -1386,7 +1385,6 @@ def test_topology_outputs_exclude_sensitive_config_values(tmp_path):
     first_json = (output_dir / "topology.json").read_bytes()
     first_markdown = (output_dir / "topology.md").read_bytes()
     first_text = (output_dir / "topology.txt").read_bytes()
-    first_mermaid = (output_dir / "topology.mmd").read_bytes()
     first_network_mermaid = (output_dir / "network-topology.mmd").read_bytes()
     subprocess.run(
         command,
@@ -1397,13 +1395,11 @@ def test_topology_outputs_exclude_sensitive_config_values(tmp_path):
         (output_dir / "topology.json").read_text()
         + (output_dir / "topology.md").read_text()
         + (output_dir / "topology.txt").read_text()
-        + (output_dir / "topology.mmd").read_text()
         + (output_dir / "network-topology.mmd").read_text()
     )
     assert (output_dir / "topology.json").read_bytes() == first_json
     assert (output_dir / "topology.md").read_bytes() == first_markdown
     assert (output_dir / "topology.txt").read_bytes() == first_text
-    assert (output_dir / "topology.mmd").read_bytes() == first_mermaid
     assert (output_dir / "network-topology.mmd").read_bytes() == first_network_mermaid
     assert not (output_dir / "connectivity.mmd").exists()
     assert not (output_dir / "topology.svg").exists()
@@ -1412,8 +1408,8 @@ def test_topology_outputs_exclude_sensitive_config_values(tmp_path):
     assert (output_dir / "topology.json").stat().st_mode & 0o777 == 0o600
     assert (output_dir / "topology.md").stat().st_mode & 0o777 == 0o600
     assert (output_dir / "topology.txt").stat().st_mode & 0o777 == 0o600
-    assert (output_dir / "topology.mmd").stat().st_mode & 0o777 == 0o600
     assert (output_dir / "network-topology.mmd").stat().st_mode & 0o777 == 0o600
+    assert not (output_dir / "topology.mmd").exists()
     assert not (output_dir / "network-topology.dot").exists()
     assert not (output_dir / "network-topology.svg").exists()
 
