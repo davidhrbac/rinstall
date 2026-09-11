@@ -62,6 +62,10 @@ flowchart TB
   host_bastion1_fd65cf69ce --- network_downstream_vlan566_d2bd8ff235
 ```
 
+## Network Topology
+
+![Network topology](network-topology.svg)
+
 ## Environment
 
 | Environment | Rancher URL | Domain | RKE2 | Rancher | cert-manager |

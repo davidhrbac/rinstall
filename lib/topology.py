@@ -4,6 +4,7 @@ from html import escape
 from ipaddress import ip_address, ip_interface, ip_network
 import json
 import re
+import subprocess
 from urllib.parse import urlparse
 
 from lib.env_config import gitlab_backend_state_address
@@ -2926,6 +2927,153 @@ def render_topology_architecture_mermaid(topology):
     return "\n".join(lines) + "\n"
 
 
+def _dot_quote(value):
+    return '"' + str(value).replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n") + '"'
+
+
+def render_topology_network_dot(topology):
+    """Render the desired network attachment view from V2 entities only."""
+    metadata = topology.metadata
+    hosts = {host.id: host for host in topology.hosts}
+    networks = {network.id: network for network in topology.networks}
+    bastion = hosts[metadata.bastion_host]
+    downstream_by_id = {item.id: item for item in topology.downstream_networks}
+    consumers_by_network = {
+        consumer.network_id: consumer for consumer in topology.downstream_consumers
+    }
+    host_ids = {host.id: _mermaid_id("host", host.id) for host in topology.hosts}
+    network_ids = {
+        network.id: _mermaid_id("network", network.id) for network in topology.networks
+    }
+    lines = [
+        "digraph network_topology {",
+        "  rankdir=LR",
+        "  graph [compound=true, nodesep=0.45, ranksep=0.75, splines=polyline]",
+        '  node [shape=box, style="rounded", fontname="Helvetica", fontsize=10]',
+        '  edge [fontname="Helvetica", fontsize=9]',
+    ]
+
+    def host_node(host_id, label, indent="  "):
+        lines.append(
+            f'{indent}{host_ids[host_id]} [label={_dot_quote(label)}, '
+            'style="rounded,filled", fillcolor="#d8e8ff"]'
+        )
+
+    host_node(bastion.id, f"{bastion.id}\nmulti-homed\nbastion_is_router: false")
+    rancher_host_ids = {
+        host_id for cluster in topology.clusters for host_id in cluster.member_host_ids
+    }
+    core_hosts = [
+        host for host in topology.hosts
+        if host.id != bastion.id and host.id not in rancher_host_ids
+    ]
+    if core_hosts:
+        lines.extend([
+            "  subgraph cluster_core_hosts {",
+            '    label="Core hosts"',
+            '    color="transparent"',
+        ])
+        for host in core_hosts:
+            host_node(host.id, host.id, "    ")
+        lines.append("  }")
+
+    for cluster in topology.clusters:
+        cluster_node_id = _mermaid_id("cluster", cluster.id)
+        lines.extend([
+            f"  subgraph {cluster_node_id} {{",
+            f'    label={_dot_quote("RKE2 / Rancher cluster")}',
+            '    color="#777777"',
+        ])
+        for host_id in cluster.member_host_ids:
+            suffix = " primary" if host_id == cluster.primary_host_id else ""
+            host_node(host_id, host_id + suffix, "    ")
+        lines.append("  }")
+
+    for network in topology.networks:
+        label = [
+            network.id,
+            f"kind: {network.kind}",
+            f"CIDR: {network.cidr or 'unknown'}",
+            f"VMware: {network.vmware_network}",
+        ]
+        if network.id in downstream_by_id:
+            downstream = downstream_by_id[network.id]
+            label.extend([
+                f"VLAN: {downstream.vlan}",
+                f"bastion: {downstream.bastion_address}",
+                f"DHCP: {downstream.dhcp_start}-{downstream.dhcp_end}",
+                f"lease: {downstream.dhcp_lease}",
+            ])
+        if network.gateway is not None:
+            label.append(f"gateway: {network.gateway}")
+        lines.append(
+            f'  {network_ids[network.id]} [label={_dot_quote("\n".join(label))}, '
+            'style="rounded,filled", fillcolor="#eeeeee"]'
+        )
+
+    for downstream in topology.downstream_networks:
+        consumer = consumers_by_network[downstream.id]
+        gateway_id = _mermaid_id(
+            "external", downstream.gateway_endpoint_id or f"gateway:{downstream.id}"
+        )
+        consumer_id = _mermaid_id("consumer", consumer.id)
+        consumer_label = (
+            "Downstream nodes\n"
+            f"identities {'known' if consumer.identities_known else 'unknown'}\n"
+            f"DHCP {consumer.address_start}-{consumer.address_end}\n"
+            f"{consumer.lifecycle}"
+        )
+        lines.extend([
+            f'  subgraph {_mermaid_id("downstream", downstream.id)} {{',
+            f'    label={_dot_quote(f"VLAN {downstream.vlan} downstream")}',
+            '    color="#777777"',
+            f'    {gateway_id} [label={_dot_quote(f"External gateway\n{downstream.gateway}")}, '
+            'style="rounded,dashed", fillcolor="#f3f3f3"]',
+            f'    {consumer_id} [label={_dot_quote(consumer_label)}, '
+            'style="rounded,dashed", fillcolor="#f3f3f3"]',
+            "  }",
+            f'  {network_ids[downstream.id]} -> {gateway_id} [dir=none, label="external"]',
+            f'  {network_ids[downstream.id]} -> {consumer_id} [dir=none, label="DHCP"]',
+        ])
+
+    if topology.downstream_networks:
+        routed_id = _mermaid_id("external", "external-routed-network-firewall")
+        lines.append(
+            f'  {routed_id} [label={_dot_quote("External routed network / firewall")}, '
+            'style="rounded,dashed", fillcolor="#f3f3f3"]'
+        )
+        if "customer" in network_ids:
+            lines.append(f'  {network_ids["customer"]} -> {routed_id} [label="external routing"]')
+        for downstream in topology.downstream_networks:
+            lines.append(
+                f'  {routed_id} -> {network_ids[downstream.id]} [label="external routing"]'
+            )
+
+    for interface in topology.interfaces:
+        address = (
+            f"{interface.address}/{interface.prefix}"
+            if interface.address is not None and interface.prefix is not None
+            else "unknown"
+        )
+        lines.append(
+            f'  {host_ids[interface.host]} -> {network_ids[interface.network]} '
+            f'[dir=none, label={_dot_quote(address)}]'
+        )
+    lines.append("}")
+    return "\n".join(lines) + "\n"
+
+
+def render_topology_network_svg(topology):
+    result = subprocess.run(
+        ["dot", "-Tsvg"],
+        input=render_topology_network_dot(topology),
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+    return result.stdout
+
+
 def _topology_ids(topology):
     return (
         {host.id: _mermaid_id("host", host.id) for host in topology.hosts},
@@ -3542,6 +3690,10 @@ def render_topology_markdown(topology):
         "```mermaid",
         render_topology_infrastructure_mermaid(topology).rstrip(),
         "```",
+        "",
+        "## Network Topology",
+        "",
+        "![Network topology](network-topology.svg)",
         "",
         "## Environment",
         "",

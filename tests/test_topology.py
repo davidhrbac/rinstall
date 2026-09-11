@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import subprocess
 import sys
+from xml.etree import ElementTree
 
 import pytest
 import yaml
@@ -44,6 +45,8 @@ from lib.topology import (
     render_topology_markdown,
     render_topology_ascii_overview,
     render_topology_infrastructure_mermaid,
+    render_topology_network_dot,
+    render_topology_network_svg,
     validate_topology,
 )
 
@@ -339,6 +342,116 @@ def test_v2_architecture_map_uses_arbitrary_cluster_members_from_v2():
 
     assert "rancher1 primary" in architecture
     assert all(f"rancher{index}" in architecture for index in range(2, 6))
+
+
+def test_v2_network_topology_dot_covers_attachments_and_external_routing():
+    topology = build_desired_topology(load_env(FULL_CONFIG))
+    dot = render_topology_network_dot(topology)
+
+    assert dot.startswith("digraph network_topology {")
+    assert dot.count('label="bastion1\\nmulti-homed') == 1
+    assert 'bastion_is_router: false' in dot
+    assert 'label="management\\nkind: management\\nCIDR: 192.0.2.0/24' in dot
+    assert 'VMware: EXAMPLE_MANAGEMENT_NETWORK' in dot
+    assert 'CIDR: 198.51.100.0/28' in dot
+    assert 'VMware: EXAMPLE_CUSTOMER_NETWORK' in dot
+    assert 'host_prom1_abf2e7bd7a -> network_customer_b6c4586387' in dot
+    assert dot.count('-> network_customer_b6c4586387 [dir=none') == 5
+    assert dot.count('-> network_downstream_') == 4
+    assert 'VLAN 565 downstream' in dot
+    assert 'VLAN: 565' in dot
+    assert 'CIDR: 203.0.113.32/27' in dot
+    assert 'VMware: EXAMPLE_DOWNSTREAM_NETWORK_565' in dot
+    assert '203.0.113.34/27' in dot
+    assert 'bastion: 203.0.113.34' in dot
+    assert 'External gateway\\n203.0.113.33' in dot
+    assert 'DHCP 203.0.113.36-203.0.113.61' in dot
+    assert 'lease: 12h' in dot
+    assert 'External routed network / firewall' in dot
+    assert 'external routing' in dot
+    assert 'TCP' not in dot and '9345' not in dot and '6443' not in dot
+    assert 'endpoint:rancher' not in dot
+    assert 'private_key' not in dot
+
+
+def test_v2_network_topology_svg_is_valid():
+    topology = build_desired_topology(load_env(FULL_CONFIG))
+    first_dot = render_topology_network_dot(topology)
+    second_dot = render_topology_network_dot(topology)
+    svg = render_topology_network_svg(topology)
+
+    assert first_dot == second_dot
+    assert svg.startswith("<?xml")
+    assert ElementTree.fromstring(svg).tag.endswith("svg")
+
+
+@pytest.mark.parametrize("count", [0, 1, 2, 5, 10])
+def test_v2_network_topology_scales_downstream_networks(count):
+    config = raw_config()
+    config["bastion"]["downstream_networks"] = [
+        downstream_network(500 + index, f"10.20.{index}.0/24")
+        for index in range(min(count, 8))
+    ]
+    topology = build_desired_topology(expand_env(config))
+    if count > 8:
+        extra_downstreams = []
+        extra_networks = []
+        extra_consumers = []
+        for index in range(8, count):
+            vlan = 600 + index
+            network_id = f"downstream:vlan{vlan}"
+            subnet = f"10.30.{index}.0/24"
+            source_downstream = topology.downstream_networks[0]
+            source_network = next(
+                network for network in topology.networks if network.id == source_downstream.id
+            )
+            source_consumer = topology.downstream_consumers[0]
+            extra_downstreams.append(
+                replace(
+                    source_downstream,
+                    id=network_id,
+                    interface_name=f"vlan{vlan}",
+                    vlan=vlan,
+                    vmware_network=f"DOWNSTREAM_VLAN_{vlan}",
+                    cidr=subnet,
+                    bastion_address=f"10.30.{index}.2",
+                    gateway=f"10.30.{index}.1",
+                    dhcp_start=f"10.30.{index}.4",
+                    dhcp_end=f"10.30.{index}.254",
+                )
+            )
+            extra_networks.append(
+                replace(
+                    source_network,
+                    id=network_id,
+                    vlan=vlan,
+                    vmware_network=f"DOWNSTREAM_VLAN_{vlan}",
+                    cidr=subnet,
+                    gateway=f"10.30.{index}.1",
+                    interface_ids=(),
+                    gateway_endpoint_id=f"endpoint:gateway:{network_id}",
+                )
+            )
+            extra_consumers.append(
+                replace(
+                    source_consumer,
+                    id=f"consumer:network-test-{index}",
+                    network_id=network_id,
+                    address_start=f"10.30.{index}.4",
+                    address_end=f"10.30.{index}.254",
+                    gateway_endpoint_id=f"endpoint:gateway:{network_id}",
+                )
+            )
+        topology = replace(
+            topology,
+            downstream_networks=topology.downstream_networks + tuple(extra_downstreams),
+            networks=topology.networks + tuple(extra_networks),
+            downstream_consumers=topology.downstream_consumers + tuple(extra_consumers),
+        )
+    dot = render_topology_network_dot(topology)
+
+    assert dot.count('label="External gateway\\n') == count
+    assert dot.count('label="Downstream nodes\\n') == count
 
 
 def test_v2_rke2_cluster_supports_arbitrary_member_names_and_count():
@@ -1210,6 +1323,8 @@ def test_topology_outputs_exclude_sensitive_config_values(tmp_path):
     first_markdown = (output_dir / "topology.md").read_bytes()
     first_text = (output_dir / "topology.txt").read_bytes()
     first_mermaid = (output_dir / "topology.mmd").read_bytes()
+    first_network_dot = (output_dir / "network-topology.dot").read_bytes()
+    first_network_svg = (output_dir / "network-topology.svg").read_bytes()
     subprocess.run(
         command,
         check=True,
@@ -1220,11 +1335,15 @@ def test_topology_outputs_exclude_sensitive_config_values(tmp_path):
         + (output_dir / "topology.md").read_text()
         + (output_dir / "topology.txt").read_text()
         + (output_dir / "topology.mmd").read_text()
+        + (output_dir / "network-topology.dot").read_text()
+        + (output_dir / "network-topology.svg").read_text()
     )
     assert (output_dir / "topology.json").read_bytes() == first_json
     assert (output_dir / "topology.md").read_bytes() == first_markdown
     assert (output_dir / "topology.txt").read_bytes() == first_text
     assert (output_dir / "topology.mmd").read_bytes() == first_mermaid
+    assert (output_dir / "network-topology.dot").read_bytes() == first_network_dot
+    assert (output_dir / "network-topology.svg").read_bytes() == first_network_svg
     assert not (output_dir / "connectivity.mmd").exists()
     assert not (output_dir / "topology.svg").exists()
     assert all(secret not in outputs for secret in secrets)
@@ -1233,6 +1352,8 @@ def test_topology_outputs_exclude_sensitive_config_values(tmp_path):
     assert (output_dir / "topology.md").stat().st_mode & 0o777 == 0o600
     assert (output_dir / "topology.txt").stat().st_mode & 0o777 == 0o600
     assert (output_dir / "topology.mmd").stat().st_mode & 0o777 == 0o600
+    assert (output_dir / "network-topology.dot").stat().st_mode & 0o777 == 0o600
+    assert (output_dir / "network-topology.svg").stat().st_mode & 0o777 == 0o600
 
 
 def test_markdown_escapes_configured_table_values():

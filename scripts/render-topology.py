@@ -13,6 +13,8 @@ from lib.topology import (
     render_topology_json,
     render_topology_markdown,
     render_topology_infrastructure_mermaid,
+    render_topology_network_dot,
+    render_topology_network_svg,
     render_topology_ascii_overview,
 )
 
@@ -45,16 +47,22 @@ def main():
     text_path = output_dir / "topology.txt"
     infrastructure_mermaid_path = output_dir / "topology.mmd"
     architecture_mermaid_path = output_dir / "architecture.mmd"
+    network_dot_path = output_dir / "network-topology.dot"
+    network_svg_path = output_dir / "network-topology.svg"
     write_private_text(json_path, render_topology_json(topology))
     write_private_text(markdown_path, render_topology_markdown(topology))
     write_private_text(text_path, render_topology_ascii_overview(topology))
     write_private_text(infrastructure_mermaid_path, render_topology_infrastructure_mermaid(topology))
     write_private_text(architecture_mermaid_path, render_topology_architecture_mermaid(topology))
+    write_private_text(network_dot_path, render_topology_network_dot(topology))
+    write_private_text(network_svg_path, render_topology_network_svg(topology))
     print(json_path)
     print(markdown_path)
     print(text_path)
     print(infrastructure_mermaid_path)
     print(architecture_mermaid_path)
+    print(network_dot_path)
+    print(network_svg_path)
 
 
 if __name__ == "__main__":
