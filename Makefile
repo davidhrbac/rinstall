@@ -39,7 +39,7 @@ help:
 	@printf '%s\n' '  provision-all-yes   run provision-all without prompt'
 	@printf '%s\n' ''
 	@printf '\033[3m%s\033[0m\n' '  render-infra-vars   render runtime/infra.tfvars.json from config.yaml'
-	@printf '\033[3m%s\033[0m\n' '  topology            render private desired topology JSON, text, Markdown, and Mermaid'
+	@printf '\033[3m%s\033[0m\n' '  topology            render private desired topology JSON, architecture, text, Markdown, and Mermaid'
 	@printf '\033[3m%s\033[0m\n' '  instance-context    show the selected instance and Terraform state'
 	@printf '\033[3m%s\033[0m\n' '  ssh-config          render runtime/ssh_config from config.yaml'
 	@printf '\033[3m%s\033[0m\n' '  ssh-hostkey-reset  remove one node from the instance known_hosts file'

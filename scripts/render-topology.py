@@ -9,6 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from lib.env_config import load_env
 from lib.topology import (
     build_desired_topology,
+    render_topology_architecture_mermaid,
     render_topology_json,
     render_topology_markdown,
     render_topology_infrastructure_mermaid,
@@ -43,14 +44,17 @@ def main():
     markdown_path = output_dir / "topology.md"
     text_path = output_dir / "topology.txt"
     infrastructure_mermaid_path = output_dir / "topology.mmd"
+    architecture_mermaid_path = output_dir / "architecture.mmd"
     write_private_text(json_path, render_topology_json(topology))
     write_private_text(markdown_path, render_topology_markdown(topology))
     write_private_text(text_path, render_topology_ascii_overview(topology))
     write_private_text(infrastructure_mermaid_path, render_topology_infrastructure_mermaid(topology))
+    write_private_text(architecture_mermaid_path, render_topology_architecture_mermaid(topology))
     print(json_path)
     print(markdown_path)
     print(text_path)
     print(infrastructure_mermaid_path)
+    print(architecture_mermaid_path)
 
 
 if __name__ == "__main__":

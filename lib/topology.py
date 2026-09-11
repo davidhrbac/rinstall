@@ -2765,6 +2765,188 @@ def render_topology_json(topology):
     return json.dumps(topology.to_dict(), indent=2) + "\n"
 
 
+def render_topology_architecture_mermaid(topology):
+    """Render the support-oriented architecture view from V2 entities only."""
+    metadata = topology.metadata
+    hosts = {host.id: host for host in topology.hosts}
+    endpoints = {endpoint.id: endpoint for endpoint in topology.endpoints}
+    downstream_consumers = tuple(topology.downstream_consumers)
+    bastion = hosts[metadata.bastion_host]
+    operator_id = _mermaid_id("actor", "operator-workstation")
+    bastion_id = _mermaid_id("host", bastion.id)
+    cluster_ids = {
+        cluster.id: _mermaid_id("cluster", cluster.id) for cluster in topology.clusters
+    }
+    endpoint_ids = {
+        endpoint.id: _mermaid_id("endpoint", endpoint.id)
+        for endpoint in topology.endpoints
+    }
+    consumer_ids = {
+        consumer.id: _mermaid_id("consumer", consumer.id)
+        for consumer in downstream_consumers
+    }
+    monitoring_hosts = tuple(
+        host for host in topology.hosts if MONITORING_HOST_ONLY in host.capabilities
+    )
+    monitoring_ids = {
+        host.id: _mermaid_id("host", host.id) for host in monitoring_hosts
+    }
+    access_paths = {path.destination.id: path for path in topology.access_paths}
+    lines = ["flowchart TB"]
+    lines.append(
+        f'  {operator_id}["Operator / rinstall"]'
+    )
+
+    jump_endpoints = tuple(
+        endpoint
+        for endpoint in topology.endpoints
+        if endpoint.kind == "ssh-jump-alias"
+    )
+    if jump_endpoints:
+        lines.append('  subgraph external_access["External dependencies"]')
+        lines.append("    direction TB")
+        for endpoint in jump_endpoints:
+            resolution = endpoint.resolution.lower().replace("_", " ")
+            lines.append(
+                f'    {endpoint_ids[endpoint.id]}["SSH jump<br/>{_mermaid(endpoint.name)}<br/>'
+                f'{_mermaid(resolution)}"]'
+            )
+        lines.append("  end")
+
+    lines.append(
+        f'  {bastion_id}["Bastion<br/>{_mermaid(bastion.id)}<br/>'
+        'DNS · DHCP · proxy · SSH transit"]'
+    )
+    if monitoring_hosts:
+        lines.append('  subgraph monitoring["Monitoring"]')
+        lines.append("    direction TB")
+        for host in monitoring_hosts:
+            lines.append(
+                f'    {monitoring_ids[host.id]}["Monitoring host<br/>{_mermaid(host.id)}"]'
+            )
+        lines.append("  end")
+
+    for cluster in topology.clusters:
+        cluster_id = cluster_ids[cluster.id]
+        lines.append(
+            f'  subgraph {cluster_id}["RKE2 / Rancher cluster"]'
+        )
+        lines.append("    direction TB")
+        primary_id = _mermaid_id("host", cluster.primary_host_id)
+        lines.append(
+            f'    {primary_id}["primary: {_mermaid(cluster.primary_host_id)}"]'
+        )
+        for member_id in cluster.member_host_ids:
+            if member_id == cluster.primary_host_id:
+                continue
+            member_node_id = _mermaid_id("host", member_id)
+            lines.append(f'    {member_node_id}["member: {_mermaid(member_id)}"]')
+        lines.append("  end")
+
+    rancher_endpoint = next(
+        (endpoint for endpoint in topology.endpoints if endpoint.kind == "rancher-https"),
+        None,
+    )
+    if rancher_endpoint is not None:
+        endpoint_id = endpoint_ids[rancher_endpoint.id]
+        lines.append(
+            f'  {endpoint_id}["Rancher endpoint<br/>{_mermaid(rancher_endpoint.name)}<br/>'
+            f'{_mermaid(" / ".join(rancher_endpoint.protocols))} / '
+            f'{_mermaid(" / ".join(str(port) for port in rancher_endpoint.ports))}"]'
+        )
+        external_resolution = next(
+            (item for item in rancher_endpoint.resolutions if item.scope == "external"),
+            None,
+        )
+        if external_resolution is not None and external_resolution.resolution != RESOLVED:
+            lines.append(f'  {endpoint_id}:::unresolved')
+            lines.append(
+                f'  {endpoint_id}_note["external VIP/LB unresolved"]'
+            )
+
+    if downstream_consumers:
+        lines.append('  subgraph downstream["Downstream environments"]')
+        lines.append("    direction TB")
+        for consumer in downstream_consumers:
+            downstream = next(
+                item
+                for item in topology.downstream_networks
+                if item.id == consumer.network_id
+            )
+            lines.append(
+                f'    {consumer_ids[consumer.id]}["Downstream nodes<br/>VLAN '
+                f'{_mermaid(downstream.vlan)}<br/>external lifecycle"]'
+            )
+        lines.append("  end")
+
+    context = topology.deployment_context
+    if context is not None:
+        vsphere_id = _mermaid_id("endpoint", context.vsphere.endpoint_id)
+        backend_id = _mermaid_id("endpoint", context.terraform_backend.endpoint_id)
+        lines.extend(
+            [
+                f'  {vsphere_id}["vSphere<br/>runtime endpoint unresolved"]',
+                f'  {backend_id}["Terraform state backend<br/>GitLab"]',
+            ]
+        )
+
+    if jump_endpoints:
+        lines.append(f"  {operator_id} --> {endpoint_ids[jump_endpoints[0].id]}")
+        for previous, current in zip(jump_endpoints, jump_endpoints[1:]):
+            lines.append(f"  {endpoint_ids[previous.id]} --> {endpoint_ids[current.id]}")
+        lines.append(f"  {endpoint_ids[jump_endpoints[-1].id]} --> {bastion_id}")
+    else:
+        lines.append(f"  {operator_id} --> {bastion_id}")
+
+    for host in monitoring_hosts:
+        path = access_paths.get(host.id)
+        if path is not None and any(hop.kind == "host" and hop.id == bastion.id for hop in path.hops):
+            lines.append(f"  {bastion_id} --> {monitoring_ids[host.id]}")
+
+    for cluster in topology.clusters:
+        cluster_id = cluster_ids[cluster.id]
+        if any(
+            hop.kind == "host" and hop.id == bastion.id
+            for host_id in cluster.member_host_ids
+            for hop in (
+                access_paths[host_id].hops if host_id in access_paths else ()
+            )
+        ):
+            lines.append(f"  {bastion_id} --> {cluster_id}")
+        if rancher_endpoint is not None and rancher_endpoint.id in cluster.endpoint_ids:
+            lines.append(f"  {cluster_id} --> {endpoint_ids[rancher_endpoint.id]}")
+
+    if rancher_endpoint is not None:
+        for consumer in downstream_consumers:
+            if any(
+                rule.category == DOWNSTREAM
+                and any(
+                    item.reference == EntityReference("downstream-consumer", consumer.id)
+                    for item in rule.source.resolved
+                )
+                and any(
+                    item.reference == EntityReference("endpoint", rancher_endpoint.id)
+                    for item in rule.destination.resolved
+                )
+                for rule in topology.connectivity_rules
+            ):
+                lines.append(
+                    f"  {consumer_ids[consumer.id]} --> {endpoint_ids[rancher_endpoint.id]}"
+                )
+
+    if context is not None:
+        lines.append(f"  {operator_id} --> {vsphere_id}")
+        lines.append(f"  {operator_id} --> {backend_id}")
+
+    lines.extend(
+        [
+            "  classDef unresolved stroke:#9b6b00,stroke-dasharray: 4 3",
+            "  classDef external fill:#f3f3f3,stroke:#777777",
+        ]
+    )
+    return "\n".join(lines) + "\n"
+
+
 def _topology_ids(topology):
     return (
         {host.id: _mermaid_id("host", host.id) for host in topology.hosts},
@@ -3369,6 +3551,12 @@ def render_topology_markdown(topology):
         f"# Desired Topology: {metadata.environment_id}",
         "",
         "> Status: desired configuration only; runtime state and reachability are not verified.",
+        "",
+        "## Architecture Map",
+        "",
+        "```mermaid",
+        render_topology_architecture_mermaid(topology).rstrip(),
+        "```",
         "",
         "## Infrastructure Topology",
         "",

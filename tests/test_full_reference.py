@@ -4,6 +4,7 @@ import json
 from lib.env_config import load_env
 from lib.topology import (
     render_topology_json,
+    render_topology_architecture_mermaid,
     render_topology_markdown,
     render_topology_ascii_overview,
     render_topology_infrastructure_mermaid,
@@ -107,6 +108,7 @@ def test_full_reference_generated_outputs_are_deterministic_and_sanitized():
     topology = reference_topology()
     expected = {
         "topology.json": render_topology_json(topology),
+        "architecture.mmd": render_topology_architecture_mermaid(topology),
         "topology.md": render_topology_markdown(topology),
         "topology.txt": render_topology_ascii_overview(topology),
         "topology.mmd": render_topology_infrastructure_mermaid(topology),

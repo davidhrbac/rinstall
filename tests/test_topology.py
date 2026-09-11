@@ -39,6 +39,7 @@ from lib.topology import (
     HostTopology,
     build_desired_topology,
     render_topology_json,
+    render_topology_architecture_mermaid,
     render_topology_markdown,
     render_topology_ascii_overview,
     render_topology_infrastructure_mermaid,
@@ -233,6 +234,90 @@ def test_v2_rke2_rancher_cluster_is_derived_from_roles_and_primary():
         DERIVED,
         RESOLVED,
     )
+
+
+def test_v2_architecture_map_consumes_semantic_entities_and_boundaries(monkeypatch):
+    topology = build_desired_topology(load_env(FULL_CONFIG))
+
+    def unexpected_config_read(*args, **kwargs):
+        raise AssertionError("architecture renderer must consume V2 only")
+
+    monkeypatch.setattr("builtins.open", unexpected_config_read)
+    architecture = render_topology_architecture_mermaid(topology)
+
+    assert architecture.startswith("flowchart TB\n")
+    assert "Operator / rinstall" in architecture
+    assert "SSH jump<br/>example-operator-jump<br/>external unresolved" in architecture
+    assert "Bastion<br/>bastion1<br/>DNS · DHCP · proxy · SSH transit" in architecture
+    assert 'Monitoring host<br/>prom1' in architecture
+    assert 'subgraph cluster_rke2_rancher_' not in architecture
+    assert '"RKE2 / Rancher cluster"' in architecture
+    assert "primary: rancher1" in architecture
+    assert "member: rancher2" in architecture
+    assert "member: rancher3" in architecture
+    assert "Rancher endpoint<br/>rancher.full-example.example.invalid<br/>HTTPS / 443" in architecture
+    assert "external VIP/LB unresolved" in architecture
+    assert "Downstream nodes<br/>VLAN 565<br/>external lifecycle" in architecture
+    assert "Downstream nodes<br/>VLAN 566<br/>external lifecycle" in architecture
+    assert "vSphere<br/>runtime endpoint unresolved" in architecture
+    assert "Terraform state backend<br/>GitLab" in architecture
+    assert "TCP/22" not in architecture
+    assert "DNS" in architecture
+    assert "DHCP" in architecture
+    assert "/53" not in architecture
+    assert "67/68" not in architecture
+    assert "3128" not in architecture
+    assert "9345" not in architecture
+    assert "6443" not in architecture
+    assert "198.51.100." not in architecture
+    assert "private_key" not in architecture
+    assert "TF_HTTP" not in architecture
+
+
+@pytest.mark.parametrize("count", [0, 1, 2, 5, 10])
+def test_v2_architecture_map_supports_arbitrary_downstream_consumer_counts(count):
+    config = raw_config()
+    config["bastion"]["downstream_networks"] = [
+        downstream_network(500 + index, f"10.20.{index}.0/24")
+        for index in range(min(count, 8))
+    ]
+    topology = build_desired_topology(expand_env(config))
+    if count > 8:
+        consumers = tuple(
+            replace(
+                topology.downstream_consumers[index % len(topology.downstream_consumers)],
+                id=f"consumer:architecture-test-{index}",
+            )
+            for index in range(count)
+        )
+        topology = replace(topology, downstream_consumers=consumers)
+    architecture = render_topology_architecture_mermaid(topology)
+
+    assert architecture.count("Downstream nodes<br/>") == count
+    assert architecture.count("external lifecycle") == count
+    if count:
+        assert "Downstream environments" in architecture
+    else:
+        assert "Downstream environments" not in architecture
+
+
+def test_v2_architecture_map_is_deterministic_and_reference_artifact_is_v2_only():
+    topology = build_desired_topology(load_env(FULL_CONFIG))
+    first = render_topology_architecture_mermaid(topology)
+    second = render_topology_architecture_mermaid(topology)
+
+    assert first == second
+    assert "network_" not in first
+
+
+def test_v2_architecture_map_uses_arbitrary_cluster_members_from_v2():
+    config = raw_config()
+    config["local"]["rancher_nodes"].update({"count": 5, "start_host": 7})
+    topology = build_desired_topology(expand_env(config))
+    architecture = render_topology_architecture_mermaid(topology)
+
+    assert "primary: rancher1" in architecture
+    assert all(f"member: rancher{index}" in architecture for index in range(2, 6))
 
 
 def test_v2_rke2_cluster_supports_arbitrary_member_names_and_count():
