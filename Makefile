@@ -76,9 +76,9 @@ topology-docs: config-validate
 	@if [[ ! -f "$(INSTANCE_ROOT)/config.yaml" ]]; then printf '%s\n' 'topology-docs must run from an instance repository containing config.yaml' >&2; exit 2; fi
 	$(PYTHON) $(TOPOLOGY_HELPER) --config $(ENV_CONFIG) --output-dir $(BUILD_ENV_DIR) --docs-dir $(TOPOLOGY_DOCS_DIR)
 
-topology-docs-check: topology-docs
-	@if [[ -n "$$(git -C "$(INSTANCE_ROOT)" status --porcelain --untracked-files=all -- docs/topology/)" ]]; then printf '%s\n' 'topology docs are stale or untracked; review docs/topology/' >&2; exit 1; fi
-	@git -C "$(INSTANCE_ROOT)" diff --exit-code -- docs/topology/
+topology-docs-check: config-validate
+	@if [[ ! -f "$(INSTANCE_ROOT)/config.yaml" ]]; then printf '%s\n' 'topology-docs-check must run from an instance repository containing config.yaml' >&2; exit 2; fi
+	@$(PYTHON) $(ENGINE_ROOT)/scripts/check-topology-docs.py --config $(ENV_CONFIG) --docs-dir "$(TOPOLOGY_DOCS_DIR)"
 
 render-infra-vars: config-validate
 	install -d -m 700 $(BUILD_ENV_DIR)
@@ -365,7 +365,7 @@ provision-all-yes:
 
 verify: config-validate
 	cd $(ENGINE_ROOT) && $(PYTHON) -m pytest
-	$(PYTHON) -m py_compile $(ENGINE_ROOT)/lib/bastion_network.py $(ENGINE_ROOT)/lib/env_config.py $(ENGINE_ROOT)/lib/ssh_config.py $(ENGINE_ROOT)/lib/topology.py $(ENGINE_ROOT)/pyinfra/inventory.py $(ENGINE_ROOT)/pyinfra/deploy.py $(ENGINE_ROOT)/scripts/admin-jump-host.py $(ENGINE_ROOT)/scripts/environment-id.py $(ENGINE_ROOT)/scripts/has-downstream-networks.py $(ENGINE_ROOT)/scripts/print-instance-context.py $(ENGINE_ROOT)/scripts/print-rancher-bootstrap-password-command.py $(ENGINE_ROOT)/scripts/render-admin-ssh-config.py $(ENGINE_ROOT)/scripts/render-infra-tfvars.py $(ENGINE_ROOT)/scripts/render-ssh-config.py $(ENGINE_ROOT)/scripts/render-topology.py $(ENGINE_ROOT)/scripts/reset-ssh-hostkeys.py $(ENGINE_ROOT)/scripts/prepare-rke2-kubeconfig.py $(ENGINE_ROOT)/scripts/terraform-backend-env.py $(ENGINE_ROOT)/scripts/validate-config.py
+	$(PYTHON) -m py_compile $(ENGINE_ROOT)/lib/bastion_network.py $(ENGINE_ROOT)/lib/env_config.py $(ENGINE_ROOT)/lib/ssh_config.py $(ENGINE_ROOT)/lib/topology.py $(ENGINE_ROOT)/pyinfra/inventory.py $(ENGINE_ROOT)/pyinfra/deploy.py $(ENGINE_ROOT)/scripts/admin-jump-host.py $(ENGINE_ROOT)/scripts/check-topology-docs.py $(ENGINE_ROOT)/scripts/environment-id.py $(ENGINE_ROOT)/scripts/has-downstream-networks.py $(ENGINE_ROOT)/scripts/print-instance-context.py $(ENGINE_ROOT)/scripts/print-rancher-bootstrap-password-command.py $(ENGINE_ROOT)/scripts/render-admin-ssh-config.py $(ENGINE_ROOT)/scripts/render-infra-tfvars.py $(ENGINE_ROOT)/scripts/render-ssh-config.py $(ENGINE_ROOT)/scripts/render-topology.py $(ENGINE_ROOT)/scripts/reset-ssh-hostkeys.py $(ENGINE_ROOT)/scripts/prepare-rke2-kubeconfig.py $(ENGINE_ROOT)/scripts/terraform-backend-env.py $(ENGINE_ROOT)/scripts/validate-config.py
 	bash -n $(ENGINE_ROOT)/scripts/install-rke2.sh $(ENGINE_ROOT)/scripts/install-rancher.sh $(ENGINE_ROOT)/scripts/bootstrap-rancher.sh
 	$(PYTHON) $(ENGINE_ROOT)/scripts/render-infra-tfvars.py --env $(ENV_CONFIG) --out $(INFRA_TFVARS)
 	RUNTIME_DIR=$(RUNTIME_DIR) $(PYTHON) $(ENGINE_ROOT)/scripts/render-ssh-config.py --env $(ENV_CONFIG) --out $(BUILD_ENV_DIR)/ssh_config

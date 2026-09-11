@@ -38,6 +38,9 @@ make -f rinstall/Makefile provision-all
 
 Generated runtime files are kept under the ignored `.rinstall/` directory,
 including Terraform metadata in `.rinstall/terraform-data/`.
+The committed `docs/topology/` directory is different: it is a deliberate,
+version-controlled support projection for the private instance repository, not
+private runtime state and not a replacement for `.rinstall/`.
 
 The instance repository layout is:
 
@@ -516,8 +519,10 @@ static management addressing with `nics[].cidr`; when a desired management
 address is absent, topology output reports it as unknown instead of inferring
 DHCP state.
 
-Environment-specific topology contains internal hostnames and addresses. Keep
-it under the ignored runtime directory and do not commit it. Tokens, passwords,
+Environment-specific topology contains internal hostnames and addresses. The
+`.rinstall/` topology/runtime artifacts are private and never committed. The
+`docs/topology/` projection is the intentional sensitive support documentation
+and is committed only in the private instance repository. Tokens, passwords,
 bootstrap secrets, private-key paths, kubeconfig credentials, Terraform state,
 and environment-variable credentials are never included.
 

@@ -186,6 +186,22 @@ def test_topology_docs_target_writes_instance_relative_committed_projection(tmp_
     )
     assert passing.returncode == 0, passing.stdout + passing.stderr
 
+    marker = docs_dir / "unexpected.txt"
+    marker.write_text("must remain untouched")
+    extra_file = subprocess.run(
+        ["make", "-f", "rinstall/Makefile", "topology-docs-check", f"PYTHON={sys.executable}"],
+        cwd=instance_root,
+        capture_output=True,
+        text=True,
+    )
+    assert extra_file.returncode != 0
+    assert marker.read_text() == "must remain untouched"
+    marker.unlink()
+
+    committed_docs = {
+        path.name: path.read_bytes()
+        for path in docs_dir.iterdir()
+    }
     changed_config = yaml.safe_load((instance_root / "config.yaml").read_text())
     changed_config["environment"]["id"] = "changed-instance"
     changed_config["prompt"]["host_suffix"] = "changed-instance"
@@ -198,6 +214,10 @@ def test_topology_docs_target_writes_instance_relative_committed_projection(tmp_
     )
     assert stale.returncode != 0
     assert "topology docs are stale" in stale.stderr
+    assert {
+        path.name: path.read_bytes()
+        for path in docs_dir.iterdir()
+    } == committed_docs
 
     ignored = subprocess.run(
         ["git", "check-ignore", "-q", ".rinstall/topology.json"],
