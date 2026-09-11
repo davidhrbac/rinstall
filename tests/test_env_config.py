@@ -235,6 +235,60 @@ def test_keeps_bastion_and_client_dns_separate():
     assert config["bastion"]["dnsmasq_upstream_servers"] == ["192.0.2.54"]
 
 
+def test_validates_ipv4_dns_resolvers():
+    config = raw_example()
+    config["nodes"]["prom1"]["dns_servers"] = ["192.0.2.61", "192.0.2.62"]
+    config["bastion"]["dnsmasq_upstream_servers"] = ["192.0.2.54", "192.0.2.55"]
+
+    resolved = expand_env(config)
+
+    assert resolved["nodes"]["prom1"]["dns_servers"] == ["192.0.2.61", "192.0.2.62"]
+    assert resolved["bastion"]["dnsmasq_upstream_servers"] == ["192.0.2.54", "192.0.2.55"]
+
+
+@pytest.mark.parametrize(
+    ("field", "resolver"),
+    [
+        (("nodes", "bastion1", "dns_servers"), "resolver.example.invalid"),
+        (("nodes", "prom1", "dns_servers"), "2001:db8::53"),
+        (("bastion", "dnsmasq_upstream_servers"), "192.0.2.01"),
+    ],
+)
+def test_rejects_noncanonical_ipv4_dns_resolvers(field, resolver):
+    config = raw_example()
+    target = config
+    for part in field[:-1]:
+        target = target[part]
+    target[field[-1]] = [resolver]
+
+    with pytest.raises(SystemExit, match="must be a canonical IPv4 address"):
+        expand_env(config)
+
+
+def test_service_ip_defaults_to_bastion_address():
+    config = load_env(EXAMPLE_ENV)
+
+    assert config["bastion"]["service_ip"] == config["nodes"]["bastion1"]["ip"]
+
+
+def test_bound_explicit_service_ip_is_accepted():
+    config = raw_example()
+    config["nodes"]["bastion1"]["nics"][1]["cidr"] = "192.0.2.10/24"
+    config["bastion"]["service_ip"] = "192.0.2.10"
+
+    resolved = expand_env(config)
+
+    assert resolved["bastion"]["service_ip"] == "192.0.2.10"
+
+
+def test_unbound_explicit_service_ip_is_rejected():
+    config = raw_example()
+    config["bastion"]["service_ip"] = "192.0.2.10"
+
+    with pytest.raises(SystemExit, match="service_ip must match an IPv4 address assigned to a bastion NIC"):
+        expand_env(config)
+
+
 def test_derives_management_ssh_ip_from_static_management_nic():
     config = raw_example()
     config["nodes"]["bastion1"]["nics"][1]["cidr"] = "192.0.2.10/24"
@@ -261,6 +315,65 @@ def test_resolves_renamed_management_profile_to_its_device():
     resolved = expand_env(config)
 
     assert resolved["bastion"]["management_interface"] == "ens224"
+
+
+def test_resolves_renamed_route_connection_to_base_nic():
+    config = raw_example()
+    config["nodes"]["bastion1"]["nics"][1]["cidr"] = "192.0.2.10/24"
+    config["bastion"]["network_connection_names"] = {
+        "ens192": "local",
+        "ens224": "mgmt",
+    }
+    config["bastion"]["vsphere_route_connection"] = "mgmt"
+
+    resolved = expand_env(config)
+
+    assert resolved["bastion"]["route_nic_index"] == 1
+
+
+def test_rejects_route_connection_on_nic_without_vcenter_gateway_subnet():
+    config = raw_example()
+    config["nodes"]["bastion1"]["nics"][1]["cidr"] = "192.0.2.10/24"
+    config["bastion"]["network_connection_names"] = {
+        "ens192": "local",
+        "ens224": "mgmt",
+    }
+    config["bastion"]["vsphere_route_connection"] = "local"
+
+    with pytest.raises(SystemExit, match="vsphere_route_connection does not match"):
+        expand_env(config)
+
+
+def test_direct_route_connection_remains_valid_with_static_management_nic():
+    config = raw_example()
+    config["nodes"]["bastion1"]["nics"][1]["cidr"] = "192.0.2.10/24"
+    config["bastion"]["vsphere_route_connection"] = "ens224"
+
+    resolved = expand_env(config)
+
+    assert resolved["bastion"]["route_nic_index"] is None
+
+
+def test_partial_connection_mapping_keeps_unmapped_route_connection_valid():
+    config = raw_example()
+    config["bastion"]["network_connection_names"] = {"ens224": "mgmt"}
+    config["bastion"]["vsphere_route_connection"] = "ens192"
+
+    resolved = expand_env(config)
+
+    assert resolved["bastion"]["management_interface"] == "ens192"
+
+
+def test_rejects_route_connection_missing_from_complete_connection_mapping():
+    config = raw_example()
+    config["bastion"]["network_connection_names"] = {
+        "ens192": "local",
+        "ens224": "mgmt",
+    }
+    config["bastion"]["vsphere_route_connection"] = "ens999"
+
+    with pytest.raises(SystemExit, match="must match a renamed bastion connection"):
+        expand_env(config)
 
 
 def test_resolves_selected_rancher_edition_and_requires_versions():

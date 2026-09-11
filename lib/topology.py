@@ -719,6 +719,10 @@ def validate_topology(topology):
                 raise ValueError(
                     f"invalid topology: service {service.id} interface binding is inconsistent"
                 )
+        elif service.resolution == RESOLVED:
+            raise ValueError(
+                f"invalid topology: resolved service {service.id} has no interface binding"
+            )
 
     if set(consumers) != {f"consumer:{downstream.id}" for downstream in topology.downstream_networks}:
         raise ValueError(
@@ -2057,11 +2061,23 @@ def build_desired_topology(config):
     vsphere_route_destination, vsphere_route_gateway = config["bastion"][
         "vsphere_route"
     ].split()
-    route_interface = _source_interface_for_destinations(
-        bastion_host,
-        (vsphere_route_gateway,),
-        interfaces,
-        networks,
+    route_nic_index = config["bastion"].get("route_nic_index")
+    route_interface = (
+        next(
+            (
+                interface
+                for interface in interfaces
+                if interface.host == bastion_host and interface.nic_index == route_nic_index
+            ),
+            None,
+        )
+        if route_nic_index is not None
+        else _source_interface_for_destinations(
+            bastion_host,
+            (vsphere_route_gateway,),
+            interfaces,
+            networks,
+        )
     )
     state_name = f"{environment_id}-infra"
     deployment_context = DeploymentContextTopology(
@@ -2856,29 +2872,38 @@ def render_topology_architecture_mermaid(topology):
             ]
         )
 
-    if jump_endpoints:
-        lines.append(f"  {operator_id} --> {endpoint_ids[jump_endpoints[0].id]}")
-        for previous, current in zip(jump_endpoints, jump_endpoints[1:]):
-            lines.append(f"  {endpoint_ids[previous.id]} --> {endpoint_ids[current.id]}")
-        lines.append(f"  {endpoint_ids[jump_endpoints[-1].id]} --> {bastion_id}")
-    else:
-        lines.append(f"  {operator_id} --> {bastion_id}")
-
-    for host in managed_hosts:
-        path = access_paths.get(host.id)
-        if path is not None and any(hop.kind == "host" and hop.id == bastion.id for hop in path.hops):
-            lines.append(f"  {bastion_id} --> {managed_ids[host.id]}")
+    visual_ids = {
+        "actor:operator-workstation": operator_id,
+        bastion.id: bastion_id,
+        **managed_ids,
+    }
+    for cluster in topology.clusters:
+        visual_ids.update(
+            {host_id: cluster_ids[cluster.id] for host_id in cluster.member_host_ids}
+        )
+    visual_ids.update(
+        {
+            endpoint.id: endpoint_ids[endpoint.id]
+            for endpoint in jump_endpoints
+        }
+    )
+    access_edges = set()
+    for path in topology.access_paths:
+        chain = (
+            EntityReference("actor", "actor:operator-workstation"),
+            *path.hops,
+            path.destination,
+        )
+        for source, destination in zip(chain, chain[1:]):
+            source_id = visual_ids.get(source.id)
+            destination_id = visual_ids.get(destination.id)
+            if source_id is not None and destination_id is not None:
+                access_edges.add((source_id, destination_id))
+    for source_id, destination_id in sorted(access_edges):
+        lines.append(f"  {source_id} --> {destination_id}")
 
     for cluster in topology.clusters:
         cluster_id = cluster_ids[cluster.id]
-        if any(
-            hop.kind == "host" and hop.id == bastion.id
-            for host_id in cluster.member_host_ids
-            for hop in (
-                access_paths[host_id].hops if host_id in access_paths else ()
-            )
-        ):
-            lines.append(f"  {bastion_id} --> {cluster_id}")
         if rancher_endpoint is not None and rancher_endpoint.id in cluster.endpoint_ids:
             lines.append(f"  {cluster_id} --> {endpoint_ids[rancher_endpoint.id]}")
 

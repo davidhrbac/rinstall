@@ -38,6 +38,22 @@ def require(mapping, key, context):
     return mapping[key]
 
 
+def validate_ipv4_servers(servers, context):
+    if (
+        not isinstance(servers, list)
+        or not servers
+        or not all(isinstance(server, str) and server for server in servers)
+    ):
+        raise SystemExit(f"{context} must be a non-empty list of IPv4 DNS servers")
+    for index, server in enumerate(servers):
+        try:
+            parsed = ip_address(server)
+        except ValueError:
+            raise SystemExit(f"{context}[{index}] must be a canonical IPv4 address") from None
+        if parsed.version != 4 or str(parsed) != server:
+            raise SystemExit(f"{context}[{index}] must be a canonical IPv4 address")
+
+
 def gitlab_backend_state_address(backend, environment_id):
     return f"{backend['url'].rstrip('/')}/api/v4/projects/{backend['project_id']}/terraform/state/{environment_id}-infra"
 
@@ -423,6 +439,8 @@ def expand_env(raw_env):
                 nic["prefix"] = local_vlan["prefix"]
             if nic.get("network") == "management" and nic.get("ip") is not None and node.get("ssh_ip") is None:
                 node["ssh_ip"] = nic["ip"]
+        if node.get("dns_servers") is not None:
+            validate_ipv4_servers(node["dns_servers"], f"env.nodes.{name}.dns_servers")
 
     primary_ips = {}
     for name, node in nodes.items():
@@ -461,9 +479,20 @@ def expand_env(raw_env):
                     f"{downstream_subnet}"
                 )
     route_connection = require(bastion, "vsphere_route_connection", "env.bastion")
+    connection_names = bastion.get("network_connection_names", {})
+    base_nics = nodes[bastion_name]["nics"]
+    if len(connection_names) == len(base_nics):
+        if route_connection not in connection_names.values():
+            raise SystemExit(
+                "env.bastion.vsphere_route_connection must match a renamed bastion connection"
+            )
+    elif route_connection in connection_names:
+        raise SystemExit(
+            "env.bastion.vsphere_route_connection refers to a bastion connection that is renamed"
+        )
     management_interfaces = [
         source
-        for source, target in bastion.get("network_connection_names", {}).items()
+        for source, target in connection_names.items()
         if target == route_connection
     ]
     if len(management_interfaces) > 1:
@@ -472,27 +501,48 @@ def expand_env(raw_env):
             "env.bastion.vsphere_route_connection"
         )
     bastion["management_interface"] = management_interfaces[0] if management_interfaces else route_connection
+    route_nic_index = None
+    if management_interfaces:
+        mapping_sources = list(connection_names)
+        if len(mapping_sources) == len(base_nics):
+            route_nic_index = mapping_sources.index(management_interfaces[0])
+    bastion["route_nic_index"] = route_nic_index
     bastion["dnsmasq_upstream_servers"] = require(
         bastion, "dnsmasq_upstream_servers", "env.bastion"
     )
-    if (
-        not isinstance(bastion["dnsmasq_upstream_servers"], list)
-        or not bastion["dnsmasq_upstream_servers"]
-        or not all(isinstance(server, str) and server for server in bastion["dnsmasq_upstream_servers"])
-    ):
-        raise SystemExit("env.bastion.dnsmasq_upstream_servers must be a non-empty list of DNS servers")
+    validate_ipv4_servers(
+        bastion["dnsmasq_upstream_servers"],
+        "env.bastion.dnsmasq_upstream_servers",
+    )
     bastion_dns_servers = require(nodes[bastion_name], "dns_servers", f"env.nodes.{bastion_name}")
-    if (
-        not isinstance(bastion_dns_servers, list)
-        or not bastion_dns_servers
-        or not all(isinstance(server, str) and server for server in bastion_dns_servers)
-    ):
-        raise SystemExit(f"env.nodes.{bastion_name}.dns_servers must be a non-empty list of DNS servers")
+    validate_ipv4_servers(bastion_dns_servers, f"env.nodes.{bastion_name}.dns_servers")
     dns_nodes = local_vlan.setdefault("dns_nodes", [bastion_name])
     local_vlan["dns_servers"] = [nodes[name]["ip"] for name in dns_nodes]
 
     if bastion.get("service_ip") is None:
         bastion["service_ip"] = nodes[bastion_name]["ip"]
+    bastion_addresses = {
+        nic["ip"]
+        for nic in nodes[bastion_name]["nics"]
+        if nic.get("ip") is not None
+    }
+    if bastion["service_ip"] not in bastion_addresses:
+        raise SystemExit(
+            "env.bastion.service_ip must match an IPv4 address assigned to a bastion NIC"
+        )
+
+    if route_nic_index is not None:
+        route_nic = nodes[bastion_name]["nics"][route_nic_index]
+        if route_nic.get("ip") is not None:
+            route_network = ip_interface(
+                f"{route_nic['ip']}/{route_nic['prefix']}"
+            ).network
+            route_gateway = ip_address(bastion["vsphere_route"].split()[1])
+            if route_gateway not in route_network:
+                raise SystemExit(
+                    "env.bastion.vsphere_route_connection does not match the "
+                    "vSphere route gateway subnet"
+                )
 
     rke2 = require(env, "rke2", "env")
     require(rke2, "version", "env.rke2")

@@ -17,8 +17,8 @@ flowchart LR
   endpoint_endpoint_terraform_backend_a27fbcb411["Terraform state backend<br/>GitLab"]
   actor_operator_workstation_974971eaa5 --> endpoint_endpoint_ssh_jump_f7b7c2ca2d
   endpoint_endpoint_ssh_jump_f7b7c2ca2d --> host_bastion1_fd65cf69ce
-  host_bastion1_fd65cf69ce --> host_prom1_abf2e7bd7a
   host_bastion1_fd65cf69ce --> cluster_cluster_rke2_rancher_de77c71a50
+  host_bastion1_fd65cf69ce --> host_prom1_abf2e7bd7a
   cluster_cluster_rke2_rancher_de77c71a50 --> endpoint_endpoint_rancher_0637b61772
   consumer_consumer_downstream_vlan565_dfc74929d4 --> endpoint_endpoint_rancher_0637b61772
   consumer_consumer_downstream_vlan566_30b7d29b35 --> endpoint_endpoint_rancher_0637b61772

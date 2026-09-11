@@ -213,6 +213,16 @@ def test_topology_uses_effective_dns_per_node_and_does_not_require_bastion_dns()
     } == {frozenset({"prom1"}), frozenset({"rancher1", "rancher2", "rancher3"})}
 
 
+def test_topology_renders_ipv4_dns_resolver_endpoints():
+    topology = topology_with()
+    endpoints = by_id(topology.endpoints)
+
+    assert endpoints["endpoint:dns-upstream:192.0.2.54"].resolutions[0].address_kind == IP_ADDRESS
+    assert endpoints["endpoint:dns-upstream:192.0.2.54"].resolutions[0].addresses == ("192.0.2.54",)
+    assert endpoints["endpoint:dns-management:192.0.2.53"].resolutions[0].address_kind == IP_ADDRESS
+    assert endpoints["endpoint:dns-management:192.0.2.53"].resolutions[0].addresses == ("192.0.2.53",)
+
+
 def test_topology_groups_each_node_by_its_effective_dns_destinations():
     config = raw_config()
     config["local"]["vlan"]["dns_nodes"] = ["bastion1", "prom1"]
@@ -755,6 +765,42 @@ def test_topology_includes_expanded_hosts_roles_and_static_addresses():
     ]
 
 
+def test_topology_binds_bastion_services_to_service_ip_interface():
+    config = raw_config()
+    config["nodes"]["bastion1"]["nics"][1]["cidr"] = "192.0.2.10/24"
+    config["bastion"]["service_ip"] = "192.0.2.10"
+    topology = build_desired_topology(expand_env(config))
+
+    services = {service.id: service for service in topology.services}
+    assert (services["proxy:squid"].network, services["proxy:squid"].interface_id) == (
+        "management",
+        "bastion1:1",
+    )
+    assert (services["dns:local"].network, services["dns:local"].interface_id) == (
+        "management",
+        "bastion1:1",
+    )
+    assert all(service.resolution == RESOLVED for service in services.values() if service.id in {"proxy:squid", "dns:local"})
+
+
+def test_topology_route_linkage_uses_configured_renamed_connection():
+    config = raw_config()
+    config["bastion"]["network_connection_names"] = {
+        "ens192": "local",
+        "ens224": "mgmt",
+    }
+    config["bastion"]["vsphere_route_connection"] = "mgmt"
+    topology = build_desired_topology(expand_env(config))
+
+    route = topology.deployment_context.vsphere.route
+    assert (route.connection, route.interface_ref, route.network_ref, route.resolution) == (
+        "mgmt",
+        EntityReference("interface", "bastion1:1"),
+        EntityReference("network", "management"),
+        RESOLVED,
+    )
+
+
 def test_topology_resolves_one_downstream_network_and_dhcp_pool():
     topology = topology_with(downstream_network(565, "10.20.56.32/27"))
     downstream = topology.downstream_networks[0]
@@ -837,6 +883,7 @@ def test_v2_external_ssh_alias_and_role_aware_access_paths(monkeypatch, tmp_path
 
 def test_v2_access_paths_are_direct_without_configured_jump_alias():
     topology = topology_with()
+    architecture = render_topology_architecture_mermaid(topology)
 
     assert "endpoint:ssh-jump" not in by_id(topology.endpoints)
     assert all(path.hops == () for path in topology.access_paths)
@@ -844,6 +891,11 @@ def test_v2_access_paths_are_direct_without_configured_jump_alias():
         host.id for host in topology.hosts
     }
     assert all(path.resolution == RESOLVED for path in topology.access_paths)
+    operator_id = _mermaid_id("actor", "operator-workstation")
+    assert f"{operator_id} --> {_mermaid_id('host', 'prom1')}" in architecture
+    assert f"{operator_id} --> {_mermaid_id('cluster', 'cluster:rke2-rancher')}" in architecture
+    assert f"{_mermaid_id('host', 'bastion1')} --> {_mermaid_id('host', 'prom1')}" not in architecture
+    assert f"{_mermaid_id('host', 'bastion1')} --> {_mermaid_id('cluster', 'cluster:rke2-rancher')}" not in architecture
 
 
 def test_v2_access_paths_expand_comma_separated_proxyjump_chain():
