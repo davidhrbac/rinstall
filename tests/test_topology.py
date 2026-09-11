@@ -33,6 +33,7 @@ from lib.topology import (
     RKE2_RANCHER,
     RUNTIME_SUPPLIED,
     SYMBOLIC,
+    _mermaid_id,
     SYMBOLIC_ADDRESS,
     UNVERIFIED,
     EntityReference,
@@ -245,18 +246,17 @@ def test_v2_architecture_map_consumes_semantic_entities_and_boundaries(monkeypat
     monkeypatch.setattr("builtins.open", unexpected_config_read)
     architecture = render_topology_architecture_mermaid(topology)
 
-    assert architecture.startswith("flowchart TB\n")
+    assert architecture.startswith("flowchart LR\n")
     assert "Operator / rinstall" in architecture
     assert "SSH jump<br/>example-operator-jump<br/>external unresolved" in architecture
+    assert "External dependencies" not in architecture
     assert "Bastion<br/>bastion1<br/>DNS · DHCP · proxy · SSH transit" in architecture
     assert 'Monitoring host<br/>prom1' in architecture
     assert 'subgraph cluster_rke2_rancher_' not in architecture
-    assert '"RKE2 / Rancher cluster"' in architecture
-    assert "primary: rancher1" in architecture
-    assert "member: rancher2" in architecture
-    assert "member: rancher3" in architecture
-    assert "Rancher endpoint<br/>rancher.full-example.example.invalid<br/>HTTPS / 443" in architecture
-    assert "external VIP/LB unresolved" in architecture
+    assert 'RKE2 / Rancher cluster<br/>rancher1 primary<br/>rancher2<br/>rancher3' in architecture
+    assert "Rancher endpoint<br/>rancher.full-example.example.invalid<br/>HTTPS / 443<br/>external exposure: unresolved" in architecture
+    assert "external VIP/LB unresolved" not in architecture
+    assert "_note" not in architecture
     assert "Downstream nodes<br/>VLAN 565<br/>external lifecycle" in architecture
     assert "Downstream nodes<br/>VLAN 566<br/>external lifecycle" in architecture
     assert "vSphere<br/>runtime endpoint unresolved" in architecture
@@ -272,6 +272,27 @@ def test_v2_architecture_map_consumes_semantic_entities_and_boundaries(monkeypat
     assert "198.51.100." not in architecture
     assert "private_key" not in architecture
     assert "TF_HTTP" not in architecture
+    assert architecture.count(" --> ") == 9
+    assert (
+        f'  {_mermaid_id("actor", "operator-workstation")} --> '
+        f'{_mermaid_id("endpoint", "endpoint:ssh-jump")}'
+    ) in architecture
+    assert (
+        f'  {_mermaid_id("host", "bastion1")} --> '
+        f'{_mermaid_id("host", "prom1")}'
+    ) in architecture
+    assert (
+        f'  {_mermaid_id("host", "bastion1")} --> '
+        f'{_mermaid_id("cluster", "cluster:rke2-rancher")}'
+    ) in architecture
+    assert (
+        f'  {_mermaid_id("actor", "operator-workstation")} --> '
+        f'{_mermaid_id("endpoint", "endpoint:vcenter")}'
+    ) in architecture
+    assert (
+        f'  {_mermaid_id("actor", "operator-workstation")} --> '
+        f'{_mermaid_id("endpoint", "endpoint:terraform-backend")}'
+    ) in architecture
 
 
 @pytest.mark.parametrize("count", [0, 1, 2, 5, 10])
@@ -316,8 +337,8 @@ def test_v2_architecture_map_uses_arbitrary_cluster_members_from_v2():
     topology = build_desired_topology(expand_env(config))
     architecture = render_topology_architecture_mermaid(topology)
 
-    assert "primary: rancher1" in architecture
-    assert all(f"member: rancher{index}" in architecture for index in range(2, 6))
+    assert "rancher1 primary" in architecture
+    assert all(f"rancher{index}" in architecture for index in range(2, 6))
 
 
 def test_v2_rke2_cluster_supports_arbitrary_member_names_and_count():

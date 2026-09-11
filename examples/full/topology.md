@@ -5,26 +5,16 @@
 ## Architecture Map
 
 ```mermaid
-flowchart TB
+flowchart LR
   actor_operator_workstation_974971eaa5["Operator / rinstall"]
-  subgraph external_access["External dependencies"]
-    direction TB
-    endpoint_endpoint_ssh_jump_f7b7c2ca2d["SSH jump<br/>example-operator-jump<br/>external unresolved"]
-  end
+  endpoint_endpoint_ssh_jump_f7b7c2ca2d["SSH jump<br/>example-operator-jump<br/>external unresolved"]
   host_bastion1_fd65cf69ce["Bastion<br/>bastion1<br/>DNS · DHCP · proxy · SSH transit"]
   subgraph monitoring["Monitoring"]
     direction TB
     host_prom1_abf2e7bd7a["Monitoring host<br/>prom1"]
   end
-  subgraph cluster_cluster_rke2_rancher_de77c71a50["RKE2 / Rancher cluster"]
-    direction TB
-    host_rancher1_d47e6b0e07["primary: rancher1"]
-    host_rancher2_bcc55a020f["member: rancher2"]
-    host_rancher3_bbbf0c319b["member: rancher3"]
-  end
-  endpoint_endpoint_rancher_0637b61772["Rancher endpoint<br/>rancher.full-example.example.invalid<br/>HTTPS / 443"]
-  endpoint_endpoint_rancher_0637b61772:::unresolved
-  endpoint_endpoint_rancher_0637b61772_note["external VIP/LB unresolved"]
+  cluster_cluster_rke2_rancher_de77c71a50["RKE2 / Rancher cluster<br/>rancher1 primary<br/>rancher2<br/>rancher3"]
+  endpoint_endpoint_rancher_0637b61772["Rancher endpoint<br/>rancher.full-example.example.invalid<br/>HTTPS / 443<br/>external exposure: unresolved"]
   subgraph downstream["Downstream environments"]
     direction TB
     consumer_consumer_downstream_vlan565_dfc74929d4["Downstream nodes<br/>VLAN 565<br/>external lifecycle"]
@@ -41,8 +31,6 @@ flowchart TB
   consumer_consumer_downstream_vlan566_30b7d29b35 --> endpoint_endpoint_rancher_0637b61772
   actor_operator_workstation_974971eaa5 --> endpoint_endpoint_vcenter_bba77268c7
   actor_operator_workstation_974971eaa5 --> endpoint_endpoint_terraform_backend_a27fbcb411
-  classDef unresolved stroke:#9b6b00,stroke-dasharray: 4 3
-  classDef external fill:#f3f3f3,stroke:#777777
 ```
 
 ## Infrastructure Topology

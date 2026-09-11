@@ -2792,10 +2792,7 @@ def render_topology_architecture_mermaid(topology):
         host.id: _mermaid_id("host", host.id) for host in monitoring_hosts
     }
     access_paths = {path.destination.id: path for path in topology.access_paths}
-    lines = ["flowchart TB"]
-    lines.append(
-        f'  {operator_id}["Operator / rinstall"]'
-    )
+    lines = ["flowchart LR", f'  {operator_id}["Operator / rinstall"]']
 
     jump_endpoints = tuple(
         endpoint
@@ -2803,15 +2800,12 @@ def render_topology_architecture_mermaid(topology):
         if endpoint.kind == "ssh-jump-alias"
     )
     if jump_endpoints:
-        lines.append('  subgraph external_access["External dependencies"]')
-        lines.append("    direction TB")
         for endpoint in jump_endpoints:
             resolution = endpoint.resolution.lower().replace("_", " ")
             lines.append(
-                f'    {endpoint_ids[endpoint.id]}["SSH jump<br/>{_mermaid(endpoint.name)}<br/>'
+                f'  {endpoint_ids[endpoint.id]}["SSH jump<br/>{_mermaid(endpoint.name)}<br/>'
                 f'{_mermaid(resolution)}"]'
             )
-        lines.append("  end")
 
     lines.append(
         f'  {bastion_id}["Bastion<br/>{_mermaid(bastion.id)}<br/>'
@@ -2828,20 +2822,13 @@ def render_topology_architecture_mermaid(topology):
 
     for cluster in topology.clusters:
         cluster_id = cluster_ids[cluster.id]
-        lines.append(
-            f'  subgraph {cluster_id}["RKE2 / Rancher cluster"]'
-        )
-        lines.append("    direction TB")
-        primary_id = _mermaid_id("host", cluster.primary_host_id)
-        lines.append(
-            f'    {primary_id}["primary: {_mermaid(cluster.primary_host_id)}"]'
-        )
-        for member_id in cluster.member_host_ids:
-            if member_id == cluster.primary_host_id:
-                continue
-            member_node_id = _mermaid_id("host", member_id)
-            lines.append(f'    {member_node_id}["member: {_mermaid(member_id)}"]')
-        lines.append("  end")
+        members = [
+            f"{_mermaid(member_id)} primary"
+            if member_id == cluster.primary_host_id
+            else _mermaid(member_id)
+            for member_id in cluster.member_host_ids
+        ]
+        lines.append(f'  {cluster_id}["RKE2 / Rancher cluster<br/>{"<br/>".join(members)}"]')
 
     rancher_endpoint = next(
         (endpoint for endpoint in topology.endpoints if endpoint.kind == "rancher-https"),
@@ -2849,20 +2836,18 @@ def render_topology_architecture_mermaid(topology):
     )
     if rancher_endpoint is not None:
         endpoint_id = endpoint_ids[rancher_endpoint.id]
-        lines.append(
-            f'  {endpoint_id}["Rancher endpoint<br/>{_mermaid(rancher_endpoint.name)}<br/>'
-            f'{_mermaid(" / ".join(rancher_endpoint.protocols))} / '
-            f'{_mermaid(" / ".join(str(port) for port in rancher_endpoint.ports))}"]'
-        )
         external_resolution = next(
             (item for item in rancher_endpoint.resolutions if item.scope == "external"),
             None,
         )
+        endpoint_label = (
+            f'Rancher endpoint<br/>{_mermaid(rancher_endpoint.name)}<br/>'
+            f'{_mermaid(" / ".join(rancher_endpoint.protocols))} / '
+            f'{_mermaid(" / ".join(str(port) for port in rancher_endpoint.ports))}'
+        )
         if external_resolution is not None and external_resolution.resolution != RESOLVED:
-            lines.append(f'  {endpoint_id}:::unresolved')
-            lines.append(
-                f'  {endpoint_id}_note["external VIP/LB unresolved"]'
-            )
+            endpoint_label += "<br/>external exposure: unresolved"
+        lines.append(f'  {endpoint_id}["{endpoint_label}"]')
 
     if downstream_consumers:
         lines.append('  subgraph downstream["Downstream environments"]')
@@ -2938,12 +2923,6 @@ def render_topology_architecture_mermaid(topology):
         lines.append(f"  {operator_id} --> {vsphere_id}")
         lines.append(f"  {operator_id} --> {backend_id}")
 
-    lines.extend(
-        [
-            "  classDef unresolved stroke:#9b6b00,stroke-dasharray: 4 3",
-            "  classDef external fill:#f3f3f3,stroke:#777777",
-        ]
-    )
     return "\n".join(lines) + "\n"
 
 
