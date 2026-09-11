@@ -928,8 +928,8 @@
         "symbolic": "endpoint:vcenter",
         "resolved": [
           {
-            "id": "runtime-supplied vCenter endpoint",
-            "address": null,
+            "id": "vcenter.example.invalid",
+            "address": "vcenter.example.invalid",
             "reference": {
               "kind": "endpoint",
               "id": "endpoint:vcenter"
@@ -2199,7 +2199,7 @@
     {
       "id": "endpoint:vcenter",
       "kind": "vcenter",
-      "name": "runtime-supplied vCenter endpoint",
+      "name": "vcenter.example.invalid",
       "protocols": [
         "HTTPS"
       ],
@@ -2210,18 +2210,20 @@
       "resolutions": [
         {
           "scope": "external",
-          "addresses": [],
+          "addresses": [
+            "vcenter.example.invalid"
+          ],
           "ownership": "REFERENCED_EXTERNAL",
-          "provenance": "EXTERNAL",
-          "resolution": "RUNTIME_SUPPLIED",
+          "provenance": "CONFIGURED",
+          "resolution": "RESOLVED",
           "address_kind": "SYMBOLIC",
           "verification": "UNVERIFIED",
-          "reason": "vCenter endpoint is supplied at runtime outside config.yaml."
+          "reason": null
         }
       ],
       "ownership": "REFERENCED_EXTERNAL",
-      "provenance": "EXTERNAL",
-      "resolution": "RUNTIME_SUPPLIED",
+      "provenance": "CONFIGURED",
+      "resolution": "RESOLVED",
       "verification": "UNVERIFIED"
     },
     {
@@ -2802,7 +2804,7 @@
       "allow_unverified_ssl": false,
       "ownership": "REFERENCED_EXTERNAL",
       "provenance": "CONFIGURED",
-      "resolution": "RUNTIME_SUPPLIED",
+      "resolution": "RESOLVED",
       "verification": "UNVERIFIED"
     },
     "terraform_backend": {

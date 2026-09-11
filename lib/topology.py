@@ -1280,6 +1280,28 @@ def validate_topology(topology):
     ):
         raise ValueError("invalid topology: deployment context endpoint semantics are inconsistent")
 
+    vcenter_endpoint = endpoints[context.vsphere.endpoint_id]
+    vcenter_reference = EntityReference("endpoint", vcenter_endpoint.id)
+    vcenter_resolution = next(
+        (item for item in vcenter_endpoint.resolutions if item.scope == "external"), None
+    )
+    vcenter_rule = indexes["connectivity-rule"].get("deployment:vcenter-api")
+    if vcenter_resolution is None or vcenter_rule is None:
+        raise ValueError("invalid topology: vCenter deployment relationship is incomplete")
+    vcenter_destination = _single_resolved(
+        vcenter_rule.destination, "vCenter API deployment destination"
+    )
+    expected_vcenter_address = vcenter_resolution.addresses[0] if vcenter_resolution.addresses else None
+    if (
+        context.vsphere.resolution != vcenter_endpoint.resolution
+        or vcenter_rule.destination.symbolic != _reference_symbolic(vcenter_reference)
+        or vcenter_destination.id != vcenter_endpoint.name
+        or vcenter_destination.reference != vcenter_reference
+        or vcenter_destination.address != expected_vcenter_address
+        or vcenter_destination.address_kind != vcenter_resolution.address_kind
+    ):
+        raise ValueError("invalid topology: vCenter deployment relationship is inconsistent")
+
     template_ids = {mapping.id for mapping in context.vsphere.templates}
     for host in topology.hosts:
         if host.template_id not in template_ids:
@@ -1438,6 +1460,8 @@ def validate_topology(topology):
 def build_desired_topology(config):
     environment_id = config["environment"]["id"]
     bastion_host = config["bastion"]["service_node"]
+    vsphere = config["infra"]["vsphere"]
+    vsphere_server = vsphere.get("server")
     interfaces = []
     hosts = []
 
@@ -1706,24 +1730,24 @@ def build_desired_topology(config):
         EndpointTopology(
             id="endpoint:vcenter",
             kind="vcenter",
-            name=config["infra"]["vsphere"].get("server") or "runtime-supplied vCenter endpoint",
+            name=vsphere_server or "runtime-supplied vCenter endpoint",
             protocols=("HTTPS",),
             ports=(443,),
             cluster_id=None,
             resolutions=(
                 EndpointResolutionTopology(
                     scope="external",
-                    addresses=((config["infra"]["vsphere"].get("server"),) if config["infra"]["vsphere"].get("server") else ()),
+                    addresses=((vsphere_server,) if vsphere_server else ()),
                     ownership=REFERENCED_EXTERNAL,
-                    provenance=(CONFIGURED if config["infra"]["vsphere"].get("server") else EXTERNAL),
-                    resolution=(RESOLVED if config["infra"]["vsphere"].get("server") else RUNTIME_SUPPLIED),
+                    provenance=(CONFIGURED if vsphere_server else EXTERNAL),
+                    resolution=(RESOLVED if vsphere_server else RUNTIME_SUPPLIED),
                     verification=UNVERIFIED,
-                    reason=(None if config["infra"]["vsphere"].get("server") else "vCenter endpoint is supplied at runtime outside config.yaml."),
+                    reason=(None if vsphere_server else "vCenter endpoint is supplied at runtime outside config.yaml."),
                 ),
             ),
             ownership=REFERENCED_EXTERNAL,
-            provenance=(CONFIGURED if config["infra"]["vsphere"].get("server") else EXTERNAL),
-            resolution=(RESOLVED if config["infra"]["vsphere"].get("server") else RUNTIME_SUPPLIED),
+            provenance=(CONFIGURED if vsphere_server else EXTERNAL),
+            resolution=(RESOLVED if vsphere_server else RUNTIME_SUPPLIED),
             verification=UNVERIFIED,
         ),
     ]
@@ -2030,7 +2054,6 @@ def build_desired_topology(config):
         for downstream in downstream_networks
     )
 
-    vsphere = config["infra"]["vsphere"]
     vsphere_route_destination, vsphere_route_gateway = config["bastion"][
         "vsphere_route"
     ].split()
@@ -2080,6 +2103,7 @@ def build_desired_topology(config):
             ),
             clone_timeout_minutes=vsphere.get("clone_timeout"),
             allow_unverified_ssl=vsphere.get("allow_unverified_ssl", False),
+            resolution=RESOLVED if vsphere_server else RUNTIME_SUPPLIED,
         ),
         terraform_backend=TerraformBackendTopology(
             endpoint_id="endpoint:terraform-backend",
@@ -2256,7 +2280,11 @@ def build_desired_topology(config):
             endpoint.name,
             address,
             reference,
-            resolution.address_kind if resolution else SSH_ALIAS,
+            resolution.address_kind
+            if resolution
+            else endpoint.resolutions[0].address_kind
+            if endpoint.resolutions
+            else SYMBOLIC_ADDRESS,
         )
 
     administrative_edges = _administrative_path_edges(access_paths)
@@ -2505,15 +2533,8 @@ def build_desired_topology(config):
         "deployment:vcenter-api",
         ConnectivityEndpoint("actor:operator-workstation", (operator_endpoint,)),
         ConnectivityEndpoint(
-            "endpoint:vcenter",
-            (
-                ResolvedEndpoint(
-                    "runtime-supplied vCenter endpoint",
-                    None,
-                    EntityReference("endpoint", "endpoint:vcenter"),
-                    SYMBOLIC_ADDRESS,
-                ),
-            ),
+            _reference_symbolic(EntityReference("endpoint", "endpoint:vcenter")),
+            (reference_endpoint(EntityReference("endpoint", "endpoint:vcenter")),),
             resolution_scope="external",
         ),
         ("TCP",),

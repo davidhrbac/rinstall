@@ -1,6 +1,6 @@
 # Public schema-v1 reference configuration.
 # All names, networks, versions, and credentials in this file are synthetic.
-# vSphere and GitLab credentials are supplied through the operator environment.
+# vSphere password and GitLab credentials are supplied through the operator environment.
 schema_version: 1
 
 terraform:
@@ -17,6 +17,7 @@ domain: full-example.example.invalid
 
 infra:
   vsphere:
+    server: vcenter.example.invalid
     allow_unverified_ssl: false
     clone_timeout: 60
     datacenter: EXAMPLE_DATACENTER

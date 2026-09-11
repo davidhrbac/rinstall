@@ -242,15 +242,23 @@ def test_topology_groups_each_node_by_its_effective_dns_destinations():
 def test_topology_preserves_configured_ports_and_vcenter_endpoint():
     config = raw_config()
     config["terraform"]["backend"]["url"] = "https://gitlab.example:9443"
-    config["infra"]["vsphere"]["server"] = "https://vcenter.example:8443/sdk"
+    config["infra"]["vsphere"]["server"] = "vcenter.example.invalid"
     config["ssh"]["jump_host"] = {"alias": "jump", "hostname": "jump.example.invalid"}
     topology = build_desired_topology(expand_env(config))
 
     endpoints = {endpoint.id: endpoint for endpoint in topology.endpoints}
     assert endpoints["endpoint:terraform-backend"].ports == (9443,)
-    assert endpoints["endpoint:vcenter"].name == "https://vcenter.example:8443/sdk"
+    assert endpoints["endpoint:vcenter"].name == "vcenter.example.invalid"
     assert endpoints["endpoint:vcenter"].provenance == CONFIGURED
     assert endpoints["endpoint:vcenter"].resolutions[0].provenance == CONFIGURED
+    assert endpoints["endpoint:vcenter"].resolution == RESOLVED
+    vcenter_rule = by_id(topology.connectivity_rules)["deployment:vcenter-api"]
+    assert vcenter_rule.destination.symbolic == "endpoint:vcenter"
+    assert vcenter_rule.destination.resolved[0].id == "vcenter.example.invalid"
+    assert vcenter_rule.destination.resolved[0].address == "vcenter.example.invalid"
+    assert vcenter_rule.destination.resolved[0].reference == EntityReference("endpoint", "endpoint:vcenter")
+    assert vcenter_rule.destination_ports == (443,)
+    assert topology.deployment_context.vsphere.resolution == RESOLVED
     assert endpoints["endpoint:rancher"].resolutions[1].provenance == EXTERNAL
     assert endpoints["endpoint:ssh-jump"].ports == (22,)
 
@@ -454,7 +462,7 @@ def test_v2_architecture_map_consumes_semantic_entities_and_boundaries(monkeypat
     assert "_note" not in architecture
     assert "Downstream nodes<br/>VLAN 565<br/>external lifecycle" in architecture
     assert "Downstream nodes<br/>VLAN 566<br/>external lifecycle" in architecture
-    assert "vSphere<br/>runtime endpoint unresolved" in architecture
+    assert "vSphere<br/>vcenter.example.invalid" in architecture
     assert "Terraform state backend<br/>GitLab" in architecture
     assert "TCP/22" not in architecture
     assert "DNS" in architecture
@@ -943,7 +951,7 @@ def test_v2_symbolic_downstream_consumers_match_network_dhcp_and_gateway():
         assert downstream.lifecycle_ownership == EXTERNALLY_MANAGED
 
 
-def test_v2_deployment_context_is_config_only_and_marks_vcenter_runtime_supplied():
+def test_v2_deployment_context_is_config_only_and_resolves_configured_vcenter():
     topology = build_desired_topology(load_env(FULL_CONFIG))
     context = topology.deployment_context
     endpoints = by_id(topology.endpoints)
@@ -968,8 +976,11 @@ def test_v2_deployment_context_is_config_only_and_marks_vcenter_runtime_supplied
         ("infra", "EXAMPLE_TEMPLATE_INFRA"),
         ("rke2", "EXAMPLE_TEMPLATE_RKE2"),
     ]
-    assert endpoints[context.vsphere.endpoint_id].resolution == "RUNTIME_SUPPLIED"
-    assert endpoints[context.vsphere.endpoint_id].resolutions[0].addresses == ()
+    assert endpoints[context.vsphere.endpoint_id].name == "vcenter.example.invalid"
+    assert endpoints[context.vsphere.endpoint_id].provenance == CONFIGURED
+    assert endpoints[context.vsphere.endpoint_id].resolution == RESOLVED
+    assert endpoints[context.vsphere.endpoint_id].resolutions[0].addresses == ("vcenter.example.invalid",)
+    assert context.vsphere.resolution == RESOLVED
     assert context.terraform_backend.type == "gitlab"
     assert context.terraform_backend.project_id == 123456
     assert context.terraform_backend.state_name == "full-example-infra"
@@ -1013,6 +1024,48 @@ def test_v2_topology_ignores_runtime_environment_enrichment(monkeypatch):
             "/sensitive/operator/id_rsa",
         )
     )
+
+
+def test_v2_runtime_vcenter_is_consistent_across_endpoint_rule_and_context():
+    topology = build_desired_topology(expand_env(raw_config()))
+    endpoint = by_id(topology.endpoints)["endpoint:vcenter"]
+    rule = by_id(topology.connectivity_rules)["deployment:vcenter-api"]
+
+    assert endpoint.provenance == EXTERNAL
+    assert endpoint.resolution == RUNTIME_SUPPLIED
+    assert endpoint.resolutions[0].addresses == ()
+    assert rule.destination.symbolic == "endpoint:vcenter"
+    assert rule.destination.resolved[0].id == endpoint.name
+    assert rule.destination.resolved[0].address is None
+    assert rule.destination.resolved[0].reference == EntityReference("endpoint", endpoint.id)
+    assert topology.deployment_context.vsphere.resolution == RUNTIME_SUPPLIED
+
+
+def test_v2_validator_rejects_unrelated_runtime_vcenter_for_configured_endpoint():
+    config = yaml.safe_load(FULL_CONFIG.read_text())
+    topology = build_desired_topology(load_env(FULL_CONFIG))
+    rule = by_id(topology.connectivity_rules)["deployment:vcenter-api"]
+    destination = replace(
+        rule.destination.resolved[0],
+        id="runtime-supplied vCenter endpoint",
+        address=None,
+        address_kind=SYMBOLIC_ADDRESS,
+    )
+    invalid_rule = replace(
+        rule,
+        destination=replace(rule.destination, resolved=(destination,)),
+    )
+    invalid = replace(
+        topology,
+        connectivity_rules=tuple(
+            invalid_rule if item.id == rule.id else item
+            for item in topology.connectivity_rules
+        ),
+    )
+
+    assert config["infra"]["vsphere"]["server"] == "vcenter.example.invalid"
+    with pytest.raises(ValueError, match="vCenter deployment relationship is inconsistent"):
+        validate_topology(invalid)
 
 
 def test_v2_operational_connectivity_registry_covers_core_and_downstream_contract():
@@ -1126,7 +1179,7 @@ def test_v2_support_dependencies_are_typed_and_external_routing_is_symbolic():
 
     assert rules["deployment:terraform-backend"].category == DEPLOYMENT
     assert rules["deployment:terraform-backend"].destination_ports == (443,)
-    assert rules["deployment:vcenter-api"].destination.resolved[0].address is None
+    assert rules["deployment:vcenter-api"].destination.resolved[0].address == "vcenter.example.invalid"
     assert rules["deployment:vcenter-api"].destination_ports == (443,)
     assert rules["core-dns:bastion-os"].destination_ports == (53,)
     assert rules["core-proxy:upstream"].destination.resolved[0].address is None

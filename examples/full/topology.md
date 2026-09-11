@@ -21,7 +21,7 @@ flowchart LR
     consumer_consumer_downstream_vlan565_dfc74929d4["Downstream nodes<br/>VLAN 565<br/>external lifecycle"]
     consumer_consumer_downstream_vlan566_30b7d29b35["Downstream nodes<br/>VLAN 566<br/>external lifecycle"]
   end
-  endpoint_endpoint_vcenter_bba77268c7["vSphere<br/>runtime endpoint unresolved"]
+  endpoint_endpoint_vcenter_bba77268c7["vSphere<br/>vcenter.example.invalid"]
   endpoint_endpoint_terraform_backend_a27fbcb411["Terraform state backend<br/>GitLab"]
   actor_operator_workstation_974971eaa5 --> endpoint_endpoint_ssh_jump_f7b7c2ca2d
   endpoint_endpoint_ssh_jump_f7b7c2ca2d --> host_bastion1_fd65cf69ce
@@ -93,7 +93,7 @@ flowchart TB
 
 | Property | Desired value |
 | --- | --- |
-| vCenter endpoint | runtime-supplied vCenter endpoint |
+| vCenter endpoint | vcenter.example.invalid |
 | Datacenter | EXAMPLE_DATACENTER |
 | Resource pool | EXAMPLE_CLUSTER/Resources |
 | Datastore | EXAMPLE_DATASTORE |
@@ -197,7 +197,7 @@ flowchart TB
 | Category | Source | Destination | Transport | Purpose | Resolution | Verification |
 | --- | --- | --- | --- | --- | --- | --- |
 | Deployment | Operator / rinstall | Terraform backend | TCP * -&gt; 443 | Operator Terraform uses the configured GitLab HTTP backend | https://gitlab.example.invalid | unverified |
-| Deployment | Operator / rinstall | vCenter API | TCP * -&gt; 443 | Operator Terraform uses the vCenter provider API | symbolic / unresolved | unverified |
+| Deployment | Operator / rinstall | vCenter API | TCP * -&gt; 443 | Operator Terraform uses the vCenter provider API | vcenter.example.invalid | unverified |
 
 ### Core services
 
