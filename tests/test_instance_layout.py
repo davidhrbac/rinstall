@@ -10,6 +10,7 @@ import yaml
 
 ENGINE_ROOT = Path(__file__).parents[1]
 EXAMPLE_ENV = ENGINE_ROOT / "envs/example/env.yaml"
+FULL_CONFIG = ENGINE_ROOT / "examples/full/config.yaml"
 INSTANCE_FIXTURE = ENGINE_ROOT / "examples/instance-repository"
 CONTEXT_HELPER = ENGINE_ROOT / "scripts/print-instance-context.py"
 BACKEND_HELPER = ENGINE_ROOT / "scripts/terraform-backend-env.py"
@@ -28,6 +29,7 @@ def test_instance_fixture_ignores_runtime_files():
     assert ".rinstall/" in (INSTANCE_FIXTURE / ".gitignore").read_text().splitlines()
     assert (INSTANCE_FIXTURE / ".gitmodules").exists()
     assert (INSTANCE_FIXTURE / "config.yaml").exists()
+    assert "docs/topology/" in (INSTANCE_FIXTURE / "README.md").read_text()
     backend = yaml.safe_load((INSTANCE_FIXTURE / "config.yaml").read_text())["terraform"]["backend"]
     assert backend == {
         "type": "gitlab",
@@ -119,6 +121,70 @@ def test_topology_target_writes_private_instance_runtime_outputs(tmp_path):
     assert topology_mermaid.stat().st_mode & 0o777 == 0o600
     assert "terraform" not in result.stdout.lower()
     assert "pyinfra" not in result.stdout.lower()
+
+
+def test_topology_docs_target_writes_instance_relative_committed_projection(tmp_path):
+    instance_root = tmp_path / "customer-a-prod-infra"
+    instance_root.mkdir()
+    (instance_root / "config.yaml").write_text(FULL_CONFIG.read_text())
+    (instance_root / "rinstall").symlink_to(ENGINE_ROOT, target_is_directory=True)
+    (instance_root / ".gitignore").write_text(".rinstall/\n.envrc\n")
+
+    result = subprocess.run(
+        ["make", "-f", "rinstall/Makefile", "topology-docs", f"PYTHON={sys.executable}"],
+        cwd=instance_root,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    docs_dir = instance_root / "docs/topology"
+    assert str(docs_dir) in result.stdout
+    assert sorted(path.name for path in docs_dir.iterdir()) == [
+        "architecture.mmd", "network-topology.mmd", "topology.md", "topology.txt"
+    ]
+    assert (instance_root / ".rinstall/topology.json").exists()
+    assert not (docs_dir / "topology.json").exists()
+    assert not (docs_dir / "network-topology.dot").exists()
+    assert not (docs_dir / "network-topology.svg").exists()
+    assert "## Architecture Map" in (docs_dir / "topology.md").read_text()
+    assert "## Network Topology" in (docs_dir / "topology.md").read_text()
+    assert (instance_root / "docs/topology/topology.md").stat().st_mode & 0o777 == 0o644
+    assert (instance_root / ".rinstall/topology.json").stat().st_mode & 0o777 == 0o600
+
+    subprocess.run(["git", "init", "-q"], cwd=instance_root, check=True)
+    subprocess.run(["git", "add", "config.yaml", "docs/topology", ".gitignore"], cwd=instance_root, check=True)
+    subprocess.run(
+        ["git", "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "baseline"],
+        cwd=instance_root,
+        check=True,
+    )
+    passing = subprocess.run(
+        ["make", "-f", "rinstall/Makefile", "topology-docs-check", f"PYTHON={sys.executable}"],
+        cwd=instance_root,
+        capture_output=True,
+        text=True,
+    )
+    assert passing.returncode == 0, passing.stdout + passing.stderr
+
+    changed_config = yaml.safe_load((instance_root / "config.yaml").read_text())
+    changed_config["environment"]["id"] = "changed-instance"
+    changed_config["prompt"]["host_suffix"] = "changed-instance"
+    (instance_root / "config.yaml").write_text(yaml.safe_dump(changed_config))
+    stale = subprocess.run(
+        ["make", "-f", "rinstall/Makefile", "topology-docs-check", f"PYTHON={sys.executable}"],
+        cwd=instance_root,
+        capture_output=True,
+        text=True,
+    )
+    assert stale.returncode != 0
+    assert "topology docs are stale" in stale.stderr
+
+    ignored = subprocess.run(
+        ["git", "check-ignore", "-q", ".rinstall/topology.json"],
+        cwd=instance_root,
+    )
+    assert ignored.returncode == 0
 
 
 def test_standalone_bastion_configure_refreshes_output_before_pyinfra(tmp_path):

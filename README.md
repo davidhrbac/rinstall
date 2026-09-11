@@ -25,9 +25,10 @@ Fleet, imported downstream clusters, downstream lifecycle, and Kubernetes upgrad
 ## Production Instance Flow
 
 Production use is a separate instance repository containing `config.yaml`, a
-`.gitmodules` file, a `.gitignore` entry for `.rinstall/`, and the pinned
-`rinstall` submodule. The sanitized layout fixture is in
-`examples/instance-repository/`. No wrapper Makefile or `.envrc` is required:
+`.gitmodules` file, a `.gitignore` entry for `.rinstall/`, the pinned `rinstall`
+submodule, and committed support documentation under `docs/topology/`. The
+sanitized layout fixture is in `examples/instance-repository/`. No wrapper
+Makefile or `.envrc` is required:
 
 ```bash
 make -f rinstall/Makefile verify
@@ -37,6 +38,39 @@ make -f rinstall/Makefile provision-all
 
 Generated runtime files are kept under the ignored `.rinstall/` directory,
 including Terraform metadata in `.rinstall/terraform-data/`.
+
+The instance repository layout is:
+
+```text
+config.yaml                 version-controlled source of truth
+docs/topology/              version-controlled support projection
+  topology.md
+  architecture.mmd
+  network-topology.mmd
+  topology.txt
+rinstall/                   pinned engine submodule
+.envrc                      ignored runtime credentials/environment
+.rinstall/                  ignored private runtime artifacts
+```
+
+Generate and review the committed projection from the instance repository:
+
+```bash
+make -f rinstall/Makefile topology-docs
+git diff -- config.yaml docs/topology/
+make -f rinstall/Makefile topology-docs-check
+```
+
+Commit `config.yaml` and the resulting `docs/topology/` changes together. CI
+should run `topology-docs-check` to detect drift. The committed projection is
+derived from the same EnvironmentTopology V2 build as `.rinstall/topology.json`;
+it does not copy that richer machine-readable file.
+
+`docs/topology/` is suitable for the private instance repository only. It may
+contain internal hostnames, IPs/CIDRs, VLAN IDs, VMware network names, Rancher
+URLs, and desired topology relationships. The public `examples/full/` fixture
+continues to use synthetic values. Do not rely on automatic redaction for a
+real instance.
 
 Production `config.yaml` declares the GitLab backend identity:
 

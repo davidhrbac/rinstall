@@ -13,6 +13,7 @@ ENV_CONFIG ?= $(ENV_FILE)
 ENV_ID = $(shell $(PYTHON) $(ENGINE_ROOT)/scripts/environment-id.py --env $(ENV_CONFIG) 2>/dev/null)
 RUNTIME_DIR ?= $(if $(wildcard $(INSTANCE_ROOT)/config.yaml),$(INSTANCE_ROOT)/.rinstall,$(ENGINE_ROOT)/build/$(ENV_ID))
 BUILD_ENV_DIR = $(RUNTIME_DIR)
+TOPOLOGY_DOCS_DIR ?= $(INSTANCE_ROOT)/docs/topology
 TF_ROOT := $(ENGINE_ROOT)/terraform/infra
 TF_INFRA_DIR := $(TF_ROOT)
 INFRA_TFVARS = $(BUILD_ENV_DIR)/infra.tfvars.json
@@ -28,7 +29,7 @@ SSH_KNOWN_HOSTS = $(BUILD_ENV_DIR)/known_hosts
 HAS_DOWNSTREAM_NETWORKS = $(shell $(PYTHON) $(ENGINE_ROOT)/scripts/has-downstream-networks.py --env $(ENV_CONFIG) 2>/dev/null)
 TOPOLOGY_HELPER = $(ENGINE_ROOT)/scripts/render-topology.py
 
-.PHONY: help config-validate topology render-infra-vars render-infra-vars-checked instance-context ssh-config ssh-hostkey-reset ssh-hostkeys-reset admin-ssh-config install-admin-ssh-config infra-init infra-fmt infra-validate infra-plan infra-apply infra-output destroy-commands destroy-commands-recovery bastion-configure node-prep rke2-install rke2-kubeconfig rancher-install rancher-install-run rancher-bootstrap-password-command rancher-bootstrap rancher-bootstrap-run provision-all provision-all-yes verify
+.PHONY: help config-validate topology topology-docs topology-docs-check render-infra-vars render-infra-vars-checked instance-context ssh-config ssh-hostkey-reset ssh-hostkeys-reset admin-ssh-config install-admin-ssh-config infra-init infra-fmt infra-validate infra-plan infra-apply infra-output destroy-commands destroy-commands-recovery bastion-configure node-prep rke2-install rke2-kubeconfig rancher-install rancher-install-run rancher-bootstrap-password-command rancher-bootstrap rancher-bootstrap-run provision-all provision-all-yes verify
 
 help:
 	@printf '%s\n' 'Targets:'
@@ -40,6 +41,8 @@ help:
 	@printf '%s\n' ''
 	@printf '\033[3m%s\033[0m\n' '  render-infra-vars   render runtime/infra.tfvars.json from config.yaml'
 	@printf '\033[3m%s\033[0m\n' '  topology            render private desired topology JSON, architecture, text, Markdown, and Mermaid'
+	@printf '\033[3m%s\033[0m\n' '  topology-docs       render version-controlled support topology docs under docs/topology/'
+	@printf '\033[3m%s\033[0m\n' '  topology-docs-check regenerate docs/topology/ and fail when committed docs drift'
 	@printf '\033[3m%s\033[0m\n' '  instance-context    show the selected instance and Terraform state'
 	@printf '\033[3m%s\033[0m\n' '  ssh-config          render runtime/ssh_config from config.yaml'
 	@printf '\033[3m%s\033[0m\n' '  ssh-hostkey-reset  remove one node from the instance known_hosts file'
@@ -68,6 +71,14 @@ config-validate:
 topology: config-validate
 	install -d -m 700 $(BUILD_ENV_DIR)
 	$(PYTHON) $(TOPOLOGY_HELPER) --config $(ENV_CONFIG) --output-dir $(BUILD_ENV_DIR)
+
+topology-docs: config-validate
+	@if [[ ! -f "$(INSTANCE_ROOT)/config.yaml" ]]; then printf '%s\n' 'topology-docs must run from an instance repository containing config.yaml' >&2; exit 2; fi
+	$(PYTHON) $(TOPOLOGY_HELPER) --config $(ENV_CONFIG) --output-dir $(BUILD_ENV_DIR) --docs-dir $(TOPOLOGY_DOCS_DIR)
+
+topology-docs-check: topology-docs
+	@if [[ -n "$$(git -C "$(INSTANCE_ROOT)" status --porcelain --untracked-files=all -- docs/topology/)" ]]; then printf '%s\n' 'topology docs are stale or untracked; review docs/topology/' >&2; exit 1; fi
+	@git -C "$(INSTANCE_ROOT)" diff --exit-code -- docs/topology/
 
 render-infra-vars: config-validate
 	install -d -m 700 $(BUILD_ENV_DIR)
