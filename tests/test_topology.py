@@ -123,6 +123,54 @@ def test_existing_config_without_optional_vsphere_fields_builds_and_renders(tmp_
     assert str(output_dir / "topology.json") in result.stdout
 
 
+@pytest.mark.parametrize(
+    "optional_field",
+    [
+        "domain",
+        "local.vlan.dns_nodes",
+        "bastion.downstream_networks",
+        "bastion.service_ip",
+        "bastion.network_connection_names",
+        "bastion.squid_http_port",
+        "infra.vsphere.clone_timeout",
+        "infra.vsphere.allow_unverified_ssl",
+        "ssh",
+        "rke2.primary_node",
+        "rancher.edition",
+        "rancher.agent_tls_mode",
+    ],
+)
+def test_topology_accepts_each_production_optional_field_when_omitted(optional_field):
+    config = raw_config()
+    parts = optional_field.split(".")
+    mapping = config
+    for part in parts[:-1]:
+        mapping = mapping[part]
+    mapping.pop(parts[-1], None)
+
+    expanded = expand_env(config)
+    topology = build_desired_topology(expanded)
+
+    assert render_topology_json(topology)
+    assert render_topology_markdown(topology)
+    assert render_topology_ascii_overview(topology)
+    assert render_topology_architecture_mermaid(topology)
+    assert render_topology_network_mermaid(topology)
+
+
+def test_topology_preserves_explicit_vsphere_optional_values():
+    config = raw_config()
+    config["infra"]["vsphere"]["clone_timeout"] = 90
+    config["infra"]["vsphere"]["allow_unverified_ssl"] = True
+
+    topology = build_desired_topology(expand_env(config))
+    vsphere = topology.deployment_context.vsphere
+
+    assert vsphere.clone_timeout_minutes == 90
+    assert vsphere.allow_unverified_ssl is True
+    assert "90 minutes" in render_topology_markdown(topology)
+
+
 def by_id(items):
     return {item.id: item for item in items}
 

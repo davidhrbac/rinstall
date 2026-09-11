@@ -25,7 +25,7 @@ SECRET_VALUES = [
 ]
 
 
-def no_graphviz_environment(tmp_path):
+def environment_without_dot(tmp_path):
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     (bin_dir / "install").symlink_to(shutil.which("install", path="/usr/bin:/bin"))
@@ -106,7 +106,7 @@ def test_topology_target_writes_private_instance_runtime_outputs(tmp_path):
         check=True,
         capture_output=True,
         text=True,
-        env=no_graphviz_environment(tmp_path),
+        env=environment_without_dot(tmp_path),
     )
 
     runtime_dir = instance_root / ".rinstall"
@@ -151,7 +151,7 @@ def test_topology_docs_target_writes_instance_relative_committed_projection(tmp_
         check=True,
         capture_output=True,
         text=True,
-        env=no_graphviz_environment(tmp_path),
+        env=environment_without_dot(tmp_path),
     )
 
     docs_dir = instance_root / "docs/topology"
