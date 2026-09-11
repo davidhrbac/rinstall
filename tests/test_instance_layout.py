@@ -25,6 +25,13 @@ SECRET_VALUES = [
 ]
 
 
+def no_graphviz_environment(tmp_path):
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "install").symlink_to(shutil.which("install", path="/usr/bin:/bin"))
+    return {"PATH": str(bin_dir)}
+
+
 def test_instance_fixture_ignores_runtime_files():
     assert ".rinstall/" in (INSTANCE_FIXTURE / ".gitignore").read_text().splitlines()
     assert (INSTANCE_FIXTURE / ".gitmodules").exists()
@@ -88,15 +95,18 @@ def test_topology_target_writes_private_instance_runtime_outputs(tmp_path):
     instance_root.mkdir()
     config = yaml.safe_load(EXAMPLE_ENV.read_text())
     config["nodes"]["bastion1"]["nics"][1]["cidr"] = "192.0.2.10/24"
+    config["infra"]["vsphere"].pop("clone_timeout", None)
+    config["infra"]["vsphere"].pop("allow_unverified_ssl", None)
     (instance_root / "config.yaml").write_text(yaml.safe_dump(config))
     (instance_root / "rinstall").symlink_to(ENGINE_ROOT, target_is_directory=True)
 
     result = subprocess.run(
-        ["make", "-f", "rinstall/Makefile", "topology", f"PYTHON={sys.executable}"],
+        [shutil.which("make"), "-f", "rinstall/Makefile", "topology", f"PYTHON={sys.executable}"],
         cwd=instance_root,
         check=True,
         capture_output=True,
         text=True,
+        env=no_graphviz_environment(tmp_path),
     )
 
     runtime_dir = instance_root / ".rinstall"
@@ -119,6 +129,8 @@ def test_topology_target_writes_private_instance_runtime_outputs(tmp_path):
     assert topology_markdown.stat().st_mode & 0o777 == 0o600
     assert topology_text.stat().st_mode & 0o777 == 0o600
     assert topology_mermaid.stat().st_mode & 0o777 == 0o600
+    assert not (runtime_dir / "network-topology.dot").exists()
+    assert not (runtime_dir / "network-topology.svg").exists()
     assert "terraform" not in result.stdout.lower()
     assert "pyinfra" not in result.stdout.lower()
 
@@ -126,16 +138,20 @@ def test_topology_target_writes_private_instance_runtime_outputs(tmp_path):
 def test_topology_docs_target_writes_instance_relative_committed_projection(tmp_path):
     instance_root = tmp_path / "customer-a-prod-infra"
     instance_root.mkdir()
-    (instance_root / "config.yaml").write_text(FULL_CONFIG.read_text())
+    config = yaml.safe_load(FULL_CONFIG.read_text())
+    config["infra"]["vsphere"].pop("clone_timeout", None)
+    config["infra"]["vsphere"].pop("allow_unverified_ssl", None)
+    (instance_root / "config.yaml").write_text(yaml.safe_dump(config))
     (instance_root / "rinstall").symlink_to(ENGINE_ROOT, target_is_directory=True)
     (instance_root / ".gitignore").write_text(".rinstall/\n.envrc\n")
 
     result = subprocess.run(
-        ["make", "-f", "rinstall/Makefile", "topology-docs", f"PYTHON={sys.executable}"],
+        [shutil.which("make"), "-f", "rinstall/Makefile", "topology-docs", f"PYTHON={sys.executable}"],
         cwd=instance_root,
         check=True,
         capture_output=True,
         text=True,
+        env=no_graphviz_environment(tmp_path),
     )
 
     docs_dir = instance_root / "docs/topology"
@@ -144,9 +160,9 @@ def test_topology_docs_target_writes_instance_relative_committed_projection(tmp_
         "architecture.mmd", "network-topology.mmd", "topology.md", "topology.txt"
     ]
     assert (instance_root / ".rinstall/topology.json").exists()
+    assert not (instance_root / ".rinstall/network-topology.dot").exists()
+    assert not (instance_root / ".rinstall/network-topology.svg").exists()
     assert not (docs_dir / "topology.json").exists()
-    assert not (docs_dir / "network-topology.dot").exists()
-    assert not (docs_dir / "network-topology.svg").exists()
     assert "## Architecture Map" in (docs_dir / "topology.md").read_text()
     assert "## Network Topology" in (docs_dir / "topology.md").read_text()
     assert (instance_root / "docs/topology/topology.md").stat().st_mode & 0o777 == 0o644

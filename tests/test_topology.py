@@ -4,7 +4,6 @@ import json
 from pathlib import Path
 import subprocess
 import sys
-from xml.etree import ElementTree
 
 import pytest
 import yaml
@@ -45,9 +44,7 @@ from lib.topology import (
     render_topology_markdown,
     render_topology_ascii_overview,
     render_topology_infrastructure_mermaid,
-    render_topology_network_dot,
     render_topology_network_mermaid,
-    render_topology_network_svg,
     validate_topology,
 )
 
@@ -118,9 +115,7 @@ def test_existing_config_without_optional_vsphere_fields_builds_and_renders(tmp_
         "topology.txt",
         "topology.mmd",
         "architecture.mmd",
-        "network-topology.dot",
         "network-topology.mmd",
-        "network-topology.svg",
     ):
         assert (output_dir / artifact).is_file()
     assert json.loads((output_dir / "topology.json").read_text())["deployment_context"]["vsphere"]["clone_timeout_minutes"] is None
@@ -387,42 +382,8 @@ def test_v2_architecture_map_uses_arbitrary_cluster_members_from_v2():
     assert all(f"rancher{index}" in architecture for index in range(2, 6))
 
 
-def test_v2_network_topology_dot_covers_attachments_and_external_routing():
+def test_v2_network_mermaid_covers_entities_and_attachments():
     topology = build_desired_topology(load_env(FULL_CONFIG))
-    dot = render_topology_network_dot(topology)
-
-    assert dot.startswith("digraph network_topology {")
-    assert dot.count('label="bastion1\\nmulti-homed') == 1
-    assert 'not a router' in dot
-    assert 'bastion_is_router' not in dot
-    assert 'label="Management\\n192.0.2.0/24' in dot
-    assert 'VMware: EXAMPLE_MANAGEMENT_NETWORK' in dot
-    assert 'label="Customer\\n198.51.100.0/28' in dot
-    assert 'VMware: EXAMPLE_CUSTOMER_NETWORK' in dot
-    assert 'network_management_288965a1f2 -> host_bastion1_fd65cf69ce [dir=none]' in dot
-    assert 'host_bastion1_fd65cf69ce -> network_customer_b6c4586387 [dir=none]' in dot
-    assert 'network_customer_b6c4586387 -> host_prom1_abf2e7bd7a [dir=none]' in dot
-    assert 'network_customer_b6c4586387 -> host_rancher3_bbbf0c319b [dir=none]' in dot
-    assert 'label="VLAN 565\\n203.0.113.32/27' in dot
-    assert 'VMware: EXAMPLE_DOWNSTREAM_NETWORK_565' in dot
-    assert 'bastion: 203.0.113.34' in dot
-    assert 'External gateway\\n203.0.113.33' in dot
-    assert 'DHCP 203.0.113.36-203.0.113.61' in dot
-    assert 'lease:' not in dot
-    assert 'kind:' not in dot
-    assert 'external routing / firewall' in dot
-    assert 'constraint=false' in dot
-    assert dot.count('External gateway\\n203.0.113.33') == 1
-    assert dot.count('external routing / firewall') == 2
-    assert 'Core hosts' not in dot
-    assert 'TCP' not in dot and '9345' not in dot and '6443' not in dot
-    assert 'endpoint:rancher' not in dot
-    assert 'private_key' not in dot
-
-
-def test_v2_network_mermaid_matches_dot_network_entities_and_attachments():
-    topology = build_desired_topology(load_env(FULL_CONFIG))
-    dot = render_topology_network_dot(topology)
     mermaid = render_topology_network_mermaid(topology)
 
     assert mermaid.startswith("flowchart TB\n")
@@ -435,24 +396,12 @@ def test_v2_network_mermaid_matches_dot_network_entities_and_attachments():
         "203.0.113.68-203.0.113.93", "prom1", "rancher1 primary",
         "rancher2", "rancher3", "not a router", "external routing / firewall",
     ):
-        assert label in dot
         assert label in mermaid
     assert mermaid.count('host_bastion1_fd65cf69ce["') == 1
     assert "kind:" not in mermaid and "lease" not in mermaid
     assert "TCP" not in mermaid and "9345" not in mermaid and "6443" not in mermaid
     assert "ens" not in mermaid and "endpoint:rancher" not in mermaid
     assert mermaid == render_topology_network_mermaid(topology)
-
-
-def test_v2_network_topology_svg_is_valid():
-    topology = build_desired_topology(load_env(FULL_CONFIG))
-    first_dot = render_topology_network_dot(topology)
-    second_dot = render_topology_network_dot(topology)
-    svg = render_topology_network_svg(topology)
-
-    assert first_dot == second_dot
-    assert svg.startswith("<?xml")
-    assert ElementTree.fromstring(svg).tag.endswith("svg")
 
 
 @pytest.mark.parametrize("count", [0, 1, 2, 5, 10])
@@ -518,10 +467,10 @@ def test_v2_network_topology_scales_downstream_networks(count):
             networks=topology.networks + tuple(extra_networks),
             downstream_consumers=topology.downstream_consumers + tuple(extra_consumers),
         )
-    dot = render_topology_network_dot(topology)
+    mermaid = render_topology_network_mermaid(topology)
 
-    assert dot.count('label="External gateway\\n') == count
-    assert dot.count('label="Downstream nodes\\n') == count
+    assert mermaid.count("External gateway") == count
+    assert mermaid.count("Downstream nodes") == count
 
 
 def test_v2_rke2_cluster_supports_arbitrary_member_names_and_count():
@@ -1390,9 +1339,7 @@ def test_topology_outputs_exclude_sensitive_config_values(tmp_path):
     first_markdown = (output_dir / "topology.md").read_bytes()
     first_text = (output_dir / "topology.txt").read_bytes()
     first_mermaid = (output_dir / "topology.mmd").read_bytes()
-    first_network_dot = (output_dir / "network-topology.dot").read_bytes()
     first_network_mermaid = (output_dir / "network-topology.mmd").read_bytes()
-    first_network_svg = (output_dir / "network-topology.svg").read_bytes()
     subprocess.run(
         command,
         check=True,
@@ -1403,17 +1350,13 @@ def test_topology_outputs_exclude_sensitive_config_values(tmp_path):
         + (output_dir / "topology.md").read_text()
         + (output_dir / "topology.txt").read_text()
         + (output_dir / "topology.mmd").read_text()
-        + (output_dir / "network-topology.dot").read_text()
         + (output_dir / "network-topology.mmd").read_text()
-        + (output_dir / "network-topology.svg").read_text()
     )
     assert (output_dir / "topology.json").read_bytes() == first_json
     assert (output_dir / "topology.md").read_bytes() == first_markdown
     assert (output_dir / "topology.txt").read_bytes() == first_text
     assert (output_dir / "topology.mmd").read_bytes() == first_mermaid
-    assert (output_dir / "network-topology.dot").read_bytes() == first_network_dot
     assert (output_dir / "network-topology.mmd").read_bytes() == first_network_mermaid
-    assert (output_dir / "network-topology.svg").read_bytes() == first_network_svg
     assert not (output_dir / "connectivity.mmd").exists()
     assert not (output_dir / "topology.svg").exists()
     assert all(secret not in outputs for secret in secrets)
@@ -1422,9 +1365,9 @@ def test_topology_outputs_exclude_sensitive_config_values(tmp_path):
     assert (output_dir / "topology.md").stat().st_mode & 0o777 == 0o600
     assert (output_dir / "topology.txt").stat().st_mode & 0o777 == 0o600
     assert (output_dir / "topology.mmd").stat().st_mode & 0o777 == 0o600
-    assert (output_dir / "network-topology.dot").stat().st_mode & 0o777 == 0o600
     assert (output_dir / "network-topology.mmd").stat().st_mode & 0o777 == 0o600
-    assert (output_dir / "network-topology.svg").stat().st_mode & 0o777 == 0o600
+    assert not (output_dir / "network-topology.dot").exists()
+    assert not (output_dir / "network-topology.svg").exists()
 
 
 def test_markdown_escapes_configured_table_values():
