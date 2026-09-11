@@ -42,6 +42,15 @@ def gitlab_backend_state_address(backend, environment_id):
     return f"{backend['url'].rstrip('/')}/api/v4/projects/{backend['project_id']}/terraform/state/{environment_id}-infra"
 
 
+def effective_local_dns_servers(node, local_vlan):
+    """Return the DNS servers used by a local node after configuration coalescing."""
+    return tuple(
+        node["dns_servers"]
+        if node.get("dns_servers") is not None
+        else local_vlan.get("dns_servers", ())
+    )
+
+
 def validate_environment_identity(env):
     schema_version = require(env, "schema_version", "env")
     if schema_version != SUPPORTED_SCHEMA_VERSION:
@@ -397,7 +406,6 @@ def expand_env(raw_env):
             node["ip"] = address_from_host(network, node["host"], f"env.nodes.{name}.host")
         if node.get("gateway") is None and node.get("ip") is not None:
             node["gateway"] = local_vlan["gateway"]
-
         for nic in require(node, "nics", f"env.nodes.{name}"):
             if nic.get("cidr") is not None:
                 try:

@@ -2,7 +2,7 @@ flowchart TB
   network_management_288965a1f2["Management<br/>192.0.2.0/24<br/>VMware: EXAMPLE_MANAGEMENT_NETWORK<br/>bastion: 192.0.2.10"]
   host_bastion1_fd65cf69ce["bastion1<br/>multi-homed<br/>not a router"]
   network_customer_b6c4586387["Customer<br/>198.51.100.0/28<br/>VMware: EXAMPLE_CUSTOMER_NETWORK<br/>bastion: 198.51.100.4<br/>gateway: 198.51.100.1"]
-  host_prom1_abf2e7bd7a["prom1<br/>198.51.100.6"]
+  host_prom1_abf2e7bd7a["Prometheus host<br/>prom1<br/>198.51.100.6"]
   subgraph cluster_cluster_rke2_rancher_de77c71a50["RKE2 / Rancher"]
     direction TB
     host_rancher1_d47e6b0e07["rancher1 primary<br/>198.51.100.11"]

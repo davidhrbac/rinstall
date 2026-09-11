@@ -36,7 +36,10 @@
       "ownership": "RINSTALL_MANAGED",
       "provenance": "DERIVED",
       "resolution": "RESOLVED",
-      "verification": "DESIRED_ONLY"
+      "verification": "DESIRED_ONLY",
+      "dns_servers": [
+        "192.0.2.53"
+      ]
     },
     {
       "id": "prom1",
@@ -57,7 +60,10 @@
       "ownership": "RINSTALL_MANAGED",
       "provenance": "DERIVED",
       "resolution": "RESOLVED",
-      "verification": "DESIRED_ONLY"
+      "verification": "DESIRED_ONLY",
+      "dns_servers": [
+        "198.51.100.4"
+      ]
     },
     {
       "id": "rancher1",
@@ -76,7 +82,10 @@
       "ownership": "RINSTALL_MANAGED",
       "provenance": "DERIVED",
       "resolution": "RESOLVED",
-      "verification": "DESIRED_ONLY"
+      "verification": "DESIRED_ONLY",
+      "dns_servers": [
+        "198.51.100.4"
+      ]
     },
     {
       "id": "rancher2",
@@ -95,7 +104,10 @@
       "ownership": "RINSTALL_MANAGED",
       "provenance": "DERIVED",
       "resolution": "RESOLVED",
-      "verification": "DESIRED_ONLY"
+      "verification": "DESIRED_ONLY",
+      "dns_servers": [
+        "198.51.100.4"
+      ]
     },
     {
       "id": "rancher3",
@@ -114,7 +126,10 @@
       "ownership": "RINSTALL_MANAGED",
       "provenance": "DERIVED",
       "resolution": "RESOLVED",
-      "verification": "DESIRED_ONLY"
+      "verification": "DESIRED_ONLY",
+      "dns_servers": [
+        "198.51.100.4"
+      ]
     }
   ],
   "interfaces": [
@@ -1048,14 +1063,14 @@
         "resolution_scope": null
       },
       "destination": {
-        "symbolic": "service:dns:local",
+        "symbolic": "service:dns:local:0",
         "resolved": [
           {
-            "id": "dns:local",
+            "id": "198.51.100.4",
             "address": "198.51.100.4",
             "reference": {
-              "kind": "service",
-              "id": "dns:local"
+              "kind": "endpoint",
+              "id": "endpoint:dns-local:198.51.100.4"
             },
             "address_kind": "IP_ADDRESS",
             "egress_interface": null
@@ -1071,7 +1086,7 @@
       "destination_ports": [
         53
       ],
-      "purpose": "Local nodes use bastion DNS",
+      "purpose": "Local nodes use their effective configured DNS servers",
       "requirement_sources": [
         "RINSTALL_ARCHITECTURE"
       ],
@@ -2230,6 +2245,66 @@
           "provenance": "CONFIGURED",
           "resolution": "RESOLVED",
           "address_kind": "URL",
+          "verification": "UNVERIFIED",
+          "reason": null
+        }
+      ],
+      "ownership": "REFERENCED_EXTERNAL",
+      "provenance": "CONFIGURED",
+      "resolution": "RESOLVED",
+      "verification": "UNVERIFIED"
+    },
+    {
+      "id": "endpoint:dns-local:192.0.2.53",
+      "kind": "local-dns",
+      "name": "192.0.2.53",
+      "protocols": [
+        "DNS"
+      ],
+      "ports": [
+        53
+      ],
+      "cluster_id": null,
+      "resolutions": [
+        {
+          "scope": "local",
+          "addresses": [
+            "192.0.2.53"
+          ],
+          "ownership": "REFERENCED_EXTERNAL",
+          "provenance": "CONFIGURED",
+          "resolution": "RESOLVED",
+          "address_kind": "IP_ADDRESS",
+          "verification": "UNVERIFIED",
+          "reason": null
+        }
+      ],
+      "ownership": "REFERENCED_EXTERNAL",
+      "provenance": "CONFIGURED",
+      "resolution": "RESOLVED",
+      "verification": "UNVERIFIED"
+    },
+    {
+      "id": "endpoint:dns-local:198.51.100.4",
+      "kind": "local-dns",
+      "name": "198.51.100.4",
+      "protocols": [
+        "DNS"
+      ],
+      "ports": [
+        53
+      ],
+      "cluster_id": null,
+      "resolutions": [
+        {
+          "scope": "local",
+          "addresses": [
+            "198.51.100.4"
+          ],
+          "ownership": "REFERENCED_EXTERNAL",
+          "provenance": "CONFIGURED",
+          "resolution": "RESOLVED",
+          "address_kind": "IP_ADDRESS",
           "verification": "UNVERIFIED",
           "reason": null
         }

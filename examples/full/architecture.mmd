@@ -2,7 +2,7 @@ flowchart LR
   actor_operator_workstation_974971eaa5["Operator / rinstall"]
   endpoint_endpoint_ssh_jump_f7b7c2ca2d["SSH jump<br/>example-operator-jump<br/>external unresolved"]
   host_bastion1_fd65cf69ce["Bastion<br/>bastion1<br/>DNS · DHCP · proxy · SSH transit"]
-  subgraph monitoring["Monitoring"]
+  subgraph managed_hosts["Managed hosts"]
     direction TB
     host_prom1_abf2e7bd7a["Monitoring host<br/>prom1"]
   end

@@ -10,7 +10,7 @@ flowchart LR
   actor_operator_workstation_974971eaa5["Operator / rinstall"]
   endpoint_endpoint_ssh_jump_f7b7c2ca2d["SSH jump<br/>example-operator-jump<br/>external unresolved"]
   host_bastion1_fd65cf69ce["Bastion<br/>bastion1<br/>DNS · DHCP · proxy · SSH transit"]
-  subgraph monitoring["Monitoring"]
+  subgraph managed_hosts["Managed hosts"]
     direction TB
     host_prom1_abf2e7bd7a["Monitoring host<br/>prom1"]
   end
@@ -41,7 +41,7 @@ flowchart TB
   network_management_288965a1f2["Management<br/>192.0.2.0/24<br/>VMware: EXAMPLE_MANAGEMENT_NETWORK<br/>bastion: 192.0.2.10"]
   host_bastion1_fd65cf69ce["bastion1<br/>multi-homed<br/>not a router"]
   network_customer_b6c4586387["Customer<br/>198.51.100.0/28<br/>VMware: EXAMPLE_CUSTOMER_NETWORK<br/>bastion: 198.51.100.4<br/>gateway: 198.51.100.1"]
-  host_prom1_abf2e7bd7a["prom1<br/>198.51.100.6"]
+  host_prom1_abf2e7bd7a["Prometheus host<br/>prom1<br/>198.51.100.6"]
   subgraph cluster_cluster_rke2_rancher_de77c71a50["RKE2 / Rancher"]
     direction TB
     host_rancher1_d47e6b0e07["rancher1 primary<br/>198.51.100.11"]
@@ -93,7 +93,7 @@ flowchart TB
 
 | Property | Desired value |
 | --- | --- |
-| vCenter endpoint | runtime-supplied / unresolved |
+| vCenter endpoint | runtime-supplied vCenter endpoint |
 | Datacenter | EXAMPLE_DATACENTER |
 | Resource pool | EXAMPLE_CLUSTER/Resources |
 | Datastore | EXAMPLE_DATASTORE |
@@ -103,10 +103,10 @@ flowchart TB
 | Terraform backend | gitlab (full-example-infra) |
 | Template: infra | EXAMPLE_TEMPLATE_INFRA |
 | Template: rke2 | EXAMPLE_TEMPLATE_RKE2 |
-| VMware network: customer | unresolved |
-| VMware network: management | unresolved |
-| VMware network: downstream:vlan565 | unresolved |
-| VMware network: downstream:vlan566 | unresolved |
+| VMware network: customer | EXAMPLE_CUSTOMER_NETWORK |
+| VMware network: management | EXAMPLE_MANAGEMENT_NETWORK |
+| VMware network: downstream:vlan565 | EXAMPLE_DOWNSTREAM_NETWORK_565 |
+| VMware network: downstream:vlan566 | EXAMPLE_DOWNSTREAM_NETWORK_566 |
 
 ## Hosts and Clusters
 
@@ -150,7 +150,7 @@ flowchart TB
 | Source | Destination | Transport | Purpose |
 | --- | --- | --- | --- |
 | bastion1 | 192.0.2.53 | TCP/UDP * -&gt; 53 | Bastion operating system uses configured management DNS resolvers |
-| prom1, rancher1, rancher2, rancher3 | Bastion DNS | TCP/UDP * -&gt; 53 | Local nodes use bastion DNS |
+| prom1, rancher1, rancher2, rancher3 | 198.51.100.4 | TCP/UDP * -&gt; 53 | Local nodes use their effective configured DNS servers |
 | Bastion DNS | Upstream DNS | TCP/UDP * -&gt; 53 | Bastion DNS forwards to configured upstream resolvers |
 | rancher1, rancher2, rancher3 | Bastion Squid proxy | TCP * -&gt; 3128 | RKE2 and Rancher nodes use configured bastion Squid proxy |
 | Bastion Squid proxy | external repositories and service endpoints | TCP * -&gt; 80/443 | Squid reaches required external repositories and service endpoints |
@@ -204,7 +204,7 @@ flowchart TB
 | Category | Source | Destination | Transport | Purpose | Resolution | Verification |
 | --- | --- | --- | --- | --- | --- | --- |
 | Core services | bastion1 | 192.0.2.53 | TCP/UDP * -&gt; 53 | Bastion operating system uses configured management DNS resolvers | 192.0.2.10, 192.0.2.53 | unverified |
-| Core services | prom1, rancher1, rancher2, rancher3 | Bastion DNS | TCP/UDP * -&gt; 53 | Local nodes use bastion DNS | 198.51.100.6, 198.51.100.11, 198.51.100.12, 198.51.100.13, 198.51.100.4 | unverified |
+| Core services | prom1, rancher1, rancher2, rancher3 | 198.51.100.4 | TCP/UDP * -&gt; 53 | Local nodes use their effective configured DNS servers | 198.51.100.6, 198.51.100.11, 198.51.100.12, 198.51.100.13, 198.51.100.4 | unverified |
 | Core services | Bastion DNS | Upstream DNS | TCP/UDP * -&gt; 53 | Bastion DNS forwards to configured upstream resolvers | 192.0.2.10, 192.0.2.54, 192.0.2.55 | unverified |
 | Core services | rancher1, rancher2, rancher3 | Bastion Squid proxy | TCP * -&gt; 3128 | RKE2 and Rancher nodes use configured bastion Squid proxy | 198.51.100.11, 198.51.100.12, 198.51.100.13, 198.51.100.4 | unverified |
 | Core services | Bastion Squid proxy | external repositories and service endpoints | TCP * -&gt; 80/443 | Squid reaches required external repositories and service endpoints | symbolic / unresolved | unverified |

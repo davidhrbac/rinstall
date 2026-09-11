@@ -19,6 +19,7 @@ from lib.topology import (
     DESIRED_ONLY,
     DOWNSTREAM,
     EXTERNALLY_MANAGED,
+    EXTERNAL,
     EXTERNAL_ROUTING_DEPENDENCY,
     EXTERNAL_UNRESOLVED,
     IP_ADDRESS,
@@ -192,6 +193,88 @@ def test_topology_preserves_explicit_vsphere_optional_values():
     assert vsphere.clone_timeout_minutes == 90
     assert vsphere.allow_unverified_ssl is True
     assert "90 minutes" in render_topology_markdown(topology)
+
+
+def test_topology_uses_effective_dns_per_node_and_does_not_require_bastion_dns():
+    config = raw_config()
+    config["local"]["vlan"]["dns_nodes"] = ["prom1"]
+    config["nodes"]["prom1"]["dns_servers"] = ["192.0.2.61", "192.0.2.62"]
+    topology = build_desired_topology(expand_env(config))
+
+    rules = {
+        rule.id: rule
+        for rule in topology.connectivity_rules
+        if rule.id.startswith("core-dns:local-nodes")
+    }
+    assert set(rules) == {"core-dns:local-nodes", "core-dns:local-nodes:1"}
+    assert {
+        frozenset(item.reference.id for item in rule.source.resolved if item.reference)
+        for rule in rules.values()
+    } == {frozenset({"prom1"}), frozenset({"rancher1", "rancher2", "rancher3"})}
+
+
+def test_topology_groups_each_node_by_its_effective_dns_destinations():
+    config = raw_config()
+    config["local"]["vlan"]["dns_nodes"] = ["bastion1", "prom1"]
+    config["nodes"]["prom1"]["dns_servers"] = ["192.0.2.61", "192.0.2.62"]
+    config = expand_env(config)
+    config["nodes"]["rancher2"]["dns_servers"] = ["192.0.2.70"]
+    topology = build_desired_topology(config)
+
+    rules = {
+        rule.id: rule
+        for rule in topology.connectivity_rules
+        if rule.id.startswith("core-dns:local-nodes")
+    }
+    grouped = {
+        frozenset(item.reference.id for item in rule.source.resolved if item.reference): {
+            item.address for item in rule.destination.resolved
+        }
+        for rule in rules.values()
+    }
+    assert grouped == {
+        frozenset({"prom1"}): {"192.0.2.61", "192.0.2.62"},
+        frozenset({"rancher2"}): {"192.0.2.70"},
+        frozenset({"rancher1", "rancher3"}): {"10.14.17.4", "10.14.17.6"},
+    }
+
+
+def test_topology_preserves_configured_ports_and_vcenter_endpoint():
+    config = raw_config()
+    config["terraform"]["backend"]["url"] = "https://gitlab.example:9443"
+    config["infra"]["vsphere"]["server"] = "https://vcenter.example:8443/sdk"
+    config["ssh"]["jump_host"] = {"alias": "jump", "hostname": "jump.example.invalid"}
+    topology = build_desired_topology(expand_env(config))
+
+    endpoints = {endpoint.id: endpoint for endpoint in topology.endpoints}
+    assert endpoints["endpoint:terraform-backend"].ports == (9443,)
+    assert endpoints["endpoint:vcenter"].name == "https://vcenter.example:8443/sdk"
+    assert endpoints["endpoint:vcenter"].provenance == CONFIGURED
+    assert endpoints["endpoint:vcenter"].resolutions[0].provenance == CONFIGURED
+    assert endpoints["endpoint:rancher"].resolutions[1].provenance == EXTERNAL
+    assert endpoints["endpoint:ssh-jump"].ports == (22,)
+
+    config["ssh"]["jump_host"] = "opaque-alias"
+    opaque = build_desired_topology(expand_env(config))
+    assert next(endpoint for endpoint in opaque.endpoints if endpoint.id == "endpoint:ssh-jump").ports == ()
+
+
+def test_topology_renders_without_optional_management_network():
+    config = raw_config()
+    config["infra"]["networks"].pop("management")
+    config["nodes"]["bastion1"]["nics"].pop()
+    topology = build_desired_topology(expand_env(config))
+
+    assert "Management" not in render_topology_network_mermaid(topology)
+    assert "Monitoring host" in render_topology_architecture_mermaid(topology)
+
+
+def test_topology_accepts_explicit_ssh_target_outside_node_interfaces():
+    config = raw_config()
+    config["nodes"]["prom1"]["ssh_ip"] = "192.0.2.99"
+    topology = build_desired_topology(expand_env(config))
+
+    assert next(host for host in topology.hosts if host.id == "prom1").ssh_target == "192.0.2.99"
 
 
 def by_id(items):
@@ -738,6 +821,10 @@ def test_v2_external_ssh_alias_and_role_aware_access_paths(monkeypatch, tmp_path
     assert paths["bastion1"].target == "192.0.2.10"
     assert paths["rancher1"].target == "198.51.100.11"
     assert all(path.resolution == PARTIAL for path in paths.values())
+
+    assert "Utility host" in render_topology_markdown(topology)
+    assert "Utility host" in render_topology_architecture_mermaid(topology)
+    assert "Utility host" in render_topology_network_mermaid(topology)
 
 
 def test_v2_access_paths_are_direct_without_configured_jump_alias():

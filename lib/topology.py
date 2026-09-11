@@ -1,4 +1,4 @@
-from dataclasses import asdict, dataclass, replace
+from dataclasses import asdict, dataclass
 from hashlib import sha256
 from html import escape
 from ipaddress import ip_address, ip_interface, ip_network
@@ -6,7 +6,7 @@ import json
 import re
 from urllib.parse import urlparse
 
-from lib.env_config import gitlab_backend_state_address
+from lib.env_config import effective_local_dns_servers, gitlab_backend_state_address
 from lib.ssh_config import configured_ssh_jump_hops, node_ssh_hops, node_ssh_target
 
 RINSTALL_ARCHITECTURE = "RINSTALL_ARCHITECTURE"
@@ -88,6 +88,7 @@ class HostTopology:
     provenance: str = DERIVED
     resolution: str = RESOLVED
     verification: str = DESIRED_ONLY
+    dns_servers: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -400,66 +401,6 @@ class EnvironmentTopology:
     def to_dict(self):
         return _json_value(asdict(self))
 
-    @property
-    def renderer_connectivity_rules(self):
-        prefixes = (
-            "downstream-dns:",
-            "rancher-downstream-ssh:",
-            "downstream-dhcp-request:",
-            "downstream-dhcp-response:",
-        )
-        downstream_by_interface = {
-            downstream.interface_name: downstream for downstream in self.downstream_networks
-        }
-        compatible = []
-        for rule in self.connectivity_rules:
-            if not rule.id.startswith(prefixes):
-                continue
-            if rule.id.startswith("downstream-dhcp-"):
-                downstream = downstream_by_interface[rule.id.rsplit(":", 1)[1]]
-                consumer = ResolvedEndpoint(
-                    downstream.interface_name,
-                    downstream.cidr,
-                    EntityReference(
-                        "downstream-consumer", f"consumer:{downstream.id}"
-                    ),
-                    NETWORK_CIDR,
-                )
-                service = ResolvedEndpoint(
-                    f"{downstream.bastion_host}:{downstream.interface_name}",
-                    downstream.bastion_address,
-                    EntityReference("service", f"dhcp:{downstream.interface_name}"),
-                    IP_ADDRESS,
-                )
-                if rule.id.startswith("downstream-dhcp-request:"):
-                    rule = replace(
-                        rule,
-                        source=replace(rule.source, resolved=(consumer,)),
-                        destination=replace(rule.destination, resolved=(service,)),
-                        purpose="Downstream DHCP request",
-                    )
-                else:
-                    rule = replace(
-                        rule,
-                        source=replace(rule.source, resolved=(service,)),
-                        destination=replace(rule.destination, resolved=(consumer,)),
-                        purpose="Downstream DHCP response",
-                    )
-            compatible.append(rule)
-        prefix_order = {prefix: index for index, prefix in enumerate(prefixes)}
-        downstream_order = {
-            downstream.interface_name: index
-            for index, downstream in enumerate(self.downstream_networks)
-        }
-        compatible.sort(
-            key=lambda rule: (
-                downstream_order[rule.id.rsplit(":", 1)[1]],
-                next(index for prefix, index in prefix_order.items() if rule.id.startswith(prefix)),
-            )
-        )
-        return tuple(compatible)
-
-
 DOWNSTREAM_DNS_RULE = ArchitectureRule(
     id="downstream-dns",
     protocols=("TCP", "UDP"),
@@ -606,24 +547,6 @@ def _reference_symbolic(reference):
     return reference.id if reference.id.startswith(prefix) else f"{prefix}{reference.id}"
 
 
-def _endpoint_text(endpoint):
-    return ", ".join(
-        (item.address if item.id == item.address else f"{item.id} ({item.address})")
-        if item.address is not None
-        else item.id
-        for item in endpoint.resolved
-    ) or "unknown"
-
-
-def _protocol_port(rule):
-    protocols = "/".join(rule.protocols)
-    destination_ports = "/".join(str(port) for port in rule.destination_ports)
-    if rule.source_ports:
-        source_ports = "/".join(str(port) for port in rule.source_ports)
-        return f"{protocols} {source_ports} -> {destination_ports}"
-    return f"{protocols} {destination_ports}"
-
-
 def _markdown(value):
     return escape(str(value), quote=False).replace("|", "\\|").replace("\r", "").replace("\n", "<br>")
 
@@ -651,43 +574,17 @@ def _mermaid_id(kind, value):
     return f"{kind}_{slug}_{digest}"
 
 
-def _host_address(host):
-    return host.local_ip or host.primary_ip or host.ssh_target or "unknown"
-
-
-def _external_jump_hosts(topology):
-    return tuple(
-        host
+def local_dns_connectivity_rule_ids(topology):
+    """Return one rule id for every distinct effective local DNS destination set."""
+    groups = {
+        tuple(host.dns_servers)
         for host in topology.hosts
-        if host.id != topology.metadata.bastion_host
-        and ("jump-host" in host.capabilities or "external-jump" in host.roles)
-    )
-
-
-def _known_network(topology, network):
-    return network.cidr is not None or any(
-        interface.network == network.id and interface.address is not None
-        for interface in topology.interfaces
-    )
-
-
-def _downstream_for_endpoint(topology, endpoint):
-    endpoint_values = {
-        value
-        for resolved in endpoint.resolved
-        for value in (resolved.id, resolved.address)
+        if host.id != topology.metadata.bastion_host and host.dns_servers
     }
-    return next(
-        (
-            downstream
-            for downstream in topology.downstream_networks
-            if downstream.id in endpoint_values
-            or downstream.interface_name in endpoint_values
-            or downstream.cidr in endpoint_values
-            or downstream.bastion_address in endpoint_values
-        ),
-        None,
-    )
+    return {
+        "core-dns:local-nodes" if index == 0 else f"core-dns:local-nodes:{index}"
+        for index, _ in enumerate(sorted(groups))
+    }
 
 
 def validate_topology(topology):
@@ -783,7 +680,6 @@ def validate_topology(topology):
             host.local_ip != expected_local
             or host.management_ip != expected_management
             or (host.primary_ip is not None and host.primary_ip not in interface_addresses)
-            or (host.ssh_target is not None and host.ssh_target not in interface_addresses)
         ):
             raise ValueError(
                 f"invalid topology: host {host.id} summary addresses do not match interfaces"
@@ -1027,7 +923,8 @@ def validate_topology(topology):
         if contract is None:
             if endpoint.kind == "terraform-backend" and (
                 endpoint.protocols not in {("HTTP",), ("HTTPS",)}
-                or endpoint.ports not in {(80,), (443,)}
+                or len(endpoint.ports) != 1
+                or not 1 <= endpoint.ports[0] <= 65535
             ):
                 raise ValueError(
                     "invalid topology: Terraform backend protocol/port is inconsistent"
@@ -1448,10 +1345,10 @@ def validate_topology(topology):
                 f"invalid topology: administrative rule {rule_id} does not match access paths"
             )
 
+    local_dns_rule_ids = local_dns_connectivity_rule_ids(topology)
     required_rule_ids = {
         *expected_admin_edges,
         "core-dns:bastion-os",
-        "core-dns:local-nodes",
         "core-dns:upstream",
         "core-proxy:rancher-nodes",
         "core-proxy:upstream",
@@ -1459,6 +1356,7 @@ def validate_topology(topology):
         "deployment:vcenter-api",
         "rke2:bastion-kubernetes-api",
     }
+    required_rule_ids.update(local_dns_rule_ids)
     if rancher_clusters[0].join_host_ids:
         required_rule_ids.add("rke2:join-primary")
     for downstream in topology.downstream_networks:
@@ -1482,7 +1380,6 @@ def validate_topology(topology):
 
     fixed_contracts = {
         "core-dns:bastion-os": (CORE_SERVICE, ("TCP", "UDP"), (53,)),
-        "core-dns:local-nodes": (CORE_SERVICE, ("TCP", "UDP"), (53,)),
         "core-dns:upstream": (CORE_SERVICE, ("TCP", "UDP"), (53,)),
         "core-proxy:rancher-nodes": (
             CORE_SERVICE,
@@ -1494,6 +1391,8 @@ def validate_topology(topology):
         "deployment:vcenter-api": (DEPLOYMENT, ("TCP",), (443,)),
         "rke2:bastion-kubernetes-api": (RKE2_RANCHER, ("TCP",), (6443,)),
     }
+    for rule_id in local_dns_rule_ids:
+        fixed_contracts[rule_id] = (CORE_SERVICE, ("TCP", "UDP"), (53,))
     if "rke2:join-primary" in required_rule_ids:
         fixed_contracts["rke2:join-primary"] = (RKE2_RANCHER, ("TCP",), (9345,))
     for rule_id, (category, protocols, destination_ports) in fixed_contracts.items():
@@ -1504,6 +1403,22 @@ def validate_topology(topology):
             or rule.destination_ports != destination_ports
         ):
             raise ValueError(f"invalid topology: connectivity rule {rule_id} contract is inconsistent")
+
+    for index, rule_id in enumerate(sorted(local_dns_rule_ids)):
+        rule = indexes["connectivity-rule"][rule_id]
+        expected_hosts = {
+            host.id
+            for host in topology.hosts
+            if host.id != metadata.bastion_host and host.dns_servers
+            and tuple(host.dns_servers) == tuple(
+                item.address for item in rule.destination.resolved
+            )
+        }
+        actual_hosts = {
+            item.reference.id for item in rule.source.resolved if item.reference is not None
+        }
+        if actual_hosts != expected_hosts:
+            raise ValueError(f"invalid topology: local DNS rule {rule_id} source set is inconsistent")
 
     for downstream in topology.downstream_networks:
         route_rule_id = f"external-routing:customer:{downstream.interface_name}"
@@ -1576,6 +1491,7 @@ def build_desired_topology(config):
                     else None
                 ),
                 template_id=node["template"],
+                dns_servers=effective_local_dns_servers(node, config["local_vlan"]),
             )
         )
 
@@ -1790,24 +1706,24 @@ def build_desired_topology(config):
         EndpointTopology(
             id="endpoint:vcenter",
             kind="vcenter",
-            name="runtime-supplied vCenter endpoint",
+            name=config["infra"]["vsphere"].get("server") or "runtime-supplied vCenter endpoint",
             protocols=("HTTPS",),
             ports=(443,),
             cluster_id=None,
             resolutions=(
                 EndpointResolutionTopology(
                     scope="external",
-                    addresses=(),
+                    addresses=((config["infra"]["vsphere"].get("server"),) if config["infra"]["vsphere"].get("server") else ()),
                     ownership=REFERENCED_EXTERNAL,
-                    provenance=EXTERNAL,
-                    resolution=RUNTIME_SUPPLIED,
+                    provenance=(CONFIGURED if config["infra"]["vsphere"].get("server") else EXTERNAL),
+                    resolution=(RESOLVED if config["infra"]["vsphere"].get("server") else RUNTIME_SUPPLIED),
                     verification=UNVERIFIED,
-                    reason="vCenter endpoint is supplied at runtime outside config.yaml.",
+                    reason=(None if config["infra"]["vsphere"].get("server") else "vCenter endpoint is supplied at runtime outside config.yaml."),
                 ),
             ),
             ownership=REFERENCED_EXTERNAL,
-            provenance=EXTERNAL,
-            resolution=RUNTIME_SUPPLIED,
+            provenance=(CONFIGURED if config["infra"]["vsphere"].get("server") else EXTERNAL),
+            resolution=(RESOLVED if config["infra"]["vsphere"].get("server") else RUNTIME_SUPPLIED),
             verification=UNVERIFIED,
         ),
     ]
@@ -1816,7 +1732,8 @@ def build_desired_topology(config):
     backend_url = backend["url"]
     backend_scheme = urlparse(backend_url).scheme.lower()
     backend_protocols = (backend_scheme.upper(),) if backend_scheme else ()
-    backend_ports = (443,) if backend_scheme == "https" else ((80,) if backend_scheme == "http" else ())
+    parsed_backend_url = urlparse(backend_url)
+    backend_ports = ((parsed_backend_url.port,) if parsed_backend_url.port else ((443,) if backend_scheme == "https" else ((80,) if backend_scheme == "http" else ())))
     endpoints.append(
         EndpointTopology(
             id="endpoint:terraform-backend",
@@ -1842,6 +1759,39 @@ def build_desired_topology(config):
             verification=UNVERIFIED,
         )
     )
+    local_dns_addresses = sorted(
+        {
+            address
+            for node in config["nodes"].values()
+            for address in effective_local_dns_servers(node, config["local_vlan"])
+        }
+    )
+    for address in local_dns_addresses:
+        endpoints.append(
+            EndpointTopology(
+                id=f"endpoint:dns-local:{address}",
+                kind="local-dns",
+                name=address,
+                protocols=("DNS",),
+                ports=(53,),
+                cluster_id=None,
+                resolutions=(
+                    EndpointResolutionTopology(
+                        scope="local",
+                        addresses=(address,),
+                        ownership=REFERENCED_EXTERNAL,
+                        provenance=CONFIGURED,
+                        resolution=RESOLVED,
+                        address_kind=IP_ADDRESS,
+                        verification=UNVERIFIED,
+                    ),
+                ),
+                ownership=REFERENCED_EXTERNAL,
+                provenance=CONFIGURED,
+                resolution=RESOLVED,
+                verification=UNVERIFIED,
+            )
+        )
 
     jump_hops = configured_ssh_jump_hops(config)
     jump_endpoint_refs = []
@@ -1859,7 +1809,7 @@ def build_desired_topology(config):
                 kind="ssh-jump-alias",
                 name=jump_hop.alias,
                 protocols=("SSH",),
-                ports=((jump_hop.port,) if jump_hop.port else ()),
+                ports=((jump_hop.port or 22,) if jump_hop.hostname else ()),
                 cluster_id=None,
                 resolutions=(
                     EndpointResolutionTopology(
@@ -2349,10 +2299,14 @@ def build_desired_topology(config):
             provenance=DERIVED,
         )
 
-    non_bastion_hosts = tuple(host for host in hosts if host.id != bastion_host)
-    if non_bastion_hosts and bastion_host in config["local_vlan"]["dns_nodes"]:
+    local_dns_groups = {}
+    for host in hosts:
+        if host.id != bastion_host and host.dns_servers:
+            local_dns_groups.setdefault(tuple(host.dns_servers), []).append(host)
+    for index, (dns_servers, source_hosts) in enumerate(sorted(local_dns_groups.items())):
+        rule_id = "core-dns:local-nodes" if index == 0 else f"core-dns:local-nodes:{index}"
         add_connectivity_rule(
-            "core-dns:local-nodes",
+            rule_id,
             ConnectivityEndpoint(
                 "hosts:local-core",
                 tuple(
@@ -2362,24 +2316,25 @@ def build_desired_topology(config):
                         EntityReference("host", host.id),
                         IP_ADDRESS,
                     )
-                    for host in non_bastion_hosts
+                    for host in source_hosts
                 ),
             ),
             ConnectivityEndpoint(
-                "service:dns:local",
-                (
+                f"service:dns:local:{index}",
+                tuple(
                     ResolvedEndpoint(
-                        "dns:local",
-                        bastion_service_ip,
-                        EntityReference("service", "dns:local"),
+                        address,
+                        address,
+                        EntityReference("endpoint", f"endpoint:dns-local:{address}"),
                         IP_ADDRESS,
-                    ),
+                    )
+                    for address in dns_servers
                 ),
             ),
             ("TCP", "UDP"),
             (),
             (53,),
-            "Local nodes use bastion DNS",
+            "Local nodes use their effective configured DNS servers",
             CORE_SERVICE,
         )
 
@@ -2785,11 +2740,16 @@ def render_topology_architecture_mermaid(topology):
         consumer.id: _mermaid_id("consumer", consumer.id)
         for consumer in downstream_consumers
     }
-    monitoring_hosts = tuple(
-        host for host in topology.hosts if MONITORING_HOST_ONLY in host.capabilities
+    cluster_member_ids = {
+        host_id for cluster in topology.clusters for host_id in cluster.member_host_ids
+    }
+    managed_hosts = tuple(
+        host
+        for host in topology.hosts
+        if host.id != bastion.id and host.id not in cluster_member_ids
     )
-    monitoring_ids = {
-        host.id: _mermaid_id("host", host.id) for host in monitoring_hosts
+    managed_ids = {
+        host.id: _mermaid_id("host", host.id) for host in managed_hosts
     }
     access_paths = {path.destination.id: path for path in topology.access_paths}
     lines = ["flowchart LR", f'  {operator_id}["Operator / rinstall"]']
@@ -2811,12 +2771,13 @@ def render_topology_architecture_mermaid(topology):
         f'  {bastion_id}["Bastion<br/>{_mermaid(bastion.id)}<br/>'
         'DNS · DHCP · proxy · SSH transit"]'
     )
-    if monitoring_hosts:
-        lines.append('  subgraph monitoring["Monitoring"]')
+    if managed_hosts:
+        lines.append('  subgraph managed_hosts["Managed hosts"]')
         lines.append("    direction TB")
-        for host in monitoring_hosts:
+        for host in managed_hosts:
+            host_kind = "Monitoring" if MONITORING_HOST_ONLY in host.capabilities else host.roles[0].title()
             lines.append(
-                f'    {monitoring_ids[host.id]}["Monitoring host<br/>{_mermaid(host.id)}"]'
+                f'    {managed_ids[host.id]}["{_mermaid(host_kind)} host<br/>{_mermaid(host.id)}"]'
             )
         lines.append("  end")
 
@@ -2869,7 +2830,7 @@ def render_topology_architecture_mermaid(topology):
         backend_id = _mermaid_id("endpoint", context.terraform_backend.endpoint_id)
         lines.extend(
             [
-                f'  {vsphere_id}["vSphere<br/>runtime endpoint unresolved"]',
+                f'  {vsphere_id}["vSphere<br/>{_mermaid("runtime endpoint unresolved" if next(endpoint for endpoint in topology.endpoints if endpoint.id == context.vsphere.endpoint_id).resolution == RUNTIME_SUPPLIED else next(endpoint for endpoint in topology.endpoints if endpoint.id == context.vsphere.endpoint_id).name)}"]',
                 f'  {backend_id}["Terraform state backend<br/>GitLab"]',
             ]
         )
@@ -2882,10 +2843,10 @@ def render_topology_architecture_mermaid(topology):
     else:
         lines.append(f"  {operator_id} --> {bastion_id}")
 
-    for host in monitoring_hosts:
+    for host in managed_hosts:
         path = access_paths.get(host.id)
         if path is not None and any(hop.kind == "host" and hop.id == bastion.id for hop in path.hops):
-            lines.append(f"  {bastion_id} --> {monitoring_ids[host.id]}")
+            lines.append(f"  {bastion_id} --> {managed_ids[host.id]}")
 
     for cluster in topology.clusters:
         cluster_id = cluster_ids[cluster.id]
@@ -2949,14 +2910,15 @@ def render_topology_network_mermaid(topology):
         address = f"<br/>{_mermaid(interface.address)}" if interface is not None else ""
         return f"{_mermaid(host_id)}{_mermaid(suffix)}{address}"
 
-    management = networks["management"]
-    management_interface = interfaces_by_network_host.get(("management", bastion.id))
-    management_label = (
-        f"Management<br/>{_mermaid(management.cidr or 'unknown')}<br/>"
-        f"VMware: {_mermaid(management.vmware_network)}<br/>"
-        f"bastion: {_mermaid(management_interface.address if management_interface else 'unknown')}"
-    )
-    lines.append(f'  {network_ids["management"]}["{management_label}"]')
+    management = networks.get("management")
+    if management is not None:
+        management_interface = interfaces_by_network_host.get(("management", bastion.id))
+        management_label = (
+            f"Management<br/>{_mermaid(management.cidr or 'unknown')}<br/>"
+            f"VMware: {_mermaid(management.vmware_network)}<br/>"
+            f"bastion: {_mermaid(management_interface.address if management_interface else 'unknown')}"
+        )
+        lines.append(f'  {network_ids["management"]}["{management_label}"]')
     lines.append(
         f'  {host_ids[bastion.id]}["{_mermaid(bastion.id)}<br/>multi-homed<br/>not a router"]'
     )
@@ -2975,11 +2937,17 @@ def render_topology_network_mermaid(topology):
             customer_label.append(f"gateway: {_mermaid(customer.gateway)}")
         lines.append(f'  {network_ids[customer.id]}["' + "<br/>".join(customer_label) + '"]')
 
-    monitoring_hosts = [
-        host for host in topology.hosts if MONITORING_HOST_ONLY in host.capabilities
+    cluster_member_ids = {
+        host_id for cluster in topology.clusters for host_id in cluster.member_host_ids
+    }
+    managed_hosts = [
+        host
+        for host in topology.hosts
+        if host.id != bastion.id and host.id not in cluster_member_ids
     ]
-    for host in monitoring_hosts:
-        lines.append(f'  {host_ids[host.id]}["{host_label(host.id)}"]')
+    for host in managed_hosts:
+        role = host.roles[0].title() if host.roles else "Managed"
+        lines.append(f'  {host_ids[host.id]}["{_mermaid(role)} host<br/>{host_label(host.id)}"]')
 
     for cluster in topology.clusters:
         cluster_id = _mermaid_id("cluster", cluster.id)
@@ -3013,7 +2981,7 @@ def render_topology_network_mermaid(topology):
         ])
 
     for interface in topology.interfaces:
-        if interface.host == bastion.id and interface.network == "management":
+        if interface.host == bastion.id and interface.network == "management" and management is not None:
             lines.append(f"  {network_ids[interface.network]} --- {host_ids[interface.host]}")
         elif interface.host == bastion.id:
             lines.append(f"  {host_ids[interface.host]} --- {network_ids[interface.network]}")
@@ -3280,7 +3248,7 @@ def _render_support_topology_markdown(topology):
     if context is not None:
         vsphere = context.vsphere
         deployment_rows = [
-            ("vCenter endpoint", "runtime-supplied / unresolved"),
+            ("vCenter endpoint", next(endpoint.name for endpoint in topology.endpoints if endpoint.id == vsphere.endpoint_id)),
             ("Datacenter", vsphere.datacenter), ("Resource pool", vsphere.resource_pool),
             ("Datastore", vsphere.datastore), ("VM folder", vsphere.folder),
             (
@@ -3295,7 +3263,14 @@ def _render_support_topology_markdown(topology):
             ("Terraform backend", f"{context.terraform_backend.type} ({context.terraform_backend.state_name})"),
         ]
         deployment_rows.extend((f"Template: {item.id}", item.value or "unresolved") for item in vsphere.templates)
-        deployment_rows.extend((f"VMware network: {item.id}", item.value or "unresolved") for item in vsphere.networks)
+        network_by_id = {item.id: item for item in topology.networks}
+        deployment_rows.extend(
+            (
+                f"VMware network: {item.id}",
+                network_by_id[item.reference.id].vmware_network if item.reference else item.value or "unresolved",
+            )
+            for item in vsphere.networks
+        )
         lines.extend(f"| {_markdown(key)} | {_markdown(value)} |" for key, value in deployment_rows)
     lines.extend(["", "## Hosts and Clusters", "", "| Component | Desired addresses / membership | SSH target |", "| --- | --- | --- |"])
     bastion = next(host for host in topology.hosts if host.id == metadata.bastion_host)
@@ -3305,7 +3280,8 @@ def _render_support_topology_markdown(topology):
             continue
         if any(host.id in cluster.member_host_ids for cluster in topology.clusters):
             continue
-        lines.append(f"| Monitoring: {_markdown(host.id)} | {_markdown(host.local_ip or 'unknown')} | {_markdown(host.ssh_target or 'unknown')} |")
+        host_kind = "Monitoring" if MONITORING_HOST_ONLY in host.capabilities else host.roles[0].title()
+        lines.append(f"| {_markdown(host_kind)}: {_markdown(host.id)} | {_markdown(host.local_ip or 'unknown')} | {_markdown(host.ssh_target or 'unknown')} |")
     for cluster in topology.clusters:
         members = ", ".join(
             f"{host_id} ({'primary' if host_id == cluster.primary_host_id else 'member'})"

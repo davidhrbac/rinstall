@@ -244,6 +244,15 @@ def test_derives_management_ssh_ip_from_static_management_nic():
     assert resolved["nodes"]["bastion1"]["ssh_ip"] == "192.0.2.10"
 
 
+def test_explicit_ssh_ip_is_allowed_outside_configured_nic_addresses():
+    config = raw_example()
+    config["nodes"]["prom1"]["ssh_ip"] = "192.0.2.99"
+
+    resolved = expand_env(config)
+
+    assert resolved["nodes"]["prom1"]["ssh_ip"] == "192.0.2.99"
+
+
 def test_resolves_renamed_management_profile_to_its_device():
     config = raw_example()
     config["bastion"]["network_connection_names"] = {"ens224": "mgmt"}
