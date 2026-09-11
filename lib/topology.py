@@ -1336,9 +1336,13 @@ def validate_topology(topology):
             or route.network_ref.kind != "network"
             or route_interface.host != metadata.bastion_host
             or route_interface.network != route_network.id
-            or route_interface.address is None
-            or route_interface.prefix is None
-            or ip_address(route.gateway)
+        ):
+            raise ValueError("invalid topology: vSphere route linkage is inconsistent")
+        if route_interface.address is None or route_interface.prefix is None:
+            if route.resolution != PARTIAL:
+                raise ValueError("invalid topology: unresolved vSphere route lacks static interface addressing")
+        elif (
+            ip_address(route.gateway)
             not in ip_interface(
                 f"{route_interface.address}/{route_interface.prefix}"
             ).network
@@ -2072,12 +2076,16 @@ def build_desired_topology(config):
             None,
         )
         if route_nic_index is not None
-        else _source_interface_for_destinations(
-            bastion_host,
-            (vsphere_route_gateway,),
-            interfaces,
-            networks,
-        )
+        else None
+    )
+    route_resolved = bool(
+        route_interface
+        and route_interface.address is not None
+        and route_interface.prefix is not None
+        and ip_address(vsphere_route_gateway)
+        in ip_interface(
+            f"{route_interface.address}/{route_interface.prefix}"
+        ).network
     )
     state_name = f"{environment_id}-infra"
     deployment_context = DeploymentContextTopology(
@@ -2115,7 +2123,7 @@ def build_desired_topology(config):
                     if route_interface
                     else None
                 ),
-                resolution=RESOLVED if route_interface else PARTIAL,
+                resolution=RESOLVED if route_resolved else PARTIAL,
             ),
             clone_timeout_minutes=vsphere.get("clone_timeout"),
             allow_unverified_ssl=vsphere.get("allow_unverified_ssl", False),

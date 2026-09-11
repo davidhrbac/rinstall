@@ -309,6 +309,7 @@ def test_explicit_ssh_ip_is_allowed_outside_configured_nic_addresses():
 
 def test_resolves_renamed_management_profile_to_its_device():
     config = raw_example()
+    config["nodes"]["bastion1"]["nics"][1]["connection_name"] = "ens224"
     config["bastion"]["network_connection_names"] = {"ens224": "mgmt"}
     config["bastion"]["vsphere_route_connection"] = "mgmt"
 
@@ -320,6 +321,8 @@ def test_resolves_renamed_management_profile_to_its_device():
 def test_resolves_renamed_route_connection_to_base_nic():
     config = raw_example()
     config["nodes"]["bastion1"]["nics"][1]["cidr"] = "192.0.2.10/24"
+    config["nodes"]["bastion1"]["nics"][0]["connection_name"] = "ens192"
+    config["nodes"]["bastion1"]["nics"][1]["connection_name"] = "ens224"
     config["bastion"]["network_connection_names"] = {
         "ens192": "local",
         "ens224": "mgmt",
@@ -331,9 +334,46 @@ def test_resolves_renamed_route_connection_to_base_nic():
     assert resolved["bastion"]["route_nic_index"] == 1
 
 
+def test_route_mapping_order_does_not_change_expanded_route_identity():
+    first = raw_example()
+    second = raw_example()
+    for config in (first, second):
+        config["nodes"]["bastion1"]["nics"][0]["connection_name"] = "ens192"
+        config["nodes"]["bastion1"]["nics"][1]["connection_name"] = "ens224"
+        config["nodes"]["bastion1"]["nics"][1]["cidr"] = "192.0.2.10/24"
+        config["bastion"]["vsphere_route_connection"] = "mgmt"
+    first["bastion"]["network_connection_names"] = {
+        "ens192": "local",
+        "ens224": "mgmt",
+    }
+    second["bastion"]["network_connection_names"] = {
+        "ens224": "mgmt",
+        "ens192": "local",
+    }
+
+    first_resolved = expand_env(first)
+    second_resolved = expand_env(second)
+
+    assert first_resolved == second_resolved
+    assert first_resolved["bastion"]["route_nic_index"] == second_resolved["bastion"]["route_nic_index"] == 1
+    assert first_resolved["bastion"]["management_interface"] == second_resolved["bastion"]["management_interface"] == "ens224"
+
+
+def test_local_route_uses_explicit_local_connection_identity():
+    config = raw_example()
+    config["bastion"]["vsphere_route"] = "192.0.2.128/26 10.14.17.1"
+    config["bastion"]["vsphere_route_connection"] = "ens192"
+
+    resolved = expand_env(config)
+
+    assert resolved["bastion"]["route_nic_index"] == 0
+
+
 def test_rejects_route_connection_on_nic_without_vcenter_gateway_subnet():
     config = raw_example()
     config["nodes"]["bastion1"]["nics"][1]["cidr"] = "192.0.2.10/24"
+    config["nodes"]["bastion1"]["nics"][0]["connection_name"] = "ens192"
+    config["nodes"]["bastion1"]["nics"][1]["connection_name"] = "ens224"
     config["bastion"]["network_connection_names"] = {
         "ens192": "local",
         "ens224": "mgmt",
@@ -351,17 +391,20 @@ def test_direct_route_connection_remains_valid_with_static_management_nic():
 
     resolved = expand_env(config)
 
-    assert resolved["bastion"]["route_nic_index"] is None
+    assert resolved["bastion"]["route_nic_index"] == 1
 
 
 def test_partial_connection_mapping_keeps_unmapped_route_connection_valid():
     config = raw_example()
+    config["nodes"]["bastion1"]["nics"][1]["connection_name"] = "ens224"
     config["bastion"]["network_connection_names"] = {"ens224": "mgmt"}
     config["bastion"]["vsphere_route_connection"] = "ens192"
+    config["bastion"]["vsphere_route"] = "192.0.2.128/26 10.14.17.1"
 
     resolved = expand_env(config)
 
     assert resolved["bastion"]["management_interface"] == "ens192"
+    assert resolved["bastion"]["route_nic_index"] == 0
 
 
 def test_rejects_route_connection_missing_from_complete_connection_mapping():
@@ -372,7 +415,31 @@ def test_rejects_route_connection_missing_from_complete_connection_mapping():
     }
     config["bastion"]["vsphere_route_connection"] = "ens999"
 
-    with pytest.raises(SystemExit, match="must match a renamed bastion connection"):
+    with pytest.raises(SystemExit, match="must match exactly one bastion NIC"):
+        expand_env(config)
+
+
+def test_rejects_connection_mapping_source_without_nic_identity():
+    config = raw_example()
+    config["bastion"]["network_connection_names"] = {"ens999": "mgmt"}
+
+    with pytest.raises(SystemExit, match="sources missing bastion NIC"):
+        expand_env(config)
+
+
+def test_rejects_route_connection_without_explicit_nic_identity():
+    config = raw_example()
+    del config["nodes"]["bastion1"]["nics"][1]["connection_name"]
+
+    with pytest.raises(SystemExit, match="connection_name must be a non-empty string"):
+        expand_env(config)
+
+
+def test_rejects_malformed_connection_mapping():
+    config = raw_example()
+    config["bastion"]["network_connection_names"] = ["ens224"]
+
+    with pytest.raises(SystemExit, match="network_connection_names must be a mapping"):
         expand_env(config)
 
 

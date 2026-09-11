@@ -313,6 +313,19 @@ def validate_env_references(env):
     bastion = require(env, "bastion", "env")
     service_node = require(bastion, "service_node", "env.bastion")
 
+    connection_names = bastion.get("network_connection_names", {})
+    if not isinstance(connection_names, dict):
+        raise SystemExit("env.bastion.network_connection_names must be a mapping")
+    if any(
+        not isinstance(source, str)
+        or not source
+        or not isinstance(target, str)
+        or not target
+        for source, target in connection_names.items()
+    ):
+        raise SystemExit(
+            "env.bastion.network_connection_names must map non-empty connection IDs"
+        )
     for dns_node in local_vlan.get("dns_nodes", [service_node]):
         validate_name_exists(dns_node, nodes, "env.local.vlan.dns_nodes")
 
@@ -322,6 +335,33 @@ def validate_env_references(env):
         "bastion",
         "env.bastion.service_node",
     )
+    bastion_nics = nodes[service_node]["nics"]
+    connection_ids = []
+    for index, nic in enumerate(bastion_nics):
+        connection_name = nic.get("connection_name")
+        if not isinstance(connection_name, str) or not connection_name:
+            raise SystemExit(
+                f"env.nodes.{service_node}.nics[{index}].connection_name must be a non-empty string"
+            )
+        if connection_name in connection_ids:
+            raise SystemExit(
+                f"env.nodes.{service_node}.nics[].connection_name must be unique: {connection_name}"
+            )
+        connection_ids.append(connection_name)
+    unmapped_sources = sorted(set(connection_names) - set(connection_ids))
+    if unmapped_sources:
+        raise SystemExit(
+            "env.bastion.network_connection_names sources missing bastion NIC connection_name: "
+            + ", ".join(unmapped_sources)
+        )
+    final_connection_ids = [
+        connection_names.get(connection_id, connection_id)
+        for connection_id in connection_ids
+    ]
+    if len(final_connection_ids) != len(set(final_connection_ids)):
+        raise SystemExit(
+            "env.bastion.network_connection_names produces duplicate bastion connection IDs"
+        )
     validate_role(
         require(require(env, "rke2", "env"), "primary_node", "env.rke2"),
         nodes,
@@ -479,14 +519,11 @@ def expand_env(raw_env):
                     f"{downstream_subnet}"
                 )
     route_connection = require(bastion, "vsphere_route_connection", "env.bastion")
+    if not isinstance(route_connection, str) or not route_connection:
+        raise SystemExit("env.bastion.vsphere_route_connection must be a non-empty string")
     connection_names = bastion.get("network_connection_names", {})
     base_nics = nodes[bastion_name]["nics"]
-    if len(connection_names) == len(base_nics):
-        if route_connection not in connection_names.values():
-            raise SystemExit(
-                "env.bastion.vsphere_route_connection must match a renamed bastion connection"
-            )
-    elif route_connection in connection_names:
+    if route_connection in connection_names and connection_names[route_connection] != route_connection:
         raise SystemExit(
             "env.bastion.vsphere_route_connection refers to a bastion connection that is renamed"
         )
@@ -501,11 +538,16 @@ def expand_env(raw_env):
             "env.bastion.vsphere_route_connection"
         )
     bastion["management_interface"] = management_interfaces[0] if management_interfaces else route_connection
-    route_nic_index = None
-    if management_interfaces:
-        mapping_sources = list(connection_names)
-        if len(mapping_sources) == len(base_nics):
-            route_nic_index = mapping_sources.index(management_interfaces[0])
+    route_nic_indices = [
+        index
+        for index, nic in enumerate(base_nics)
+        if connection_names.get(nic["connection_name"], nic["connection_name"]) == route_connection
+    ]
+    if len(route_nic_indices) != 1:
+        raise SystemExit(
+            "env.bastion.vsphere_route_connection must match exactly one bastion NIC connection_name"
+        )
+    route_nic_index = route_nic_indices[0]
     bastion["route_nic_index"] = route_nic_index
     bastion["dnsmasq_upstream_servers"] = require(
         bastion, "dnsmasq_upstream_servers", "env.bastion"
@@ -531,18 +573,17 @@ def expand_env(raw_env):
             "env.bastion.service_ip must match an IPv4 address assigned to a bastion NIC"
         )
 
-    if route_nic_index is not None:
-        route_nic = nodes[bastion_name]["nics"][route_nic_index]
-        if route_nic.get("ip") is not None:
-            route_network = ip_interface(
-                f"{route_nic['ip']}/{route_nic['prefix']}"
-            ).network
-            route_gateway = ip_address(bastion["vsphere_route"].split()[1])
-            if route_gateway not in route_network:
-                raise SystemExit(
-                    "env.bastion.vsphere_route_connection does not match the "
-                    "vSphere route gateway subnet"
-                )
+    route_nic = nodes[bastion_name]["nics"][route_nic_index]
+    if route_nic.get("ip") is not None:
+        route_network = ip_interface(
+            f"{route_nic['ip']}/{route_nic['prefix']}"
+        ).network
+        route_gateway = ip_address(bastion["vsphere_route"].split()[1])
+        if route_gateway not in route_network:
+            raise SystemExit(
+                "env.bastion.vsphere_route_connection does not match the "
+                "vSphere route gateway subnet"
+            )
 
     rke2 = require(env, "rke2", "env")
     require(rke2, "version", "env.rke2")

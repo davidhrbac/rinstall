@@ -281,6 +281,8 @@ def test_topology_renders_without_optional_management_network():
     config = raw_config()
     config["infra"]["networks"].pop("management")
     config["nodes"]["bastion1"]["nics"].pop()
+    config["bastion"]["vsphere_route"] = "192.0.2.128/26 10.14.17.1"
+    config["bastion"]["vsphere_route_connection"] = "ens192"
     topology = build_desired_topology(expand_env(config))
 
     assert "Management" not in render_topology_network_mermaid(topology)
@@ -785,6 +787,8 @@ def test_topology_binds_bastion_services_to_service_ip_interface():
 
 def test_topology_route_linkage_uses_configured_renamed_connection():
     config = raw_config()
+    config["nodes"]["bastion1"]["nics"][0]["connection_name"] = "ens192"
+    config["nodes"]["bastion1"]["nics"][1]["connection_name"] = "ens224"
     config["bastion"]["network_connection_names"] = {
         "ens192": "local",
         "ens224": "mgmt",
@@ -798,6 +802,42 @@ def test_topology_route_linkage_uses_configured_renamed_connection():
         EntityReference("interface", "bastion1:1"),
         EntityReference("network", "management"),
         RESOLVED,
+    )
+
+
+def test_topology_route_mapping_order_is_semantically_invariant():
+    first = raw_config()
+    second = raw_config()
+    first["bastion"]["network_connection_names"] = {
+        "ens192": "local",
+        "ens224": "mgmt",
+    }
+    second["bastion"]["network_connection_names"] = {
+        "ens224": "mgmt",
+        "ens192": "local",
+    }
+    for config in (first, second):
+        config["nodes"]["bastion1"]["nics"][0]["connection_name"] = "ens192"
+        config["nodes"]["bastion1"]["nics"][1]["connection_name"] = "ens224"
+        config["bastion"]["vsphere_route_connection"] = "mgmt"
+
+    first_route = build_desired_topology(expand_env(first)).deployment_context.vsphere.route
+    second_route = build_desired_topology(expand_env(second)).deployment_context.vsphere.route
+
+    assert first_route == second_route
+
+
+def test_topology_partial_connection_mapping_uses_explicit_route_identity():
+    config = raw_config()
+    config["nodes"]["bastion1"]["nics"][1]["connection_name"] = "ens224"
+    config["bastion"]["network_connection_names"] = {"ens224": "mgmt"}
+    config["bastion"]["vsphere_route_connection"] = "mgmt"
+
+    route = build_desired_topology(expand_env(config)).deployment_context.vsphere.route
+
+    assert (route.interface_ref, route.network_ref) == (
+        EntityReference("interface", "bastion1:1"),
+        EntityReference("network", "management"),
     )
 
 
