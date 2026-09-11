@@ -132,11 +132,55 @@ def test_full_reference_outputs_show_both_downstream_visual_attachments():
 
     assert "VLAN 565" in markdown and "VLAN 566" in markdown
     assert "203.0.113.34" in markdown and "203.0.113.66" in markdown
-    assert "| prom1 |" in markdown and "| not attached |" in markdown
+    assert "| Monitoring: prom1 |" in markdown
     assert "TCP/22" not in mermaid and "DNS" not in mermaid and "DHCP" not in mermaid
-    assert "```mermaid\n" + mermaid.rstrip() + "\n```" in markdown
+    network_mermaid = (REFERENCE_OUTPUT / "network-topology.mmd").read_text()
+    assert "```mermaid\n" + network_mermaid.rstrip() + "\n```" in markdown
     assert "<svg" not in markdown
     assert "network_downstream_vlan565" in mermaid
     assert "network_downstream_vlan566" in mermaid
     assert not (REFERENCE_OUTPUT / "connectivity.mmd").exists()
     assert not (REFERENCE_OUTPUT / "topology.svg").exists()
+
+
+def test_full_reference_support_document_uses_canonical_v2_presentation():
+    markdown = (REFERENCE_OUTPUT / "topology.md").read_text()
+    text = (REFERENCE_OUTPUT / "topology.txt").read_text()
+
+    expected_sections = [
+        "## Architecture Map",
+        "## Network Topology",
+        "## Endpoint Resolution",
+        "## Environment",
+        "## Deployment Context",
+        "## Hosts and Clusters",
+        "## Networks",
+        "## Key Connectivity",
+        "## Resolved Connectivity",
+        "## Details",
+        "## Notes",
+    ]
+    assert [markdown.index(section) for section in expected_sections] == sorted(
+        markdown.index(section) for section in expected_sections
+    )
+    assert "## Infrastructure Topology" not in markdown
+    assert "Network Topology — Mermaid" not in markdown
+    assert "Network Topology — Graphviz" not in markdown
+    assert "network-topology.svg" not in markdown
+    assert "external VIP/LB - unresolved" in markdown
+    assert "internal / rinstall DNS" in markdown
+    assert "Rancher endpoint" in markdown
+    assert "internal / rinstall DNS: 198.51.100.11" in markdown
+    assert "endpoint:" not in markdown
+    assert all(category in markdown for category in (
+        "### Administrative", "### Deployment", "### Core services",
+        "### RKE2 / Rancher", "### Downstream",
+    ))
+    assert "same-L2 service intent" in markdown
+    assert "EXAMPLE_DATACENTER" in markdown
+    assert "private_key" not in markdown
+    assert "TF_HTTP_PASSWORD" not in markdown
+    assert "split-horizon DNS" in text
+    assert all(category in text for category in (
+        "Administrative", "Deployment", "Core services", "RKE2 / Rancher", "Downstream",
+    ))

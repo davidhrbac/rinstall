@@ -2846,8 +2846,7 @@ def render_topology_architecture_mermaid(topology):
             f'{_mermaid(" / ".join(rancher_endpoint.protocols))} / '
             f'{_mermaid(" / ".join(str(port) for port in rancher_endpoint.ports))}'
         )
-        if external_resolution is not None and external_resolution.resolution != RESOLVED:
-            endpoint_label += "<br/>external exposure: unresolved"
+        endpoint_label += "<br/>split-horizon DNS"
         lines.append(f'  {endpoint_id}["{endpoint_label}"]')
 
     if downstream_consumers:
@@ -3254,7 +3253,7 @@ def render_topology_infrastructure_mermaid(topology):
     return "\n".join(lines) + "\n"
 
 
-def render_topology_ascii_overview(topology):
+def _legacy_render_topology_ascii_overview(topology):
     metadata = topology.metadata
     hosts_by_id = {host.id: host for host in topology.hosts}
     bastion = hosts_by_id[metadata.bastion_host]
@@ -3677,6 +3676,343 @@ def _render_topology_markdown(topology):
     return "\n".join(lines)
 
 
+# Keep the legacy helper definitions above available while the support document
+# uses the V2-only presentation below.
+def _legacy_render_topology_markdown(topology):
+    return _render_support_topology_markdown(topology)
+
+
+def render_topology_ascii_overview(topology):
+    metadata = topology.metadata
+    lines = [
+        f"Desired topology: {metadata.environment_id}",
+        f"Bastion: {metadata.bastion_host} (multi-homed, not a router)",
+        "Rancher endpoint (split-horizon DNS):",
+        f"  https://{metadata.rancher_url}:443",
+        "  internal / rinstall DNS: local Rancher node addresses",
+        "  external DNS: external VIP/LB - unresolved",
+        "",
+        "Networks:",
+    ]
+    for network in topology.networks:
+        lines.append(
+            f"  {network.id:<24} {network.cidr or 'unknown':<18} {network.vmware_network}"
+        )
+    lines.extend(["", "Key connectivity:"])
+    for category in (ADMINISTRATIVE, DEPLOYMENT, CORE_SERVICE, RKE2_RANCHER, DOWNSTREAM):
+        count = sum(rule.category == category for rule in topology.connectivity_rules)
+        if count:
+            lines.append(f"  {_support_category(category):<18} {count} rules")
+    lines.extend([
+        "",
+        "Status: desired only; reachability unverified;",
+        "bastion is not the downstream router.",
+    ])
+    return "\n".join(lines) + "\n"
+
+
+def _support_category(category):
+    return {
+        ADMINISTRATIVE: "Administrative",
+        DEPLOYMENT: "Deployment",
+        CORE_SERVICE: "Core services",
+        RKE2_RANCHER: "RKE2 / Rancher",
+        DOWNSTREAM: "Downstream",
+    }.get(category, "Other")
+
+
+def _support_entity_label(reference, topology):
+    hosts = {host.id: host for host in topology.hosts}
+    endpoints = {endpoint.id: endpoint for endpoint in topology.endpoints}
+    services = {service.id: service for service in topology.services}
+    networks = {network.id: network for network in topology.networks}
+    clusters = {cluster.id: cluster for cluster in topology.clusters}
+    consumers = {consumer.id: consumer for consumer in topology.downstream_consumers}
+    if reference.kind == "host" and reference.id in hosts:
+        return hosts[reference.id].id
+    if reference.kind == "actor":
+        return "Operator / rinstall"
+    if reference.kind == "cluster" and reference.id in clusters:
+        return "RKE2 / Rancher cluster"
+    if reference.kind == "endpoint" and reference.id in endpoints:
+        endpoint = endpoints[reference.id]
+        if endpoint.kind == "ssh-jump-alias":
+            return "SSH jump"
+        if endpoint.kind == "vcenter":
+            return "vCenter API"
+        if endpoint.kind == "terraform-backend":
+            return "Terraform backend"
+        if endpoint.kind == "rancher-https":
+            return "Rancher endpoint"
+        if endpoint.kind == "proxy-upstream":
+            return "External/upstream destinations"
+        if endpoint.kind in {"dns-management", "dns-upstream"}:
+            return "Management DNS" if endpoint.kind == "dns-management" else "Upstream DNS"
+        return endpoint.name
+    if reference.kind == "service" and reference.id in services:
+        service = services[reference.id]
+        if service.kind == "dns":
+            return "Bastion DNS"
+        if service.kind == "proxy":
+            return "Bastion Squid proxy"
+        if service.kind == "dhcp":
+            return "Same-VLAN bastion DHCP"
+        return service.purpose
+    if reference.kind == "network" and reference.id in networks:
+        network = networks[reference.id]
+        return "Customer network" if network.kind == "local/customer" else f"VLAN {network.vlan}"
+    if reference.kind == "downstream-consumer" and reference.id in consumers:
+        consumer = consumers[reference.id]
+        downstream = next(item for item in topology.downstream_networks if item.id == consumer.network_id)
+        return f"Downstream nodes (VLAN {downstream.vlan})"
+    return {
+        "hosts:local-core": "Local nodes",
+        "role:rancher": "Rancher nodes",
+        "l2:dhcp-client@vlan:565": "DHCP clients (VLAN 565)",
+        "l2:dhcp-client@vlan:566": "DHCP clients (VLAN 566)",
+        "network:downstream:565": "VLAN 565",
+        "network:downstream:566": "VLAN 566",
+        "network:customer": "Customer network",
+        "endpoints:management-dns": "Management DNS",
+        "endpoints:dns-upstream": "Upstream DNS",
+        "endpoint:proxy-upstream": "External/upstream destinations",
+        "service:proxy:squid": "Bastion Squid proxy",
+        "service:dns:local": "Bastion DNS",
+        "service:authoritative-dhcp@bastion:vlan:565": "Same-VLAN bastion DHCP",
+        "service:authoritative-dhcp@bastion:vlan:566": "Same-VLAN bastion DHCP",
+        "endpoint:rancher:https": "Rancher endpoint",
+        "cluster:rke2-rancher:primary-api": "Kubernetes API",
+        "cluster:rke2-rancher:join-members": "RKE2 join nodes",
+        "cluster:rke2-rancher:primary": "RKE2 primary",
+    }.get(reference.id, reference.id)
+
+
+def _support_endpoint_label(endpoint, topology):
+    labels = []
+    for resolved in endpoint.resolved:
+        if resolved.reference is not None:
+            label = _support_entity_label(resolved.reference, topology)
+            if label == resolved.reference.id and resolved.id != resolved.reference.id:
+                label = resolved.id
+            labels.append(label)
+    if labels:
+        return ", ".join(dict.fromkeys(labels))
+    return {
+        "hosts:local-core": "Local nodes",
+        "role:rancher": "Rancher nodes",
+        "endpoint:rancher:https": "Rancher endpoint",
+    }.get(endpoint.symbolic, endpoint.symbolic)
+
+
+def _support_transport(rule):
+    protocols = "/".join(rule.protocols)
+    if rule.source_ports or rule.destination_ports:
+        source = "/".join(str(port) for port in rule.source_ports) or "*"
+        destination = "/".join(str(port) for port in rule.destination_ports) or "*"
+        return f"{protocols} {source} -> {destination}"
+    if rule.semantics == EXTERNAL_ROUTING_DEPENDENCY:
+        return "external routing / firewall"
+    return protocols or "service intent"
+
+
+def _support_resolution(rule, topology):
+    if rule.semantics == L2_SERVICE_INTENT:
+        return "same-L2 service intent"
+    scoped_endpoints = [
+        endpoint
+        for endpoint in (rule.source, rule.destination)
+        if endpoint.resolution_scope == "local"
+    ]
+    endpoints = scoped_endpoints or (rule.source, rule.destination)
+    values = []
+    for endpoint in endpoints:
+        for resolved in endpoint.resolved:
+            if resolved.address is not None:
+                values.append(resolved.address)
+    if values:
+        resolution_scopes = {
+            endpoint.resolution_scope
+            for endpoint in (rule.source, rule.destination)
+            if endpoint.resolution_scope is not None
+        }
+        resolution = ", ".join(dict.fromkeys(values))
+        if "local" in resolution_scopes:
+            return f"internal / rinstall DNS: {resolution}"
+        return resolution
+    if any(endpoint.resolution_scope == "local" for endpoint in (rule.source, rule.destination)):
+        return "internal / rinstall DNS"
+    if rule.semantics == EXTERNAL_ROUTING_DEPENDENCY:
+        return "symbolic external routing"
+    return "symbolic / unresolved"
+
+
+def _support_rule_row(rule, topology, include_category=False):
+    source = _support_endpoint_label(rule.source, topology)
+    destination = _support_endpoint_label(rule.destination, topology)
+    cells = []
+    if include_category:
+        cells.append(_support_category(rule.category))
+    cells.extend([source, destination, _support_transport(rule), rule.purpose])
+    return cells
+
+
+def _support_connectivity_tables(lines, topology, resolved=False):
+    for category in (ADMINISTRATIVE, DEPLOYMENT, CORE_SERVICE, RKE2_RANCHER, DOWNSTREAM):
+        rules = [rule for rule in topology.connectivity_rules if rule.category == category]
+        if not rules:
+            continue
+        lines.extend([f"### {_support_category(category)}", ""])
+        if resolved:
+            lines.extend([
+                "| Category | Source | Destination | Transport | Purpose | Resolution | Verification |",
+                "| --- | --- | --- | --- | --- | --- | --- |",
+            ])
+            for rule in rules:
+                cells = _support_rule_row(rule, topology, include_category=True)
+                cells.extend([_support_resolution(rule, topology), rule.verification.lower()])
+                lines.append("| " + " | ".join(_markdown(cell) for cell in cells) + " |")
+        else:
+            lines.extend([
+                "| Source | Destination | Transport | Purpose |",
+                "| --- | --- | --- | --- |",
+            ])
+            for rule in rules:
+                lines.append("| " + " | ".join(_markdown(cell) for cell in _support_rule_row(rule, topology)) + " |")
+        lines.append("")
+
+
+def _render_support_topology_markdown(topology):
+    metadata = topology.metadata
+    endpoint_rows = []
+    hosts_by_address = {
+        address: host.id
+        for host in topology.hosts
+        for address in (host.local_ip, host.primary_ip)
+        if address is not None
+    }
+    for endpoint in topology.endpoints:
+        if endpoint.kind != "rancher-https":
+            continue
+        endpoint_name = f"https://{endpoint.name}:{endpoint.ports[0]}"
+        for resolution in endpoint.resolutions:
+            if resolution.scope == "local":
+                desired = ", ".join(
+                    f"{hosts_by_address.get(address, 'Rancher node')} {address}"
+                    for address in resolution.addresses
+                )
+                scope = "internal / rinstall DNS"
+            else:
+                desired = "external VIP/LB - unresolved"
+                scope = "external DNS"
+            endpoint_rows.append((endpoint_name, scope, desired))
+
+    lines = [
+        f"# Desired Topology: {metadata.environment_id}",
+        "",
+        "> Status: desired configuration only; runtime state and network reachability are not verified.",
+        "> External dependencies may be unresolved; downstream lifecycle is external; the bastion is not the downstream router.",
+        "",
+        "## Architecture Map", "", "```mermaid",
+        render_topology_architecture_mermaid(topology).rstrip(), "```", "",
+        "## Network Topology", "", "```mermaid",
+        render_topology_network_mermaid(topology).rstrip(), "```", "",
+        "## Endpoint Resolution", "",
+        "| Endpoint | Scope | Desired resolution |",
+        "| --- | --- | --- |",
+    ]
+    lines.extend("| " + " | ".join(_markdown(cell) for cell in row) + " |" for row in endpoint_rows)
+    lines.extend([
+        "", "## Environment", "",
+        "| Environment | Rancher URL | Domain | RKE2 | Rancher | cert-manager |",
+        "| --- | --- | --- | --- | --- | --- |",
+        f"| {_markdown(metadata.environment_id)} | {_markdown(metadata.rancher_url)} | {_markdown(metadata.domain)} | {_markdown(metadata.versions['rke2'])} | {_markdown(metadata.versions['rancher'])} | {_markdown(metadata.versions['cert_manager'])} |",
+        "", "## Deployment Context", "",
+        "| Property | Desired value |", "| --- | --- |",
+    ])
+    context = topology.deployment_context
+    if context is not None:
+        vsphere = context.vsphere
+        deployment_rows = [
+            ("vCenter endpoint", "runtime-supplied / unresolved"),
+            ("Datacenter", vsphere.datacenter), ("Resource pool", vsphere.resource_pool),
+            ("Datastore", vsphere.datastore), ("VM folder", vsphere.folder),
+            ("Clone timeout", f"{vsphere.clone_timeout_minutes} minutes"),
+            ("TLS verification", "disabled" if vsphere.allow_unverified_ssl else "enabled"),
+            ("Terraform backend", f"{context.terraform_backend.type} ({context.terraform_backend.state_name})"),
+        ]
+        deployment_rows.extend((f"Template: {item.id}", item.value or "unresolved") for item in vsphere.templates)
+        deployment_rows.extend((f"VMware network: {item.id}", item.value or "unresolved") for item in vsphere.networks)
+        lines.extend(f"| {_markdown(key)} | {_markdown(value)} |" for key, value in deployment_rows)
+    lines.extend(["", "## Hosts and Clusters", "", "| Component | Desired addresses / membership | SSH target |", "| --- | --- | --- |"])
+    bastion = next(host for host in topology.hosts if host.id == metadata.bastion_host)
+    lines.append(f"| Bastion: {_markdown(bastion.id)} | customer {_markdown(bastion.local_ip or 'unknown')}; management {_markdown(bastion.management_ip or 'unknown')} | {_markdown(bastion.ssh_target or 'unknown')} |")
+    for host in topology.hosts:
+        if host.id == bastion.id:
+            continue
+        if any(host.id in cluster.member_host_ids for cluster in topology.clusters):
+            continue
+        lines.append(f"| Monitoring: {_markdown(host.id)} | {_markdown(host.local_ip or 'unknown')} | {_markdown(host.ssh_target or 'unknown')} |")
+    for cluster in topology.clusters:
+        members = ", ".join(
+            f"{host_id} ({'primary' if host_id == cluster.primary_host_id else 'member'})"
+            for host_id in cluster.member_host_ids
+        )
+        lines.append(f"| RKE2 / Rancher cluster | {_markdown(members)} | - |")
+    lines.extend(["", "## Networks", "", "| Network | Kind | CIDR | VMware network | VLAN | Bastion IP | Gateway | DHCP |", "| --- | --- | --- | --- | --- | --- | --- | --- |"])
+    downstream_by_id = {item.id: item for item in topology.downstream_networks}
+    for network in topology.networks:
+        downstream = downstream_by_id.get(network.id)
+        bastion_ip = next((interface.address for interface in topology.interfaces if interface.host == bastion.id and interface.network == network.id), "-")
+        dhcp = f"{downstream.dhcp_start}-{downstream.dhcp_end}" if downstream else "-"
+        lines.append(f"| {_markdown(network.id)} | {_markdown(network.kind)} | {_markdown(network.cidr or 'unknown')} | {_markdown(network.vmware_network)} | {_markdown(network.vlan if network.vlan is not None else '-')} | {_markdown(bastion_ip or '-')} | {_markdown(network.gateway or '-')} | {_markdown(dhcp)} |")
+    lines.extend(["", "## Key Connectivity", ""])
+    _support_connectivity_tables(lines, topology)
+    lines.extend(["## Resolved Connectivity", ""])
+    _support_connectivity_tables(lines, topology, resolved=True)
+    lines.extend(["## Details", "", "<details>", "<summary>Interfaces</summary>", "", "| Host | Logical interface | Network | Address | Addressing |", "| --- | --- | --- | --- | --- |"])
+    for interface in topology.interfaces:
+        address = f"{interface.address}/{interface.prefix}" if interface.address and interface.prefix else "unknown"
+        lines.append(f"| {_markdown(interface.host)} | {_markdown(interface.logical_name)} | {_markdown(interface.network)} | {_markdown(address)} | {_markdown(interface.addressing)} |")
+    lines.extend(["", "</details>", "", "<details>", "<summary>Bastion services, routes, and lifecycle notes</summary>", ""])
+    for service in topology.services:
+        lines.append(f"- Service: {_markdown(service.purpose)} ({_markdown(service.address)})")
+    if context is not None:
+        lines.append(f"- vSphere route: {_markdown(context.vsphere.route.destination)} via {_markdown(context.vsphere.route.gateway)}")
+    lines.extend(["", "</details>", "", "## Notes", "", *[f"- {_markdown(note)}" for note in topology.notes], "- Runtime state, network reachability, and external endpoint reachability are not verified.", "- The bastion provides downstream services but is not the downstream router.", ""])
+    return "\n".join(lines)
+
+
+def render_topology_markdown(topology):
+    return _render_support_topology_markdown(topology)
+
+
+def render_topology_ascii_overview(topology):
+    metadata = topology.metadata
+    lines = [
+        f"Desired topology: {metadata.environment_id}",
+        f"Bastion: {metadata.bastion_host} (multi-homed, not a router)",
+        "Rancher endpoint (split-horizon DNS):",
+        f"  https://{metadata.rancher_url}:443",
+        "  internal / rinstall DNS: local Rancher node addresses",
+        "  external DNS: external VIP/LB - unresolved",
+        "",
+        "Networks:",
+    ]
+    for network in topology.networks:
+        lines.append(f"  {network.id:<24} {network.cidr or 'unknown':<18} {network.vmware_network}")
+    lines.extend(["", "Key connectivity:"])
+    for category in (ADMINISTRATIVE, DEPLOYMENT, CORE_SERVICE, RKE2_RANCHER, DOWNSTREAM):
+        count = sum(rule.category == category for rule in topology.connectivity_rules)
+        if count:
+            lines.append(f"  {_support_category(category):<18} {count} rules")
+    lines.extend([
+        "",
+        "Status: desired only; reachability unverified;",
+        "bastion is not the downstream router.",
+    ])
+    return "\n".join(lines) + "\n"
+
+
 def _host_network_address(topology, host, network_id):
     return next(
         (
@@ -3752,7 +4088,7 @@ def render_topology_infrastructure_mermaid(topology):
     return "\n".join(lines) + "\n"
 
 
-def render_topology_ascii_overview(topology):
+def _legacy_render_topology_ascii_overview(topology):
     metadata = topology.metadata
     hosts_by_id = {host.id: host for host in topology.hosts}
     bastion = hosts_by_id[metadata.bastion_host]
@@ -3785,7 +4121,7 @@ def render_topology_ascii_overview(topology):
     return "\n".join(lines) + "\n"
 
 
-def render_topology_markdown(topology):
+def _legacy_render_topology_markdown(topology):
     metadata = topology.metadata
     lines = [
         f"# Desired Topology: {metadata.environment_id}",

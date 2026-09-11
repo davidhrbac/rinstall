@@ -258,8 +258,8 @@ def test_v2_architecture_map_consumes_semantic_entities_and_boundaries(monkeypat
     assert 'Monitoring host<br/>prom1' in architecture
     assert 'subgraph cluster_rke2_rancher_' not in architecture
     assert 'RKE2 / Rancher cluster<br/>rancher1 primary<br/>rancher2<br/>rancher3' in architecture
-    assert "Rancher endpoint<br/>rancher.full-example.example.invalid<br/>HTTPS / 443<br/>external exposure: unresolved" in architecture
-    assert "external VIP/LB unresolved" not in architecture
+    assert "Rancher endpoint<br/>rancher.full-example.example.invalid<br/>HTTPS / 443<br/>split-horizon DNS" in architecture
+    assert "external exposure: unresolved" not in architecture
     assert "_note" not in architecture
     assert "Downstream nodes<br/>VLAN 565<br/>external lifecycle" in architecture
     assert "Downstream nodes<br/>VLAN 566<br/>external lifecycle" in architecture
@@ -1107,11 +1107,11 @@ def test_json_and_markdown_share_one_topology_and_are_deterministic():
     assert first_json == second_json
     assert first_markdown == second_markdown
     assert json.loads(first_json) == topology.to_dict()
-    assert "rancher1 (10.14.17.11), rancher2 (10.14.17.12), rancher3 (10.14.17.13)" in first_markdown
-    assert "vlan565 (10.20.56.32/27)" in first_markdown
-    assert "bastion1:vlan565 (10.20.56.34)" in first_markdown
-    assert "TCP/UDP 53" in first_markdown
-    assert "TCP 22" in first_markdown
+    assert "rancher1 (primary), rancher2 (member), rancher3 (member)" in first_markdown
+    assert "downstream:vlan565" in first_markdown
+    assert "10.20.56.34" in first_markdown
+    assert "TCP/UDP * -&gt; 53" in first_markdown
+    assert "TCP * -&gt; 22" in first_markdown
 
 
 def test_v2_independent_builds_and_existing_renderers_are_deterministic():
@@ -1155,20 +1155,17 @@ def test_ascii_and_mermaid_are_deterministic_secondary_artifacts():
     assert render_topology_infrastructure_mermaid(topology) == mermaid
     assert render_topology_ascii_overview(topology) == ascii_overview
     assert "<svg" not in markdown
-    assert "```mermaid\n" + mermaid.rstrip() + "\n```" in markdown
+    assert "```mermaid\n" + render_topology_network_mermaid(topology).rstrip() + "\n```" in markdown
     assert ascii_overview not in markdown
-    assert "## Infrastructure Topology" in markdown
+    assert "## Infrastructure Topology" not in markdown
     assert "## Key Connectivity" in markdown
-    assert "Rancher nodes -> Downstream nodes       TCP/22" in markdown
-    assert markdown.index("## Infrastructure Topology") < markdown.index("## Environment")
+    assert "Rancher nodes" in markdown
+    assert markdown.index("## Network Topology") < markdown.index("## Environment")
     assert markdown.index("## Key Connectivity") < markdown.index("## Resolved Connectivity")
     assert markdown.index("## Resolved Connectivity") < markdown.index("## Details")
     assert "bastion1" in ascii_overview
-    assert "management  192.0.2.10/24" in ascii_overview
-    assert "vlan565     10.20.56.34/27" in ascii_overview
-    assert "rancher1" in ascii_overview and "prom1" in ascii_overview
-    assert "DNS, DHCP" in ascii_overview
-    assert ascii_overview.count("DNS, DHCP") == 1
+    assert "internal / rinstall DNS" in ascii_overview
+    assert "Administrative" in ascii_overview and "Downstream" in ascii_overview
     assert all(len(line) <= 80 for line in ascii_overview.splitlines())
 
 

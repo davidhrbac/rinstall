@@ -7,7 +7,7 @@ flowchart LR
     host_prom1_abf2e7bd7a["Monitoring host<br/>prom1"]
   end
   cluster_cluster_rke2_rancher_de77c71a50["RKE2 / Rancher cluster<br/>rancher1 primary<br/>rancher2<br/>rancher3"]
-  endpoint_endpoint_rancher_0637b61772["Rancher endpoint<br/>rancher.full-example.example.invalid<br/>HTTPS / 443<br/>external exposure: unresolved"]
+  endpoint_endpoint_rancher_0637b61772["Rancher endpoint<br/>rancher.full-example.example.invalid<br/>HTTPS / 443<br/>split-horizon DNS"]
   subgraph downstream["Downstream environments"]
     direction TB
     consumer_consumer_downstream_vlan565_dfc74929d4["Downstream nodes<br/>VLAN 565<br/>external lifecycle"]
