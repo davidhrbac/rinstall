@@ -1,3 +1,4 @@
+import ast
 from copy import deepcopy
 from dataclasses import replace
 import json
@@ -37,13 +38,11 @@ from lib.topology import (
     SYMBOLIC_ADDRESS,
     UNVERIFIED,
     EntityReference,
-    HostTopology,
     build_desired_topology,
     render_topology_json,
     render_topology_architecture_mermaid,
     render_topology_markdown,
     render_topology_ascii_overview,
-    render_topology_infrastructure_mermaid,
     render_topology_network_mermaid,
     validate_topology,
 )
@@ -70,11 +69,6 @@ def downstream_network(vlan, subnet):
         "gateway": 1,
         "dhcp": {"start": 4, "end": -2, "lease_time": "12h"},
     }
-
-
-def mermaid_id_for_label(diagram, label):
-    line = next(line for line in diagram.splitlines() if f'["{label}' in line)
-    return line.strip().split("[", 1)[0]
 
 
 def topology_with(*downstreams):
@@ -120,6 +114,36 @@ def test_existing_config_without_optional_vsphere_fields_builds_and_renders(tmp_
     assert json.loads((output_dir / "topology.json").read_text())["deployment_context"]["vsphere"]["clone_timeout_minutes"] is None
     assert "Terraform default: 60 minutes" in render_topology_markdown(topology)
     assert str(output_dir / "topology.json") in result.stdout
+
+
+def test_topology_has_only_one_definition_for_each_canonical_renderer():
+    source = (ROOT / "lib/topology.py").read_text()
+    tree = ast.parse(source)
+    function_names = [
+        node.name
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    ]
+
+    canonical_renderers = {
+        "render_topology_json",
+        "render_topology_architecture_mermaid",
+        "render_topology_network_mermaid",
+        "render_topology_markdown",
+        "render_topology_ascii_overview",
+    }
+    assert all(function_names.count(name) == 1 for name in canonical_renderers)
+    assert not any(
+        name in function_names
+        for name in (
+            "render_topology_infrastructure_mermaid",
+            "render_topology_ascii",
+            "render_topology_mermaid",
+            "_legacy_render_topology_markdown",
+            "_legacy_render_topology_ascii_overview",
+            "_render_topology_markdown",
+        )
+    )
 
 
 @pytest.mark.parametrize(
@@ -1152,20 +1176,6 @@ def test_json_and_markdown_share_one_topology_and_are_deterministic():
     assert "TCP * -&gt; 22" in first_markdown
 
 
-def test_v2_independent_builds_and_existing_renderers_are_deterministic():
-    first = build_desired_topology(expand_env(raw_config()))
-    second = build_desired_topology(expand_env(raw_config()))
-
-    assert first == second
-    assert first.to_dict() == second.to_dict()
-    assert render_topology_json(first) == render_topology_json(second)
-    assert render_topology_markdown(first) == render_topology_markdown(second)
-    assert render_topology_ascii_overview(first) == render_topology_ascii_overview(second)
-    assert render_topology_infrastructure_mermaid(
-        first
-    ) == render_topology_infrastructure_mermaid(second)
-
-
 def test_v2_serialization_canonicalizes_unordered_config_mappings():
     original = yaml.safe_load(FULL_CONFIG.read_text())
     reordered = deepcopy(original)
@@ -1181,172 +1191,6 @@ def test_v2_serialization_canonicalizes_unordered_config_mappings():
     assert render_topology_json(build_desired_topology(expand_env(original))) == render_topology_json(
         build_desired_topology(expand_env(reordered))
     )
-
-
-def test_ascii_and_mermaid_are_deterministic_secondary_artifacts():
-    topology = topology_with(downstream_network(565, "10.20.56.32/27"))
-
-    ascii_overview = render_topology_ascii_overview(topology)
-    mermaid = render_topology_infrastructure_mermaid(topology)
-    markdown = render_topology_markdown(topology)
-
-    assert render_topology_infrastructure_mermaid(topology) == mermaid
-    assert render_topology_ascii_overview(topology) == ascii_overview
-    assert "<svg" not in markdown
-    assert "```mermaid\n" + render_topology_network_mermaid(topology).rstrip() + "\n```" in markdown
-    assert ascii_overview not in markdown
-    assert "## Infrastructure Topology" not in markdown
-    assert "## Key Connectivity" in markdown
-    assert "Rancher nodes" in markdown
-    assert markdown.index("## Network Topology") < markdown.index("## Environment")
-    assert markdown.index("## Key Connectivity") < markdown.index("## Resolved Connectivity")
-    assert markdown.index("## Resolved Connectivity") < markdown.index("## Details")
-    assert "bastion1" in ascii_overview
-    assert "internal / rinstall DNS" in ascii_overview
-    assert "Administrative" in ascii_overview and "Downstream" in ascii_overview
-    assert all(len(line) <= 80 for line in ascii_overview.splitlines())
-
-
-def test_mermaid_shows_only_hierarchical_attachment_relationships():
-    topology = topology_with(
-        downstream_network(565, "10.20.56.32/27"),
-        downstream_network(566, "10.20.56.64/27"),
-    )
-
-    mermaid = render_topology_infrastructure_mermaid(topology)
-
-    assert mermaid.startswith("flowchart TB\n")
-    assert 'subgraph rancher_cluster["Rancher cluster"]\n    direction LR' in mermaid
-    assert 'subgraph downstream["Downstream networks"]\n    direction LR' in mermaid
-    management_id = mermaid_id_for_label(mermaid, "Management")
-    bastion_id = mermaid_id_for_label(mermaid, "bastion1")
-    customer_id = mermaid_id_for_label(mermaid, "Customer network")
-    prometheus_id = mermaid_id_for_label(mermaid, "prom1")
-    assert f"{management_id} --- {bastion_id}" in mermaid
-    assert f"{bastion_id} --- {customer_id}" in mermaid
-    assert f"{customer_id} --- {prometheus_id}" in mermaid
-    assert all(
-        f"{customer_id} --- {mermaid_id_for_label(mermaid, f'rancher{index}')}" in mermaid
-        for index in range(1, 4)
-    )
-    assert all(
-        f"{bastion_id} --- {mermaid_id_for_label(mermaid, f'VLAN {vlan}')}" in mermaid
-        for vlan in (565, 566)
-    )
-    assert all(host in mermaid for host in ("rancher1", "rancher2", "rancher3", "prom1"))
-    assert all(address in mermaid for address in ("192.0.2.0/24", "10.14.17.0/28", "10.20.56.34", "10.20.56.66"))
-    assert all(value not in mermaid for value in ("TCP/22", "DNS", "DHCP", "SSH jump"))
-    assert "bastion_ip" not in mermaid.lower()
-    assert "-->|" not in mermaid and "-.->" not in mermaid
-    assert all("---|" not in line for line in mermaid.splitlines())
-
-
-def test_mermaid_supports_arbitrary_rancher_names_and_safe_ids():
-    config = raw_config()
-    config["local"]["rancher_nodes"]["name_prefix"] = 'control.east/"] {'
-    config["local"]["rancher_nodes"]["count"] = 2
-    topology = build_desired_topology(expand_env(config))
-
-    mermaid = render_topology_infrastructure_mermaid(topology)
-
-    assert "control.east/\"] {1" not in mermaid
-    assert "control.east/" in mermaid
-    for line in mermaid.splitlines():
-        if not line.strip().startswith("host_") or "[" not in line:
-            continue
-        node_id = line.strip().split("[", 1)[0]
-        assert node_id.replace("_", "").isalnum()
-
-
-def test_mermaid_connects_every_rancher_for_arbitrary_count():
-    config = raw_config()
-    config["local"]["rancher_nodes"]["count"] = 5
-    config["local"]["rancher_nodes"]["start_host"] = 7
-    topology = build_desired_topology(expand_env(config))
-
-    mermaid = render_topology_infrastructure_mermaid(topology)
-
-    assert mermaid.count('subgraph rancher_cluster["Rancher cluster"]') == 1
-    assert all(f"rancher{index}" in mermaid for index in range(1, 6))
-    customer_id = mermaid_id_for_label(mermaid, "Customer network")
-    assert all(
-        f"{customer_id} --- {mermaid_id_for_label(mermaid, f'rancher{index}')}" in mermaid
-        for index in range(1, 6)
-    )
-
-
-def test_mermaid_shows_external_jump_only_when_topology_represents_it():
-    topology = topology_with()
-    external = HostTopology(
-        id="operator.jump/eu-1",
-        hostname="operator.jump/eu-1",
-        fqdn="operator.jump/eu-1",
-        roles=("external-jump",),
-        capabilities=("jump-host",),
-        primary_ip=None,
-        local_ip=None,
-        management_ip=None,
-        ssh_target="192.0.2.200",
-    )
-    represented = replace(topology, hosts=(external, *topology.hosts))
-
-    without_external = render_topology_infrastructure_mermaid(topology)
-    with_external = render_topology_infrastructure_mermaid(represented)
-
-    assert "External jump" not in without_external
-    assert "External jump" not in with_external
-
-
-def test_mermaid_supports_zero_one_two_five_and_ten_downstream_networks():
-    for count in (0, 1, 2, 5, 10):
-        if count <= 8:
-            topology = topology_with(
-                *(downstream_network(565 + index, f"10.20.{56 + index}.0/27") for index in range(count))
-            )
-        else:
-            base = topology_with(
-                *(downstream_network(565 + index, f"10.20.{56 + index}.0/27") for index in range(8))
-            )
-            extra = tuple(
-                replace(
-                    base.downstream_networks[0],
-                    id=f"downstream:vlan{565 + index}",
-                    interface_name=f"vlan{565 + index}",
-                    vlan=565 + index,
-                    cidr=f"10.20.{56 + index}.0/27",
-                    bastion_address=f"10.20.{56 + index}.2",
-                    gateway=f"10.20.{56 + index}.1",
-                )
-                for index in range(8, count)
-            )
-            network_template = next(
-                network for network in base.networks if network.id == base.downstream_networks[0].id
-            )
-            extra_networks = tuple(
-                replace(
-                    network_template,
-                    id=item.id,
-                    vmware_network=f"DS-{item.vlan}",
-                    cidr=item.cidr,
-                    vlan=item.vlan,
-                    gateway=item.gateway,
-                )
-                for item in extra
-            )
-            topology = replace(
-                base,
-                downstream_networks=base.downstream_networks + extra,
-                networks=base.networks + extra_networks,
-            )
-        mermaid = render_topology_infrastructure_mermaid(topology)
-        assert render_topology_infrastructure_mermaid(topology) == mermaid
-        assert ('subgraph downstream["Downstream networks"]' in mermaid) is (count > 0)
-        bastion_id = mermaid_id_for_label(mermaid, "bastion1")
-        for index in range(count):
-            vlan = 565 + index
-            assert f"VLAN {vlan}<br/>" in mermaid
-            downstream_id = mermaid_id_for_label(mermaid, f"VLAN {vlan}")
-            assert f"{bastion_id} --- {downstream_id}" in mermaid
 
 
 def test_topology_outputs_exclude_sensitive_config_values(tmp_path):
