@@ -9,6 +9,7 @@ from lib.topology import (
     render_topology_ascii_overview,
     render_topology_infrastructure_mermaid,
     render_topology_network_dot,
+    render_topology_network_mermaid,
     build_desired_topology,
 )
 
@@ -114,6 +115,7 @@ def test_full_reference_generated_outputs_are_deterministic_and_sanitized():
         "topology.txt": render_topology_ascii_overview(topology),
         "topology.mmd": render_topology_infrastructure_mermaid(topology),
         "network-topology.dot": render_topology_network_dot(topology),
+        "network-topology.mmd": render_topology_network_mermaid(topology),
     }
 
     assert all((REFERENCE_OUTPUT / name).read_text() == content for name, content in expected.items())

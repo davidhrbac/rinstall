@@ -2931,6 +2931,110 @@ def _dot_quote(value):
     return '"' + str(value).replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n") + '"'
 
 
+def render_topology_network_mermaid(topology):
+    """Render the parallel network attachment view from V2 entities only."""
+    metadata = topology.metadata
+    hosts = {host.id: host for host in topology.hosts}
+    networks = {network.id: network for network in topology.networks}
+    bastion = hosts[metadata.bastion_host]
+    downstream_by_id = {item.id: item for item in topology.downstream_networks}
+    consumers_by_network = {
+        consumer.network_id: consumer for consumer in topology.downstream_consumers
+    }
+    interfaces_by_network_host = {
+        (interface.network, interface.host): interface for interface in topology.interfaces
+    }
+    host_ids = {host.id: _mermaid_id("host", host.id) for host in topology.hosts}
+    network_ids = {
+        network.id: _mermaid_id("network", network.id) for network in topology.networks
+    }
+    lines = ["flowchart TB"]
+
+    def host_label(host_id, suffix=""):
+        interface = interfaces_by_network_host.get(("customer", host_id))
+        address = f"<br/>{_mermaid(interface.address)}" if interface is not None else ""
+        return f"{_mermaid(host_id)}{_mermaid(suffix)}{address}"
+
+    management = networks["management"]
+    management_interface = interfaces_by_network_host.get(("management", bastion.id))
+    management_label = (
+        f"Management<br/>{_mermaid(management.cidr or 'unknown')}<br/>"
+        f"VMware: {_mermaid(management.vmware_network)}<br/>"
+        f"bastion: {_mermaid(management_interface.address if management_interface else 'unknown')}"
+    )
+    lines.append(f'  {network_ids["management"]}["{management_label}"]')
+    lines.append(
+        f'  {host_ids[bastion.id]}["{_mermaid(bastion.id)}<br/>multi-homed<br/>not a router"]'
+    )
+
+    customer = networks.get("customer")
+    if customer is not None:
+        customer_interface = interfaces_by_network_host.get(("customer", bastion.id))
+        customer_label = [
+            "Customer",
+            _mermaid(customer.cidr or "unknown"),
+            f"VMware: {_mermaid(customer.vmware_network)}",
+        ]
+        if customer_interface is not None and customer_interface.address is not None:
+            customer_label.append(f"bastion: {_mermaid(customer_interface.address)}")
+        if customer.gateway is not None:
+            customer_label.append(f"gateway: {_mermaid(customer.gateway)}")
+        lines.append(f'  {network_ids[customer.id]}["' + "<br/>".join(customer_label) + '"]')
+
+    monitoring_hosts = [
+        host for host in topology.hosts if MONITORING_HOST_ONLY in host.capabilities
+    ]
+    for host in monitoring_hosts:
+        lines.append(f'  {host_ids[host.id]}["{host_label(host.id)}"]')
+
+    for cluster in topology.clusters:
+        cluster_id = _mermaid_id("cluster", cluster.id)
+        lines.extend([
+            f'  subgraph {cluster_id}["RKE2 / Rancher"]',
+            "    direction TB",
+        ])
+        for host_id in cluster.member_host_ids:
+            suffix = " primary" if host_id == cluster.primary_host_id else ""
+            lines.append(f'    {host_ids[host_id]}["{host_label(host_id, suffix)}"]')
+        lines.append("  end")
+
+    for downstream in topology.downstream_networks:
+        consumer = consumers_by_network[downstream.id]
+        gateway_id = _mermaid_id(
+            "external", downstream.gateway_endpoint_id or f"gateway:{downstream.id}"
+        )
+        consumer_id = _mermaid_id("consumer", consumer.id)
+        network_id = network_ids[downstream.id]
+        lines.extend([
+            f'  subgraph {_mermaid_id("downstream", downstream.id)}["VLAN {downstream.vlan}"]',
+            "    direction TB",
+            f'    {network_id}["VLAN {_mermaid(downstream.vlan)}<br/>{_mermaid(downstream.cidr)}<br/>'
+            f'VMware: {_mermaid(downstream.vmware_network)}<br/>bastion: {_mermaid(downstream.bastion_address)}"]',
+            f'    {consumer_id}["Downstream nodes<br/>DHCP {_mermaid(consumer.address_start)}-'
+            f'{_mermaid(consumer.address_end)}<br/>external lifecycle"]',
+            f'    {gateway_id}["External gateway<br/>{_mermaid(downstream.gateway)}"]',
+            "  end",
+            f"  {network_id} --- {consumer_id}",
+            f"  {network_id} --- {gateway_id}",
+        ])
+
+    for interface in topology.interfaces:
+        if interface.host == bastion.id and interface.network == "management":
+            lines.append(f"  {network_ids[interface.network]} --- {host_ids[interface.host]}")
+        elif interface.host == bastion.id:
+            lines.append(f"  {host_ids[interface.host]} --- {network_ids[interface.network]}")
+        else:
+            lines.append(f"  {network_ids[interface.network]} --- {host_ids[interface.host]}")
+
+    if customer is not None:
+        for downstream in topology.downstream_networks:
+            lines.append(
+                f'  {network_ids[customer.id]} -. "external routing / firewall" .-> '
+                f'{network_ids[downstream.id]}'
+            )
+    return "\n".join(lines) + "\n"
+
+
 def render_topology_network_dot(topology):
     """Render the desired network attachment view from V2 entities only."""
     metadata = topology.metadata
@@ -3700,9 +3804,17 @@ def render_topology_markdown(topology):
         render_topology_infrastructure_mermaid(topology).rstrip(),
         "```",
         "",
-        "## Network Topology",
+        "## Network Topology — Mermaid",
+        "",
+        "```mermaid",
+        render_topology_network_mermaid(topology).rstrip(),
+        "```",
+        "",
+        "## Network Topology — Graphviz",
         "",
         "![Network topology](network-topology.svg)",
+        "",
+        "This is temporary evaluation output.",
         "",
         "## Environment",
         "",

@@ -46,6 +46,7 @@ from lib.topology import (
     render_topology_ascii_overview,
     render_topology_infrastructure_mermaid,
     render_topology_network_dot,
+    render_topology_network_mermaid,
     render_topology_network_svg,
     validate_topology,
 )
@@ -375,6 +376,30 @@ def test_v2_network_topology_dot_covers_attachments_and_external_routing():
     assert 'TCP' not in dot and '9345' not in dot and '6443' not in dot
     assert 'endpoint:rancher' not in dot
     assert 'private_key' not in dot
+
+
+def test_v2_network_mermaid_matches_dot_network_entities_and_attachments():
+    topology = build_desired_topology(load_env(FULL_CONFIG))
+    dot = render_topology_network_dot(topology)
+    mermaid = render_topology_network_mermaid(topology)
+
+    assert mermaid.startswith("flowchart TB\n")
+    for label in (
+        "Management", "192.0.2.0/24", "EXAMPLE_MANAGEMENT_NETWORK",
+        "Customer", "198.51.100.0/28", "EXAMPLE_CUSTOMER_NETWORK",
+        "VLAN 565", "203.0.113.32/27", "EXAMPLE_DOWNSTREAM_NETWORK_565",
+        "203.0.113.34", "203.0.113.33", "203.0.113.36-203.0.113.61",
+        "VLAN 566", "203.0.113.64/27", "203.0.113.66", "203.0.113.65",
+        "203.0.113.68-203.0.113.93", "prom1", "rancher1 primary",
+        "rancher2", "rancher3", "not a router", "external routing / firewall",
+    ):
+        assert label in dot
+        assert label in mermaid
+    assert mermaid.count('host_bastion1_fd65cf69ce["') == 1
+    assert "kind:" not in mermaid and "lease" not in mermaid
+    assert "TCP" not in mermaid and "9345" not in mermaid and "6443" not in mermaid
+    assert "ens" not in mermaid and "endpoint:rancher" not in mermaid
+    assert mermaid == render_topology_network_mermaid(topology)
 
 
 def test_v2_network_topology_svg_is_valid():
@@ -1327,6 +1352,7 @@ def test_topology_outputs_exclude_sensitive_config_values(tmp_path):
     first_text = (output_dir / "topology.txt").read_bytes()
     first_mermaid = (output_dir / "topology.mmd").read_bytes()
     first_network_dot = (output_dir / "network-topology.dot").read_bytes()
+    first_network_mermaid = (output_dir / "network-topology.mmd").read_bytes()
     first_network_svg = (output_dir / "network-topology.svg").read_bytes()
     subprocess.run(
         command,
@@ -1339,6 +1365,7 @@ def test_topology_outputs_exclude_sensitive_config_values(tmp_path):
         + (output_dir / "topology.txt").read_text()
         + (output_dir / "topology.mmd").read_text()
         + (output_dir / "network-topology.dot").read_text()
+        + (output_dir / "network-topology.mmd").read_text()
         + (output_dir / "network-topology.svg").read_text()
     )
     assert (output_dir / "topology.json").read_bytes() == first_json
@@ -1346,6 +1373,7 @@ def test_topology_outputs_exclude_sensitive_config_values(tmp_path):
     assert (output_dir / "topology.txt").read_bytes() == first_text
     assert (output_dir / "topology.mmd").read_bytes() == first_mermaid
     assert (output_dir / "network-topology.dot").read_bytes() == first_network_dot
+    assert (output_dir / "network-topology.mmd").read_bytes() == first_network_mermaid
     assert (output_dir / "network-topology.svg").read_bytes() == first_network_svg
     assert not (output_dir / "connectivity.mmd").exists()
     assert not (output_dir / "topology.svg").exists()
@@ -1356,6 +1384,7 @@ def test_topology_outputs_exclude_sensitive_config_values(tmp_path):
     assert (output_dir / "topology.txt").stat().st_mode & 0o777 == 0o600
     assert (output_dir / "topology.mmd").stat().st_mode & 0o777 == 0o600
     assert (output_dir / "network-topology.dot").stat().st_mode & 0o777 == 0o600
+    assert (output_dir / "network-topology.mmd").stat().st_mode & 0o777 == 0o600
     assert (output_dir / "network-topology.svg").stat().st_mode & 0o777 == 0o600
 
 
