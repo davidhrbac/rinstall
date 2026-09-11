@@ -350,25 +350,28 @@ def test_v2_network_topology_dot_covers_attachments_and_external_routing():
 
     assert dot.startswith("digraph network_topology {")
     assert dot.count('label="bastion1\\nmulti-homed') == 1
-    assert 'bastion_is_router: false' in dot
-    assert 'label="management\\nkind: management\\nCIDR: 192.0.2.0/24' in dot
+    assert 'not a router' in dot
+    assert 'bastion_is_router' not in dot
+    assert 'label="Management\\n192.0.2.0/24' in dot
     assert 'VMware: EXAMPLE_MANAGEMENT_NETWORK' in dot
-    assert 'CIDR: 198.51.100.0/28' in dot
+    assert 'label="Customer\\n198.51.100.0/28' in dot
     assert 'VMware: EXAMPLE_CUSTOMER_NETWORK' in dot
-    assert 'host_prom1_abf2e7bd7a -> network_customer_b6c4586387' in dot
-    assert dot.count('-> network_customer_b6c4586387 [dir=none') == 5
-    assert dot.count('-> network_downstream_') == 4
-    assert 'VLAN 565 downstream' in dot
-    assert 'VLAN: 565' in dot
-    assert 'CIDR: 203.0.113.32/27' in dot
+    assert 'network_management_288965a1f2 -> host_bastion1_fd65cf69ce [dir=none]' in dot
+    assert 'host_bastion1_fd65cf69ce -> network_customer_b6c4586387 [dir=none]' in dot
+    assert 'network_customer_b6c4586387 -> host_prom1_abf2e7bd7a [dir=none]' in dot
+    assert 'network_customer_b6c4586387 -> host_rancher3_bbbf0c319b [dir=none]' in dot
+    assert 'label="VLAN 565\\n203.0.113.32/27' in dot
     assert 'VMware: EXAMPLE_DOWNSTREAM_NETWORK_565' in dot
-    assert '203.0.113.34/27' in dot
     assert 'bastion: 203.0.113.34' in dot
     assert 'External gateway\\n203.0.113.33' in dot
     assert 'DHCP 203.0.113.36-203.0.113.61' in dot
-    assert 'lease: 12h' in dot
-    assert 'External routed network / firewall' in dot
-    assert 'external routing' in dot
+    assert 'lease:' not in dot
+    assert 'kind:' not in dot
+    assert 'external routing / firewall' in dot
+    assert 'constraint=false' in dot
+    assert dot.count('External gateway\\n203.0.113.33') == 1
+    assert dot.count('external routing / firewall') == 2
+    assert 'Core hosts' not in dot
     assert 'TCP' not in dot and '9345' not in dot and '6443' not in dot
     assert 'endpoint:rancher' not in dot
     assert 'private_key' not in dot

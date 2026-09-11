@@ -1,51 +1,45 @@
 digraph network_topology {
-  rankdir=LR
+  rankdir=TB
   graph [compound=true, nodesep=0.45, ranksep=0.75, splines=polyline]
   node [shape=box, style="rounded", fontname="Helvetica", fontsize=10]
   edge [fontname="Helvetica", fontsize=9]
-  host_bastion1_fd65cf69ce [label="bastion1\nmulti-homed\nbastion_is_router: false", style="rounded,filled", fillcolor="#d8e8ff"]
-  subgraph cluster_core_hosts {
-    label="Core hosts"
-    color="transparent"
-    host_prom1_abf2e7bd7a [label="prom1", style="rounded,filled", fillcolor="#d8e8ff"]
-  }
+  host_bastion1_fd65cf69ce [label="bastion1\nmulti-homed\nnot a router", style="rounded,filled", fillcolor="#d8e8ff"]
+  host_prom1_abf2e7bd7a [label="prom1\n198.51.100.6", style="rounded,filled", fillcolor="#d8e8ff"]
   subgraph cluster_cluster_rke2_rancher_de77c71a50 {
     label="RKE2 / Rancher cluster"
     color="#777777"
-    host_rancher1_d47e6b0e07 [label="rancher1 primary", style="rounded,filled", fillcolor="#d8e8ff"]
-    host_rancher2_bcc55a020f [label="rancher2", style="rounded,filled", fillcolor="#d8e8ff"]
-    host_rancher3_bbbf0c319b [label="rancher3", style="rounded,filled", fillcolor="#d8e8ff"]
+    host_rancher1_d47e6b0e07 [label="rancher1 primary\n198.51.100.11", style="rounded,filled", fillcolor="#d8e8ff"]
+    host_rancher2_bcc55a020f [label="rancher2\n198.51.100.12", style="rounded,filled", fillcolor="#d8e8ff"]
+    host_rancher3_bbbf0c319b [label="rancher3\n198.51.100.13", style="rounded,filled", fillcolor="#d8e8ff"]
   }
-  network_customer_b6c4586387 [label="customer\nkind: local/customer\nCIDR: 198.51.100.0/28\nVMware: EXAMPLE_CUSTOMER_NETWORK\ngateway: 198.51.100.1", style="rounded,filled", fillcolor="#eeeeee"]
-  network_management_288965a1f2 [label="management\nkind: management\nCIDR: 192.0.2.0/24\nVMware: EXAMPLE_MANAGEMENT_NETWORK", style="rounded,filled", fillcolor="#eeeeee"]
-  network_downstream_vlan565_8ed6786137 [label="downstream:vlan565\nkind: downstream\nCIDR: 203.0.113.32/27\nVMware: EXAMPLE_DOWNSTREAM_NETWORK_565\nVLAN: 565\nbastion: 203.0.113.34\nDHCP: 203.0.113.36-203.0.113.61\nlease: 12h\ngateway: 203.0.113.33", style="rounded,filled", fillcolor="#eeeeee"]
-  network_downstream_vlan566_d2bd8ff235 [label="downstream:vlan566\nkind: downstream\nCIDR: 203.0.113.64/27\nVMware: EXAMPLE_DOWNSTREAM_NETWORK_566\nVLAN: 566\nbastion: 203.0.113.66\nDHCP: 203.0.113.68-203.0.113.93\nlease: 12h\ngateway: 203.0.113.65", style="rounded,filled", fillcolor="#eeeeee"]
+  network_customer_b6c4586387 [label="Customer\n198.51.100.0/28\nVMware: EXAMPLE_CUSTOMER_NETWORK\nbastion: 198.51.100.4\ngateway: 198.51.100.1", style="rounded,filled", fillcolor="#eeeeee"]
+  network_management_288965a1f2 [label="Management\n192.0.2.0/24\nVMware: EXAMPLE_MANAGEMENT_NETWORK\nbastion: 192.0.2.10", style="rounded,filled", fillcolor="#eeeeee"]
   subgraph downstream_downstream_vlan565_8ed6786137 {
-    label="VLAN 565 downstream"
+    label=""
     color="#777777"
+    network_downstream_vlan565_8ed6786137 [label="VLAN 565\n203.0.113.32/27\nVMware: EXAMPLE_DOWNSTREAM_NETWORK_565\nbastion: 203.0.113.34", style="rounded,filled", fillcolor="#eeeeee"]
     external_endpoint_gateway_vlan565_97aa5a5c3b [label="External gateway\n203.0.113.33", style="rounded,dashed", fillcolor="#f3f3f3"]
-    consumer_consumer_downstream_vlan565_dfc74929d4 [label="Downstream nodes\nidentities unknown\nDHCP 203.0.113.36-203.0.113.61\nexternal/downstream", style="rounded,dashed", fillcolor="#f3f3f3"]
+    consumer_consumer_downstream_vlan565_dfc74929d4 [label="Downstream nodes\nDHCP 203.0.113.36-203.0.113.61\nexternal lifecycle", style="rounded,dashed", fillcolor="#f3f3f3"]
   }
-  network_downstream_vlan565_8ed6786137 -> external_endpoint_gateway_vlan565_97aa5a5c3b [dir=none, label="external"]
-  network_downstream_vlan565_8ed6786137 -> consumer_consumer_downstream_vlan565_dfc74929d4 [dir=none, label="DHCP"]
+  network_downstream_vlan565_8ed6786137 -> external_endpoint_gateway_vlan565_97aa5a5c3b [dir=none]
+  network_downstream_vlan565_8ed6786137 -> consumer_consumer_downstream_vlan565_dfc74929d4 [dir=none]
   subgraph downstream_downstream_vlan566_d2bd8ff235 {
-    label="VLAN 566 downstream"
+    label=""
     color="#777777"
+    network_downstream_vlan566_d2bd8ff235 [label="VLAN 566\n203.0.113.64/27\nVMware: EXAMPLE_DOWNSTREAM_NETWORK_566\nbastion: 203.0.113.66", style="rounded,filled", fillcolor="#eeeeee"]
     external_endpoint_gateway_vlan566_8cbaf7cad8 [label="External gateway\n203.0.113.65", style="rounded,dashed", fillcolor="#f3f3f3"]
-    consumer_consumer_downstream_vlan566_30b7d29b35 [label="Downstream nodes\nidentities unknown\nDHCP 203.0.113.68-203.0.113.93\nexternal/downstream", style="rounded,dashed", fillcolor="#f3f3f3"]
+    consumer_consumer_downstream_vlan566_30b7d29b35 [label="Downstream nodes\nDHCP 203.0.113.68-203.0.113.93\nexternal lifecycle", style="rounded,dashed", fillcolor="#f3f3f3"]
   }
-  network_downstream_vlan566_d2bd8ff235 -> external_endpoint_gateway_vlan566_8cbaf7cad8 [dir=none, label="external"]
-  network_downstream_vlan566_d2bd8ff235 -> consumer_consumer_downstream_vlan566_30b7d29b35 [dir=none, label="DHCP"]
-  external_external_routed_network_firewall_b2b32914cf [label="External routed network / firewall", style="rounded,dashed", fillcolor="#f3f3f3"]
-  network_customer_b6c4586387 -> external_external_routed_network_firewall_b2b32914cf [label="external routing"]
-  external_external_routed_network_firewall_b2b32914cf -> network_downstream_vlan565_8ed6786137 [label="external routing"]
-  external_external_routed_network_firewall_b2b32914cf -> network_downstream_vlan566_d2bd8ff235 [label="external routing"]
-  host_bastion1_fd65cf69ce -> network_customer_b6c4586387 [dir=none, label="198.51.100.4/28"]
-  host_bastion1_fd65cf69ce -> network_management_288965a1f2 [dir=none, label="192.0.2.10/24"]
-  host_prom1_abf2e7bd7a -> network_customer_b6c4586387 [dir=none, label="198.51.100.6/28"]
-  host_rancher1_d47e6b0e07 -> network_customer_b6c4586387 [dir=none, label="198.51.100.11/28"]
-  host_rancher2_bcc55a020f -> network_customer_b6c4586387 [dir=none, label="198.51.100.12/28"]
-  host_rancher3_bbbf0c319b -> network_customer_b6c4586387 [dir=none, label="198.51.100.13/28"]
-  host_bastion1_fd65cf69ce -> network_downstream_vlan565_8ed6786137 [dir=none, label="203.0.113.34/27"]
-  host_bastion1_fd65cf69ce -> network_downstream_vlan566_d2bd8ff235 [dir=none, label="203.0.113.66/27"]
+  network_downstream_vlan566_d2bd8ff235 -> external_endpoint_gateway_vlan566_8cbaf7cad8 [dir=none]
+  network_downstream_vlan566_d2bd8ff235 -> consumer_consumer_downstream_vlan566_30b7d29b35 [dir=none]
+  network_customer_b6c4586387 -> network_downstream_vlan565_8ed6786137 [dir=none, style=dashed, constraint=false, label="external routing / firewall"]
+  network_customer_b6c4586387 -> network_downstream_vlan566_d2bd8ff235 [dir=none, style=dashed, constraint=false, label="external routing / firewall"]
+  host_bastion1_fd65cf69ce -> network_customer_b6c4586387 [dir=none]
+  network_management_288965a1f2 -> host_bastion1_fd65cf69ce [dir=none]
+  network_customer_b6c4586387 -> host_prom1_abf2e7bd7a [dir=none]
+  network_customer_b6c4586387 -> host_rancher1_d47e6b0e07 [dir=none]
+  network_customer_b6c4586387 -> host_rancher2_bcc55a020f [dir=none]
+  network_customer_b6c4586387 -> host_rancher3_bbbf0c319b [dir=none]
+  host_bastion1_fd65cf69ce -> network_downstream_vlan565_8ed6786137 [dir=none]
+  host_bastion1_fd65cf69ce -> network_downstream_vlan566_d2bd8ff235 [dir=none]
 }
