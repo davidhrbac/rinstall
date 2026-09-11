@@ -277,18 +277,6 @@ def test_topology_preserves_configured_ports_and_vcenter_endpoint():
     assert next(endpoint for endpoint in opaque.endpoints if endpoint.id == "endpoint:ssh-jump").ports == ()
 
 
-def test_topology_renders_without_optional_management_network():
-    config = raw_config()
-    config["infra"]["networks"].pop("management")
-    config["nodes"]["bastion1"]["nics"].pop()
-    config["bastion"]["vsphere_route"] = "192.0.2.128/26 10.14.17.1"
-    config["bastion"]["vsphere_route_connection"] = "ens192"
-    topology = build_desired_topology(expand_env(config))
-
-    assert "Management" not in render_topology_network_mermaid(topology)
-    assert "Monitoring host" in render_topology_architecture_mermaid(topology)
-
-
 def test_topology_accepts_explicit_ssh_target_outside_node_interfaces():
     config = raw_config()
     config["nodes"]["prom1"]["ssh_ip"] = "192.0.2.99"
@@ -787,8 +775,6 @@ def test_topology_binds_bastion_services_to_service_ip_interface():
 
 def test_topology_route_linkage_uses_configured_renamed_connection():
     config = raw_config()
-    config["nodes"]["bastion1"]["nics"][0]["connection_name"] = "ens192"
-    config["nodes"]["bastion1"]["nics"][1]["connection_name"] = "ens224"
     config["bastion"]["network_connection_names"] = {
         "ens192": "local",
         "ens224": "mgmt",
@@ -817,19 +803,27 @@ def test_topology_route_mapping_order_is_semantically_invariant():
         "ens192": "local",
     }
     for config in (first, second):
-        config["nodes"]["bastion1"]["nics"][0]["connection_name"] = "ens192"
-        config["nodes"]["bastion1"]["nics"][1]["connection_name"] = "ens224"
         config["bastion"]["vsphere_route_connection"] = "mgmt"
 
-    first_route = build_desired_topology(expand_env(first)).deployment_context.vsphere.route
-    second_route = build_desired_topology(expand_env(second)).deployment_context.vsphere.route
+    first_topology = build_desired_topology(expand_env(first))
+    second_topology = build_desired_topology(expand_env(second))
+    first_route = first_topology.deployment_context.vsphere.route
+    second_route = second_topology.deployment_context.vsphere.route
 
     assert first_route == second_route
+    assert all(
+        renderer(first_topology) == renderer(second_topology)
+        for renderer in (
+            render_topology_json,
+            render_topology_markdown,
+            render_topology_architecture_mermaid,
+            render_topology_network_mermaid,
+        )
+    )
 
 
 def test_topology_partial_connection_mapping_uses_explicit_route_identity():
     config = raw_config()
-    config["nodes"]["bastion1"]["nics"][1]["connection_name"] = "ens224"
     config["bastion"]["network_connection_names"] = {"ens224": "mgmt"}
     config["bastion"]["vsphere_route_connection"] = "mgmt"
 

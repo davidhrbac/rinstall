@@ -109,16 +109,15 @@ def test_base_nic_topology_guard_allows_unchanged_and_appended_downstream_nics()
     RENDERER.validate_bastion_base_nics(two_downstream, base_output(base))
 
 
-def test_base_nic_topology_guard_rejects_swap_and_network_replacement():
+def test_base_nic_validation_rejects_swap_and_network_replacement():
     config = yaml.safe_load(EXAMPLE_ENV.read_text())
     base = RENDERER.render(expand_env(config))
     existing = base_output(base)
 
     swapped_config = yaml.safe_load(EXAMPLE_ENV.read_text())
     swapped_config["nodes"]["bastion1"]["nics"] = list(reversed(swapped_config["nodes"]["bastion1"]["nics"]))
-    swapped = RENDERER.render(expand_env(swapped_config))
-    with pytest.raises(SystemExit, match="base NIC order or VMware network identity changed"):
-        RENDERER.validate_bastion_base_nics(swapped, existing)
+    with pytest.raises(SystemExit, match="exactly two base NICs"):
+        expand_env(swapped_config)
 
     replaced_config = yaml.safe_load(EXAMPLE_ENV.read_text())
     replaced_config["infra"]["networks"]["customer"] = "REPLACED_CUSTOMER_PORTGROUP"

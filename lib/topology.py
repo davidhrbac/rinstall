@@ -6,7 +6,11 @@ import json
 import re
 from urllib.parse import urlparse
 
-from lib.env_config import effective_local_dns_servers, gitlab_backend_state_address
+from lib.env_config import (
+    BASTION_MANAGEMENT_NIC_INDEX,
+    effective_local_dns_servers,
+    gitlab_backend_state_address,
+)
 from lib.ssh_config import configured_ssh_jump_hops, node_ssh_hops, node_ssh_target
 
 RINSTALL_ARCHITECTURE = "RINSTALL_ARCHITECTURE"
@@ -2065,18 +2069,14 @@ def build_desired_topology(config):
     vsphere_route_destination, vsphere_route_gateway = config["bastion"][
         "vsphere_route"
     ].split()
-    route_nic_index = config["bastion"].get("route_nic_index")
-    route_interface = (
-        next(
-            (
-                interface
-                for interface in interfaces
-                if interface.host == bastion_host and interface.nic_index == route_nic_index
-            ),
-            None,
-        )
-        if route_nic_index is not None
-        else None
+    route_interface = next(
+        (
+            interface
+            for interface in interfaces
+            if interface.host == bastion_host
+            and interface.nic_index == BASTION_MANAGEMENT_NIC_INDEX
+        ),
+        None,
     )
     route_resolved = bool(
         route_interface

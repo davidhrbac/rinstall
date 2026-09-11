@@ -77,9 +77,7 @@ nodes:
     disk_gb: 80
     nics:
       - network: customer
-        connection_name: ens192
       - network: management
-        connection_name: ens224
         cidr: 192.0.2.10/24
 
   prom1:

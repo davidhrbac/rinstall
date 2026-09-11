@@ -287,9 +287,7 @@ nodes:
     host: 4
     nics:
       - network: customer
-        connection_name: ens192
       - network: management
-        connection_name: ens224
         cidr: 192.0.2.10/24
 ```
 
@@ -407,7 +405,7 @@ bastion:
   vsphere_route_connection: mgmt
 ```
 
-The map keys are current base device names or current profile names, and values are target NetworkManager connection IDs. Set `connection_name` on each configured bastion base NIC to its current source connection ID. The final connection ID is the mapped target when present, otherwise the source ID. The route connection must match exactly one of these explicit final NIC identities; mapping order is ignored. This keeps the base connections readable as `local`/`mgmt`. Downstream devices retain their actual guest names, while their NetworkManager connection IDs and dnsmasq DHCP tags use logical `vlan<VLAN>` names.
+The bastion base NIC order is fixed: `nodes.<bastion>.nics[0]` is the customer/local NIC and `nodes.<bastion>.nics[1]` is the management NIC. `network_connection_names` only renames runtime NetworkManager profiles from their current IDs to desired IDs; its mapping order does not define VM NIC ordering or identity. The route topology always uses the management base NIC. Downstream devices retain their actual guest names, while their NetworkManager connection IDs and dnsmasq DHCP tags use logical `vlan<VLAN>` names.
 
 ## Proxy
 

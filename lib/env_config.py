@@ -30,6 +30,9 @@ RANCHER_HOSTNAME_PATTERN = re.compile(
     r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$"
 )
 DNSMASQ_LEASE_TIME_PATTERN = re.compile(r"^[1-9][0-9]*[smhdw]$")
+BASTION_CUSTOMER_NIC_INDEX = 0
+BASTION_MANAGEMENT_NIC_INDEX = 1
+BASTION_BASE_NIC_COUNT = 2
 
 
 def require(mapping, key, context):
@@ -336,31 +339,14 @@ def validate_env_references(env):
         "env.bastion.service_node",
     )
     bastion_nics = nodes[service_node]["nics"]
-    connection_ids = []
-    for index, nic in enumerate(bastion_nics):
-        connection_name = nic.get("connection_name")
-        if not isinstance(connection_name, str) or not connection_name:
-            raise SystemExit(
-                f"env.nodes.{service_node}.nics[{index}].connection_name must be a non-empty string"
-            )
-        if connection_name in connection_ids:
-            raise SystemExit(
-                f"env.nodes.{service_node}.nics[].connection_name must be unique: {connection_name}"
-            )
-        connection_ids.append(connection_name)
-    unmapped_sources = sorted(set(connection_names) - set(connection_ids))
-    if unmapped_sources:
+    if (
+        len(bastion_nics) != BASTION_BASE_NIC_COUNT
+        or bastion_nics[BASTION_CUSTOMER_NIC_INDEX]["network"] != "customer"
+        or bastion_nics[BASTION_MANAGEMENT_NIC_INDEX]["network"] != "management"
+    ):
         raise SystemExit(
-            "env.bastion.network_connection_names sources missing bastion NIC connection_name: "
-            + ", ".join(unmapped_sources)
-        )
-    final_connection_ids = [
-        connection_names.get(connection_id, connection_id)
-        for connection_id in connection_ids
-    ]
-    if len(final_connection_ids) != len(set(final_connection_ids)):
-        raise SystemExit(
-            "env.bastion.network_connection_names produces duplicate bastion connection IDs"
+            f"env.nodes.{service_node}.nics must contain exactly two base NICs: "
+            "customer at index 0 and management at index 1"
         )
     validate_role(
         require(require(env, "rke2", "env"), "primary_node", "env.rke2"),
@@ -522,11 +508,6 @@ def expand_env(raw_env):
     if not isinstance(route_connection, str) or not route_connection:
         raise SystemExit("env.bastion.vsphere_route_connection must be a non-empty string")
     connection_names = bastion.get("network_connection_names", {})
-    base_nics = nodes[bastion_name]["nics"]
-    if route_connection in connection_names and connection_names[route_connection] != route_connection:
-        raise SystemExit(
-            "env.bastion.vsphere_route_connection refers to a bastion connection that is renamed"
-        )
     management_interfaces = [
         source
         for source, target in connection_names.items()
@@ -538,17 +519,6 @@ def expand_env(raw_env):
             "env.bastion.vsphere_route_connection"
         )
     bastion["management_interface"] = management_interfaces[0] if management_interfaces else route_connection
-    route_nic_indices = [
-        index
-        for index, nic in enumerate(base_nics)
-        if connection_names.get(nic["connection_name"], nic["connection_name"]) == route_connection
-    ]
-    if len(route_nic_indices) != 1:
-        raise SystemExit(
-            "env.bastion.vsphere_route_connection must match exactly one bastion NIC connection_name"
-        )
-    route_nic_index = route_nic_indices[0]
-    bastion["route_nic_index"] = route_nic_index
     bastion["dnsmasq_upstream_servers"] = require(
         bastion, "dnsmasq_upstream_servers", "env.bastion"
     )
@@ -573,7 +543,7 @@ def expand_env(raw_env):
             "env.bastion.service_ip must match an IPv4 address assigned to a bastion NIC"
         )
 
-    route_nic = nodes[bastion_name]["nics"][route_nic_index]
+    route_nic = nodes[bastion_name]["nics"][BASTION_MANAGEMENT_NIC_INDEX]
     if route_nic.get("ip") is not None:
         route_network = ip_interface(
             f"{route_nic['ip']}/{route_nic['prefix']}"
