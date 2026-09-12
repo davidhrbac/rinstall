@@ -79,13 +79,13 @@ Only credentials come from the runtime environment: `TF_HTTP_USERNAME` and
 When both are present, config-derived non-secret values override matching
 `TF_HTTP_*` values supplied by the shell.
 
-## Development / Validation Fixture
+## Standalone / Development Workflow
 
-For engine development and sanitized fixtures, use `envs/example/env.yaml` for
-rendering, syntax checks, and tests. It is not a standalone Terraform
-provisioning configuration, even though it contains sanitized GitLab backend
-metadata; use a real instance configuration and runtime credentials for
-provisioning.
+For engine development and sanitized fixtures, run commands from this
+repository with `ENV=...`. Use `envs/example/env.yaml` for rendering, syntax
+checks, and tests. It is not a standalone Terraform provisioning configuration,
+even though it contains sanitized GitLab backend metadata; use a real instance
+configuration and runtime credentials for provisioning.
 
 ```bash
 make render-infra-vars ENV=envs/example
@@ -98,7 +98,7 @@ explicit GitLab-backed instance configuration and provide
 the same `make -f rinstall/Makefile infra-init`, `infra-plan`, `infra-apply`,
 and `provision-all` targets documented above.
 
-`make rancher-install` and `make rancher-bootstrap` automatically fetch `/etc/rancher/rke2/rke2.yaml` from the primary Rancher node, rewrite its Kubernetes API endpoint to the primary node IP, and upload the prepared kubeconfig to the configured bastion as `/root/rke2.yaml`. The helper target `make rke2-kubeconfig` is available for debugging that step directly.
+`make -f rinstall/Makefile rancher-install` and `make -f rinstall/Makefile rancher-bootstrap` automatically fetch `/etc/rancher/rke2/rke2.yaml` from the primary Rancher node, rewrite its Kubernetes API endpoint to the primary node IP, and upload the prepared kubeconfig to the configured bastion as `/root/rke2.yaml`. The helper target `make -f rinstall/Makefile rke2-kubeconfig` is available for debugging that step directly.
 
 Rancher Helm install receives `proxy` and `noProxy` values derived from the bastion Squid service IP/port and the generated `proxy.no_proxy` list. `noProxy` includes private CIDRs, Kubernetes service DNS suffixes, the local VLAN CIDR, the Rancher URL, and any explicit `proxy.extra_no_proxy` values. This is separate from the host-level proxy files rendered during node prep.
 
@@ -125,14 +125,12 @@ same config-derived GitLab backend using inherited runtime credentials. The
 `destroy-commands` target only renders tfvars and prints commands; it does not
 initialize Terraform, create a plan, or destroy resources automatically.
 
-The helper prints the explicit Terraform commands to run, for example:
+The helper prints the exact Terraform commands to run, including the selected
+`TF_DATA_DIR` and the generated GitLab HTTP backend assignments. Review and
+execute those generated commands intentionally; do not replace them with an
+abbreviated command that omits the runtime or backend context.
 
-```bash
-terraform -chdir=rinstall/terraform/infra plan -destroy -var-file=.rinstall/infra.tfvars.json
-terraform -chdir=rinstall/terraform/infra destroy -var-file=.rinstall/infra.tfvars.json && make -f rinstall/Makefile ssh-hostkeys-reset
-```
-
-Always confirm the instance repository, Terraform backend/state, and destroy plan before approving. There is intentionally no `make infra-destroy` or `make destroy-all` shortcut, because destroy is destructive and should stay explicit. Terraform destroy only removes resources tracked by the Terraform infra state; it does not clean Rancher API resources, downstream clusters, external DNS/LB records, DHCP reservations, or local generated files under `.rinstall/`.
+Always confirm the instance repository, Terraform backend/state, and destroy plan before approving. There is intentionally no `make infra-destroy` or `make destroy-all` shortcut, because destroy is destructive and should stay explicit. Terraform destroy only removes resources tracked by the Terraform infra state; it does not clean Rancher API resources, downstream clusters, external DNS/LB records, DHCP reservations, or local generated files under the selected runtime directory.
 
 `make -f rinstall/Makefile destroy-commands` prints a header with the selected instance config, runtime directory, Terraform directory, tfvars path, vSphere server/user when available from environment variables, backend/init settings, and then the explicit review/destroy commands. It never prints the vSphere password.
 
@@ -144,7 +142,7 @@ Terraform destroy fails, the `&&` prevents the reset and preserves the
 instance-local SSH trust. Neither the automatic reset nor the standalone reset
 commands modify the operator's `~/.ssh/known_hosts`.
 
-Keep vCenter connection details out of `env.yaml` unless there is a specific reason to pin them there. Terraform accepts them through environment variables, which can be loaded by `direnv` from an ignored `.envrc`:
+Keep vCenter connection details out of the environment configuration unless there is a specific reason to pin them there. Terraform accepts them through environment variables, which can be loaded by `direnv` from an ignored `.envrc`:
 
 ```bash
 export TF_VAR_vsphere_server="vcenter.example.internal"
@@ -152,17 +150,19 @@ export TF_VAR_vsphere_user="administrator@example.internal"
 export TF_VAR_vsphere_password="change-me"
 ```
 
-See `.envrc.example` for the expected variable names. `make render-infra-vars` omits `vsphere_server` and `vsphere_user` when they are not set in `env.yaml`, so Terraform will read `TF_VAR_vsphere_server` and `TF_VAR_vsphere_user` from the operator environment.
+See `.envrc.example` for the expected variable names. `render-infra-vars` omits `vsphere_server` and `vsphere_user` when they are not set in the environment configuration, so Terraform will read `TF_VAR_vsphere_server` and `TF_VAR_vsphere_user` from the operator environment.
 
 Standalone engine validation uses `terraform init -backend=false`. Production
 instances use the static HTTP backend in the pinned engine and settings from
 `config.yaml`; no backend files or Terraform source are generated at runtime.
 
 If local nodes require a separate SSH jump host, configure it in the environment
-config. pyinfra inventory will generate `build/<environment.id>/ssh_config` in
-standalone mode or `.rinstall/ssh_config` in an instance repository. The
-configured bastion goes through the first jump host; local-only nodes can go
-through the first jump host and then the configured bastion:
+configuration. In an instance repository, run
+`make -f rinstall/Makefile ssh-config`; in standalone mode, run
+`make ssh-config ENV=envs/example`. The generated file is written under the
+selected runtime directory. The configured bastion goes through the first jump
+host; local-only nodes can go through the first jump host and then the
+configured bastion:
 
 ```yaml
 ssh:
@@ -174,7 +174,12 @@ ssh:
     - rancher
 ```
 
-The jump host alias should be defined in the operator's `~/.ssh/config`; `make ssh-config` generates `build/<environment.id>/ssh_config`, includes that file, and only adds target-node routing. Generated target entries use `ProxyCommand` so both OpenSSH and pyinfra's SSH connector can consume the same config. This keeps real internal hostnames, IPs, and upstream SSH topology out of the repo. Use `ssh_ip` per node only if the desired SSH target cannot be derived from a static management NIC.
+The jump host alias should be defined in the operator's `~/.ssh/config`. The
+generated SSH config includes that file and only adds target-node routing.
+Generated target entries use `ProxyCommand` so both OpenSSH and pyinfra's SSH
+connector can consume the same config. This keeps real internal hostnames, IPs,
+and upstream SSH topology out of the repo. Use `ssh_ip` per node only if the
+desired SSH target cannot be derived from a static management NIC.
 
 rinstall-managed target VM keys are stored in `.rinstall/known_hosts` in an
 instance repository, or alongside the generated standalone SSH config under
@@ -287,11 +292,16 @@ Positive address integers count usable hosts from the start of the subnet: `1` i
 
 The configured `gateway` is the external firewall's gateway and is advertised to clients with the DHCP router option. It is not configured as a bastion route or default gateway. rinstall does not enable forwarding, NAT, masquerading, or forwarding firewall rules for downstream networks. Per-VLAN dnsmasq files use `dhcp-range=set:vlan<VLAN>,...` and `dhcp-option=tag:vlan<VLAN>,option:router,...`; they do not use the runtime `ensXXX` device name as a DHCP tag or emit DHCP option 6, so dnsmasq's normal behavior advertises the bastion address on the downstream interface as DNS.
 
-Keep existing entries in their original order and append new entries at the end. Both Terraform plan/apply and standalone `bastion-configure` refresh `.rinstall/infra-output.json` from remote Terraform state, then run the checked lifecycle renderer before pyinfra consumes provider MAC mappings. DHCP range/lease changes are supported where configuration validation permits them. Removing, reordering, renaming a VLAN, or moving an existing entry to another VMware network is refused in this release because downstream VMs are owned by a separate Terraform workflow and rinstall cannot determine whether a network remains in use.
+Keep existing entries in their original order and append new entries at the end. Both Terraform plan/apply and standalone `bastion-configure` refresh `infra-output.json` in the selected runtime directory from remote Terraform state, then run the checked lifecycle renderer before pyinfra consumes provider MAC mappings. DHCP range/lease changes are supported where configuration validation permits them. Removing, reordering, renaming a VLAN, or moving an existing entry to another VMware network is refused in the current release because downstream VMs are owned by a separate Terraform workflow and rinstall cannot determine whether a network remains in use.
 
 ### Downstream network lifecycle
 
-Downstream networks have a deliberately conservative lifecycle in v0.3.0. After a downstream network has been applied, its network identity is treated as immutable. The lifecycle check runs before Terraform plan/apply and before standalone `bastion-configure`; the standalone target does not bypass infrastructure protection.
+Downstream networks have a deliberately conservative lifecycle. This contract
+was introduced in v0.3.0 and remains current in v0.4.0. After a downstream
+network has been applied, its network identity is treated as immutable. The
+lifecycle check runs before Terraform plan/apply and before standalone
+`bastion-configure`; the standalone target does not bypass infrastructure
+protection.
 
 For an existing downstream network, these properties cannot change:
 
@@ -308,9 +318,15 @@ These DHCP settings remain mutable:
 - `dhcp.end`
 - `dhcp.lease_time`
 
-Adding another downstream network is supported. Removal, reordering, VMware portgroup changes, addressing changes, or changes to an existing attachment identity fail closed before infrastructure or bastion configuration can be modified. Use the appropriate lifecycle procedure for a disruptive identity change instead of editing an existing entry in place.
+Adding another downstream network is supported. Removal, reordering, VMware
+portgroup changes, addressing changes, or changes to an existing attachment
+identity fail closed before infrastructure or bastion configuration can be
+modified. These immutable-after-create fields cannot currently be changed
+through the normal workflow. A disruptive change requires an external/manual
+migration or recreation procedure; automated removal and migration remain
+future work.
 
-| Change | v0.3.0 |
+| Change | Current release |
 | --- | --- |
 | Add downstream network | Supported |
 | Change DHCP start/end | Supported |
@@ -375,11 +391,16 @@ The map keys are current base device names or current profile names, and values 
 
 ## Proxy
 
-Proxy files follow the production pattern: `HTTP_PROXY`/`HTTPS_PROXY` point at `bastion.service_ip:3128`, and `NO_PROXY` defaults to private CIDRs plus the local VLAN CIDR and Rancher URL. Add site-specific values under `proxy.extra_no_proxy` only when needed. Override `proxy.no_proxy_cidrs` only if the private-CIDR default is wrong for the environment.
+Proxy files follow the production pattern: `HTTP_PROXY`/`HTTPS_PROXY` point at
+`bastion.service_ip:3128`, and `NO_PROXY` is derived from private CIDRs,
+Kubernetes service DNS names and suffixes, the local VLAN CIDR, the Rancher URL,
+and any explicit `proxy.extra_no_proxy` values. Use the generated
+`proxy.no_proxy` value as the canonical result. Override `proxy.no_proxy_cidrs`
+only if the private-CIDR default is wrong for the environment.
 
 ## Hostnames
 
-`make node-prep` sets local node hostnames to `<node>.<rancher_url>`, including the configured bastion, the Prometheus node, and all Rancher nodes.
+`make -f rinstall/Makefile node-prep` sets local node hostnames to `<node>.<rancher_url>`, including the configured bastion, the Prometheus node, and all Rancher nodes.
 
 It also renders `/etc/profile.d/prompt.sh`. The prompt suffix is always `environment.id`; prompt colors have defaults and are the only prompt-specific settings:
 
@@ -395,7 +416,7 @@ prompt:
 
 ## RKE2 Prep
 
-For Rancher nodes, `make node-prep` renders these managed files:
+For Rancher nodes, `make -f rinstall/Makefile node-prep` renders these managed files:
 
 ```text
 /etc/NetworkManager/conf.d/rke2-canal.conf
@@ -404,7 +425,7 @@ For Rancher nodes, `make node-prep` renders these managed files:
 /etc/rancher/rke2/config.yaml
 ```
 
-The primary node defaults to the first expanded Rancher node and gets a config without `server`; join nodes get `server: https://<primary-node-ip>:9345`. `rke2.token_file` defaults to `/etc/rancher/rke2/token`, `selinux` defaults to `true`, and `make rke2-install` runs the primary node phase first, then the join-node phase.
+The primary node defaults to the first expanded Rancher node and gets a config without `server`; join nodes get `server: https://<primary-node-ip>:9345`. `rke2.token_file` defaults to `/etc/rancher/rke2/token`, `selinux` defaults to `true`, and `make -f rinstall/Makefile rke2-install` runs the primary node phase first, then the join-node phase.
 
 ## Rancher Edition
 
@@ -428,7 +449,14 @@ rancher:
 For Rancher Prime, set `edition: prime` in the instance config and fill the Prime chart repository/version approved for that customer. The env loader resolves the selected edition into the values expected by the install script.
 `agent_tls_mode` defaults to `system-store`. `rke2.version`, `rancher.cert_manager_version`, and the selected Rancher edition `version` are required; the environment config is the only version source of truth.
 
-Set `rancher.bootstrap_password` only in instance configs when you want to control the one-time initial admin password. The install script uses it only when the Rancher Helm release does not exist yet; repeat runs and upgrades never pass `bootstrapPassword` again. When it is omitted, each successful `make rancher-install` prints a command that retrieves the generated password from `cattle-system/bootstrap-secret` if this was the first Rancher release. Change the password after first login.
+For production, omit `rancher.bootstrap_password` from committed `config.yaml`.
+Let Rancher generate the one-time bootstrap password, retrieve it using the
+printed command, and change it after first login. The
+`rancher.bootstrap_password` field is intended only for standalone/test or
+otherwise explicitly untracked configurations where controlling the initial
+password is required. When supplied, the install script uses it only when the
+Rancher Helm release does not exist yet; repeat runs and upgrades never pass
+`bootstrapPassword` again.
 
 `rinstall` installs cert-manager and Rancher only when their Helm releases are absent. An existing release must match the declared chart version; Rancher must also match the declared hostname, proxy, and no-proxy values. Any mismatch fails without an upgrade or downgrade, because Rancher and cert-manager lifecycle changes belong to the separate Rancher Environment repository. Synchronize the DR environment pins after those lifecycle changes.
 
@@ -500,4 +528,14 @@ state is not a supported production mode. Do not put GitLab tokens in
 
 Do not commit credentials in generated var files, backend config files with secrets, generated node files, kubeconfigs, Rancher tokens, or `.envrc`. Prefer environment variables, Bitwarden, or one-shot bootstrap scripts for secrets that should not land in Terraform state.
 
-For scaffold/test environments, `rke2.token` may be placed directly in `env.yaml`; `make node-prep` writes it to `rke2.token_file` on Rancher nodes. For production, prefer omitting `rke2.token` and populating `rke2.token_file` from the approved secret source. `rke2.version` is required and pins the release installed by `get.rke2.io`; a rerun fails if an installed RKE2 version differs from the requested pin. RKE2 `tls-san` defaults to `rancher_url` to avoid hostname typos.
+Production `config.yaml` must omit `rke2.token`.
+rinstall does not currently retrieve or inject the production RKE2 token from
+environment variables or a secret provider. External secret tooling must
+populate `rke2.token_file` on the Rancher nodes before RKE2 installation.
+If `rke2.token` is present in configuration, `node-prep` writes it to
+`token_file`; this mode is intended for standalone/development or explicitly
+untracked configurations. Choosing the canonical production RKE2 token source
+remains an open architectural question.
+`rke2.version` is required and pins the release installed by `get.rke2.io`; a
+rerun fails if an installed RKE2 version differs from the requested pin. RKE2
+`tls-san` defaults to `rancher_url` to avoid hostname typos.

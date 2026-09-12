@@ -1,59 +1,83 @@
 # TODO
 
-## Completed In This Branch
-
-- Repo-per-instance architecture with mandatory GitLab backend and derived Terraform state `<environment.id>-infra`.
-- Verified vSphere TLS default, configurable clone timeout, and real instance-repository smoke testing.
-- Schema validation for single bastion scope, configured topology names, and required backend/config identities.
-
 ## Next
 
-- Define the DR version-sync contract with the separate Rancher lifecycle repository.
-  - Every Rancher or local RKE2 upgrade must also update the bootstrap pins in the per-environment infra config before DR is considered complete.
-  - Start with a documented Definition of Done or checklist; do not introduce cross-repository Terraform state dependencies.
+### Operational Verification
 
-- Make bootstrap tooling version-aware and lock Python dependencies for DR reproducibility.
-  - Derive or select `kubectl` compatible with the configured RKE2/Kubernetes version; do not blindly use `asdf latest kubectl`.
-  - Ensure Helm satisfies the configured Rancher release requirements without maintaining an independent historical pin unless DR policy requires it.
-  - Replace minimum-version Python dependencies with exact pins or a lockfile.
+- Add `make bastion-verify` to verify the hostname, `/etc/hosts`, `dnsmasq`,
+  Squid, vSphere route, and Rancher URL round-robin DNS from the bastion.
+- Add `make rke2-status` to verify the `rke2-server` service, ports `9345` and
+  `6443`, and `kubectl get nodes` after installation.
+- Add Rancher readiness and bootstrap verification through the configured
+  Rancher URL, including `/ping`, pod readiness, `server-url`, and
+  `agent-tls-mode`.
 
-- Add proxy-aware bootstrap/tool downloads.
+### DR Safety
 
-- Add vCenter CA bootstrap for Linux and Windows.
-
-- Add recovery for partial vSphere creates and orphan VMs.
-
-- Harden GitLab `project_id` and backend identity handling.
-
-- Run `make verify` in CI.
-
-- Add supply-chain hardening for bootstrap and provisioning dependencies.
-
-- Add multi-bastion/HA bastion support in a future schema; this remains outside schema v1 and v0.2.
-
-- Add `make bastion-verify`.
-  - Verify hostname, `/etc/hosts`, `dnsmasq`, `squid`, vSphere route, and Rancher URL round-robin DNS from bastion.
-
-- Add `make rke2-status`.
-  - Verify `rke2-server` service state, ports `9345`/`6443`, and `kubectl get nodes` after install.
+- Define the DR version-sync contract with the separate Rancher lifecycle
+  repository.
+  - Every Rancher or local RKE2 upgrade must also update the bootstrap pins in
+    the per-environment instance configuration before DR is considered
+    complete.
+  - Start with a documented Definition of Done or checklist; do not introduce
+    shared Terraform state or cross-repository runtime coupling.
+- Assess bootstrap helper CLI compatibility for Helm and kubectl.
+  - Record a pinning or minimum-version policy against the configured
+    RKE2/Rancher versions; do not blindly resolve `asdf latest kubectl`.
+- Lock Python dependencies or provide an equivalent reproducibility lockfile.
 
 ## Later
 
-- Add a conservative downstream-network removal workflow after v0.3.0.
-  - Coordinate with the separate downstream-cluster Terraform because rinstall cannot determine whether a VMware network is still in use.
-  - Require explicit acknowledgement, remove guest DHCP/NetworkManager state before detaching the vNIC, and prevent attachment-order shifts for retained NICs.
+- Add proxy-aware bootstrap and tool downloads.
+- Add vCenter CA bootstrap for Linux and Windows.
+- Add recovery for interrupted or partially completed vSphere create/apply
+  workflows.
+  - Keep this separate from the implemented refresh-free destroy recovery used
+    when normal Terraform refresh cannot reach an external dependency.
+  - Define orphan-VM discovery and cleanup, plus reconciliation after an
+    interrupted create or apply.
+- Harden GitLab `project_id` and backend identity handling beyond the current
+  schema and base-URL validation.
+- Run `make verify` in CI.
+- Add supply-chain hardening for bootstrap and provisioning dependencies.
+- Add a conservative downstream-network removal and migration workflow.
+  - Coordinate with the separate downstream-cluster Terraform because rinstall
+    cannot determine whether a VMware network is still in use.
+  - Require explicit acknowledgement, remove guest DHCP/NetworkManager state
+    before detaching the vNIC, and prevent attachment-order shifts for retained
+    NICs.
+- Split environment loading into parse, validate, and resolve stages if the
+  configuration model grows enough to justify the separation.
+- Split `pyinfra/deploy.py` by provisioning phase if maintaining one file
+  becomes difficult.
 
-- Split environment loading into parse, validate, and resolve stages when the config model grows.
+## Open Questions
 
-- Split `pyinfra/deploy.py` by provisioning phase when it becomes difficult to maintain as one file.
+- Which secret source should own the production RKE2 token? The current engine
+  consumes a supplied token or token file and does not integrate with a secret
+  provider.
+- What should rinstall own for the Prometheus node: VM provisioning only,
+  monitoring configuration, or a different Day-0 boundary with lifecycle
+  managed elsewhere?
+- Should helper CLI versions be pinned, or should compatibility be enforced by
+  minimum-version checks against the configured RKE2/Rancher versions?
+- When should DR version-sync checking become automated after the process
+  contract is established?
+- After a real private-environment dry run, should stable follow-ups be tracked
+  as GitLab issues or maintained in the instance-repository checklist?
 
-- Add Rancher bootstrap hardening.
-  - Verify `server-url`, `agent-tls-mode`, Rancher pod readiness, and `/ping` through the Rancher URL.
+## Completed / Historical
 
-- Add Prometheus node configuration.
-   - Current `node-prep` only sets hostname/prompt for the Prometheus node; define actual monitoring setup later.
-
-## Questions
-
-- Which secret source should own the RKE2 token in production?
-- Should GitLab issues be created from the stable items in this file after the first real dry-run?
+- Repo-per-instance architecture with a pinned engine submodule and private
+  `.rinstall/` runtime state.
+- GitLab HTTP backend support with derived Terraform state names from
+  `environment.id`.
+- Required schema identities, single-bastion validation, secure vSphere TLS
+  defaults, configurable clone timeout, and instance-repository smoke testing.
+- Downstream network/VLAN lifecycle protection, deterministic attachment
+  ordering, provider-MAC mapping, and declarative bastion configuration.
+- Desired topology model with deterministic JSON, Markdown, text, and Mermaid
+  rendering.
+- Optional committed `docs/topology/` generation and drift detection.
+- Instance-local SSH known-hosts lifecycle and explicit refresh-free Terraform
+  destroy recovery for missing external dependencies.
