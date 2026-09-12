@@ -825,6 +825,61 @@ def test_topology_route_linkage_uses_configured_renamed_connection():
     )
 
 
+def test_topology_route_with_management_gateway_is_resolved_and_validated():
+    topology = build_desired_topology(expand_env(raw_config()))
+    validate_topology(topology)
+
+    route = topology.deployment_context.vsphere.route
+    assert route.resolution == RESOLVED
+    assert route.verification == UNVERIFIED
+    assert route.interface_ref == EntityReference("interface", "bastion1:1")
+    assert route.network_ref == EntityReference("network", "management")
+
+
+def test_topology_route_outside_management_subnet_is_partial_without_fallback():
+    config = raw_config()
+    config["bastion"]["vsphere_route"] = "192.0.2.128/26 10.14.17.1"
+
+    expanded = expand_env(config)
+    topology = build_desired_topology(expanded)
+    validate_topology(topology)
+
+    route = topology.deployment_context.vsphere.route
+    assert route.resolution == PARTIAL
+    assert route.verification == UNVERIFIED
+    assert route.interface_ref == EntityReference("interface", "bastion1:1")
+    assert route.network_ref == EntityReference("network", "management")
+    assert route.interface_ref != EntityReference("interface", "bastion1:0")
+    assert any("cannot be proven to belong" in note for note in topology.notes)
+
+
+@pytest.mark.parametrize(
+    ("gateway", "resolution"),
+    [("192.0.2.1", RESOLVED), ("10.14.17.1", PARTIAL)],
+)
+def test_topology_route_rendering_is_deterministic_for_resolution_states(gateway, resolution):
+    def renderers(config):
+        topology = build_desired_topology(expand_env(config))
+        assert topology.deployment_context.vsphere.route.resolution == resolution
+        return tuple(
+            renderer(topology)
+            for renderer in (
+                render_topology_json,
+                render_topology_markdown,
+                render_topology_ascii_overview,
+                render_topology_architecture_mermaid,
+                render_topology_network_mermaid,
+            )
+        )
+
+    first = raw_config()
+    second = raw_config()
+    first["bastion"]["vsphere_route"] = f"192.0.2.128/26 {gateway}"
+    second["bastion"]["vsphere_route"] = f"192.0.2.128/26 {gateway}"
+
+    assert renderers(first) == renderers(second)
+
+
 def test_topology_route_mapping_order_is_semantically_invariant():
     first = raw_config()
     second = raw_config()

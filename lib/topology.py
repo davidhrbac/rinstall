@@ -1403,14 +1403,13 @@ def validate_topology(topology):
         if route_interface.address is None or route_interface.prefix is None:
             if route.resolution != PARTIAL:
                 raise ValueError("invalid topology: unresolved vSphere route lacks static interface addressing")
-        elif (
-            ip_address(route.gateway)
-            not in ip_interface(
+        else:
+            gateway_matches_interface = ip_address(route.gateway) in ip_interface(
                 f"{route_interface.address}/{route_interface.prefix}"
             ).network
-            or route.resolution != RESOLVED
-        ):
-            raise ValueError("invalid topology: vSphere route linkage is inconsistent")
+            expected_resolution = RESOLVED if gateway_matches_interface else PARTIAL
+            if route.resolution != expected_resolution:
+                raise ValueError("invalid topology: vSphere route linkage is inconsistent")
 
     expected_admin_edges = _administrative_path_edges(topology.access_paths)
     for rule_id, (source_reference, destination_reference) in expected_admin_edges.items():
@@ -2777,6 +2776,10 @@ def build_desired_topology(config):
     notes = [
         "Desired topology only; provider state, guest runtime state, and network reachability are not verified."
     ]
+    if deployment_context.vsphere.route.resolution == PARTIAL:
+        notes.append(
+            "The configured vSphere route gateway cannot be proven to belong to the desired management subnet; runtime route placement is not verified."
+        )
     management_networks = [network for network in networks if network.kind == "management"]
     for network in management_networks:
         if network.cidr is None:

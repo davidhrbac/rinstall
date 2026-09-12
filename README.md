@@ -468,10 +468,11 @@ writes under `build/<environment.id>/`:
 - `network-topology.mmd`
 
 The command does not run Terraform, contact vCenter or Rancher, inspect guest
-state, or run pyinfra. It does not expose credentials, provider MAC addresses,
-guest interface names, Terraform state, or runtime reachability. Direct SSH
-paths are shown directly; a bastion hop is shown only when the configured SSH
-proxy path includes it.
+state, or run pyinfra. It does not expose credentials, discover or invent
+runtime guest interface names or provider MACs, Terraform state, or runtime
+reachability. Configured metadata such as `vsphere_route_connection` may still
+be included. Direct SSH paths are shown directly; a bastion hop is shown only
+when the configured SSH proxy path includes it.
 
 Configured vCenter endpoints are marked `CONFIGURED`/`RESOLVED`. When the
 provider endpoint is supplied only through runtime environment variables, the
