@@ -259,6 +259,31 @@ def test_topology_tolerates_v03_accepted_node_without_ssh_address():
         assert renderer(topology) == renderer(topology)
 
 
+def test_topology_tolerates_unresolved_non_primary_rancher_node():
+    config = raw_config()
+    expanded = expand_env(config)
+    expanded["nodes"]["rancher2"].pop("ip", None)
+    expanded["nodes"]["rancher2"]["nics"][0].pop("ip", None)
+
+    topology = build_desired_topology(expanded)
+    validate_topology(topology)
+
+    join_rule = by_id(topology.connectivity_rules)["rke2:join-primary"]
+    unresolved = next(
+        item for item in join_rule.source.resolved if item.reference.id == "rancher2"
+    )
+    assert unresolved.address is None
+    assert unresolved.address_kind == SYMBOLIC_ADDRESS
+    for renderer in (
+        render_topology_json,
+        render_topology_markdown,
+        render_topology_ascii_overview,
+        render_topology_architecture_mermaid,
+        render_topology_network_mermaid,
+    ):
+        assert renderer(topology)
+
+
 def test_topology_has_only_one_definition_for_each_canonical_renderer():
     source = (ROOT / "lib/topology.py").read_text()
     tree = ast.parse(source)
