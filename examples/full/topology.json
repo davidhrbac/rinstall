@@ -1,0 +1,2827 @@
+{
+  "metadata": {
+    "topology_schema_version": 2,
+    "config_schema_version": 1,
+    "topology_kind": "desired",
+    "environment_id": "full-example",
+    "rancher_url": "rancher.full-example.example.invalid",
+    "domain": "full-example.example.invalid",
+    "bastion_host": "bastion1",
+    "versions": {
+      "rke2": "v1.35.7+rke2r1",
+      "rancher": "2.14.4",
+      "cert_manager": "v1.21.1"
+    }
+  },
+  "hosts": [
+    {
+      "id": "bastion1",
+      "hostname": "bastion1",
+      "fqdn": "bastion1.rancher.full-example.example.invalid",
+      "roles": [
+        "bastion"
+      ],
+      "capabilities": [
+        "jump-host",
+        "dns",
+        "dhcp",
+        "proxy"
+      ],
+      "primary_ip": "198.51.100.4",
+      "local_ip": "198.51.100.4",
+      "management_ip": "192.0.2.10",
+      "ssh_target": "192.0.2.10",
+      "service_status": null,
+      "template_id": "infra",
+      "ownership": "RINSTALL_MANAGED",
+      "provenance": "DERIVED",
+      "resolution": "RESOLVED",
+      "verification": "DESIRED_ONLY",
+      "dns_servers": [
+        "192.0.2.53"
+      ]
+    },
+    {
+      "id": "prom1",
+      "hostname": "prom1",
+      "fqdn": "prom1.rancher.full-example.example.invalid",
+      "roles": [
+        "prometheus"
+      ],
+      "capabilities": [
+        "monitoring-host-only"
+      ],
+      "primary_ip": "198.51.100.6",
+      "local_ip": "198.51.100.6",
+      "management_ip": null,
+      "ssh_target": "198.51.100.6",
+      "service_status": "host-only/not-modeled",
+      "template_id": "infra",
+      "ownership": "RINSTALL_MANAGED",
+      "provenance": "DERIVED",
+      "resolution": "RESOLVED",
+      "verification": "DESIRED_ONLY",
+      "dns_servers": [
+        "198.51.100.4"
+      ]
+    },
+    {
+      "id": "rancher1",
+      "hostname": "rancher1",
+      "fqdn": "rancher1.rancher.full-example.example.invalid",
+      "roles": [
+        "rancher"
+      ],
+      "capabilities": [],
+      "primary_ip": "198.51.100.11",
+      "local_ip": "198.51.100.11",
+      "management_ip": null,
+      "ssh_target": "198.51.100.11",
+      "service_status": null,
+      "template_id": "rke2",
+      "ownership": "RINSTALL_MANAGED",
+      "provenance": "DERIVED",
+      "resolution": "RESOLVED",
+      "verification": "DESIRED_ONLY",
+      "dns_servers": [
+        "198.51.100.4"
+      ]
+    },
+    {
+      "id": "rancher2",
+      "hostname": "rancher2",
+      "fqdn": "rancher2.rancher.full-example.example.invalid",
+      "roles": [
+        "rancher"
+      ],
+      "capabilities": [],
+      "primary_ip": "198.51.100.12",
+      "local_ip": "198.51.100.12",
+      "management_ip": null,
+      "ssh_target": "198.51.100.12",
+      "service_status": null,
+      "template_id": "rke2",
+      "ownership": "RINSTALL_MANAGED",
+      "provenance": "DERIVED",
+      "resolution": "RESOLVED",
+      "verification": "DESIRED_ONLY",
+      "dns_servers": [
+        "198.51.100.4"
+      ]
+    },
+    {
+      "id": "rancher3",
+      "hostname": "rancher3",
+      "fqdn": "rancher3.rancher.full-example.example.invalid",
+      "roles": [
+        "rancher"
+      ],
+      "capabilities": [],
+      "primary_ip": "198.51.100.13",
+      "local_ip": "198.51.100.13",
+      "management_ip": null,
+      "ssh_target": "198.51.100.13",
+      "service_status": null,
+      "template_id": "rke2",
+      "ownership": "RINSTALL_MANAGED",
+      "provenance": "DERIVED",
+      "resolution": "RESOLVED",
+      "verification": "DESIRED_ONLY",
+      "dns_servers": [
+        "198.51.100.4"
+      ]
+    }
+  ],
+  "interfaces": [
+    {
+      "id": "bastion1:0",
+      "host": "bastion1",
+      "nic_index": 0,
+      "logical_name": "customer",
+      "network": "customer",
+      "network_kind": "local/customer",
+      "address": "198.51.100.4",
+      "prefix": 28,
+      "addressing": "static",
+      "ownership": "RINSTALL_MANAGED",
+      "provenance": "DERIVED",
+      "resolution": "RESOLVED",
+      "verification": "DESIRED_ONLY"
+    },
+    {
+      "id": "bastion1:1",
+      "host": "bastion1",
+      "nic_index": 1,
+      "logical_name": "management",
+      "network": "management",
+      "network_kind": "management",
+      "address": "192.0.2.10",
+      "prefix": 24,
+      "addressing": "static",
+      "ownership": "RINSTALL_MANAGED",
+      "provenance": "DERIVED",
+      "resolution": "RESOLVED",
+      "verification": "DESIRED_ONLY"
+    },
+    {
+      "id": "prom1:0",
+      "host": "prom1",
+      "nic_index": 0,
+      "logical_name": "customer",
+      "network": "customer",
+      "network_kind": "local/customer",
+      "address": "198.51.100.6",
+      "prefix": 28,
+      "addressing": "static",
+      "ownership": "RINSTALL_MANAGED",
+      "provenance": "DERIVED",
+      "resolution": "RESOLVED",
+      "verification": "DESIRED_ONLY"
+    },
+    {
+      "id": "rancher1:0",
+      "host": "rancher1",
+      "nic_index": 0,
+      "logical_name": "customer",
+      "network": "customer",
+      "network_kind": "local/customer",
+      "address": "198.51.100.11",
+      "prefix": 28,
+      "addressing": "static",
+      "ownership": "RINSTALL_MANAGED",
+      "provenance": "DERIVED",
+      "resolution": "RESOLVED",
+      "verification": "DESIRED_ONLY"
+    },
+    {
+      "id": "rancher2:0",
+      "host": "rancher2",
+      "nic_index": 0,
+      "logical_name": "customer",
+      "network": "customer",
+      "network_kind": "local/customer",
+      "address": "198.51.100.12",
+      "prefix": 28,
+      "addressing": "static",
+      "ownership": "RINSTALL_MANAGED",
+      "provenance": "DERIVED",
+      "resolution": "RESOLVED",
+      "verification": "DESIRED_ONLY"
+    },
+    {
+      "id": "rancher3:0",
+      "host": "rancher3",
+      "nic_index": 0,
+      "logical_name": "customer",
+      "network": "customer",
+      "network_kind": "local/customer",
+      "address": "198.51.100.13",
+      "prefix": 28,
+      "addressing": "static",
+      "ownership": "RINSTALL_MANAGED",
+      "provenance": "DERIVED",
+      "resolution": "RESOLVED",
+      "verification": "DESIRED_ONLY"
+    },
+    {
+      "id": "bastion1:vlan565",
+      "host": "bastion1",
+      "nic_index": 2,
+      "logical_name": "vlan565",
+      "network": "downstream:vlan565",
+      "network_kind": "downstream",
+      "address": "203.0.113.34",
+      "prefix": 27,
+      "addressing": "static",
+      "ownership": "RINSTALL_MANAGED",
+      "provenance": "DERIVED",
+      "resolution": "RESOLVED",
+      "verification": "DESIRED_ONLY"
+    },
+    {
+      "id": "bastion1:vlan566",
+      "host": "bastion1",
+      "nic_index": 3,
+      "logical_name": "vlan566",
+      "network": "downstream:vlan566",
+      "network_kind": "downstream",
+      "address": "203.0.113.66",
+      "prefix": 27,
+      "addressing": "static",
+      "ownership": "RINSTALL_MANAGED",
+      "provenance": "DERIVED",
+      "resolution": "RESOLVED",
+      "verification": "DESIRED_ONLY"
+    }
+  ],
+  "networks": [
+    {
+      "id": "customer",
+      "kind": "local/customer",
+      "cidr": "198.51.100.0/28",
+      "vlan": null,
+      "vmware_network": "EXAMPLE_CUSTOMER_NETWORK",
+      "gateway": "198.51.100.1",
+      "interface_ids": [
+        "bastion1:0",
+        "prom1:0",
+        "rancher1:0",
+        "rancher2:0",
+        "rancher3:0"
+      ],
+      "gateway_endpoint_id": null,
+      "ownership": "REFERENCED_EXTERNAL",
+      "provenance": "CONFIGURED",
+      "resolution": "RESOLVED",
+      "verification": "DESIRED_ONLY"
+    },
+    {
+      "id": "management",
+      "kind": "management",
+      "cidr": "192.0.2.0/24",
+      "vlan": null,
+      "vmware_network": "EXAMPLE_MANAGEMENT_NETWORK",
+      "gateway": null,
+      "interface_ids": [
+        "bastion1:1"
+      ],
+      "gateway_endpoint_id": null,
+      "ownership": "REFERENCED_EXTERNAL",
+      "provenance": "CONFIGURED",
+      "resolution": "RESOLVED",
+      "verification": "DESIRED_ONLY"
+    },
+    {
+      "id": "downstream:vlan565",
+      "kind": "downstream",
+      "cidr": "203.0.113.32/27",
+      "vlan": 565,
+      "vmware_network": "EXAMPLE_DOWNSTREAM_NETWORK_565",
+      "gateway": "203.0.113.33",
+      "interface_ids": [
+        "bastion1:vlan565"
+      ],
+      "gateway_endpoint_id": "endpoint:gateway:vlan565",
+      "ownership": "REFERENCED_EXTERNAL",
+      "provenance": "CONFIGURED",
+      "resolution": "RESOLVED",
+      "verification": "DESIRED_ONLY"
+    },
+    {
+      "id": "downstream:vlan566",
+      "kind": "downstream",
+      "cidr": "203.0.113.64/27",
+      "vlan": 566,
+      "vmware_network": "EXAMPLE_DOWNSTREAM_NETWORK_566",
+      "gateway": "203.0.113.65",
+      "interface_ids": [
+        "bastion1:vlan566"
+      ],
+      "gateway_endpoint_id": "endpoint:gateway:vlan566",
+      "ownership": "REFERENCED_EXTERNAL",
+      "provenance": "CONFIGURED",
+      "resolution": "RESOLVED",
+      "verification": "DESIRED_ONLY"
+    }
+  ],
+  "services": [
+    {
+      "id": "proxy:squid",
+      "kind": "proxy",
+      "host": "bastion1",
+      "network": "customer",
+      "address": "198.51.100.4",
+      "protocols": [
+        "TCP"
+      ],
+      "ports": [
+        3128
+      ],
+      "purpose": "HTTP and HTTPS forward proxy for local services",
+      "interface_id": "bastion1:0",
+      "ownership": "RINSTALL_CONFIGURED",
+      "provenance": "RINSTALL_ARCHITECTURE",
+      "resolution": "RESOLVED",
+      "verification": "DESIRED_ONLY"
+    },
+    {
+      "id": "dns:local",
+      "kind": "dns",
+      "host": "bastion1",
+      "network": "customer",
+      "address": "198.51.100.4",
+      "protocols": [
+        "TCP",
+        "UDP"
+      ],
+      "ports": [
+        53
+      ],
+      "purpose": "DNS for local nodes",
+      "interface_id": "bastion1:0",
+      "ownership": "RINSTALL_CONFIGURED",
+      "provenance": "RINSTALL_ARCHITECTURE",
+      "resolution": "RESOLVED",
+      "verification": "DESIRED_ONLY"
+    },
+    {
+      "id": "dns:vlan565",
+      "kind": "dns",
+      "host": "bastion1",
+      "network": "downstream:vlan565",
+      "address": "203.0.113.34",
+      "protocols": [
+        "TCP",
+        "UDP"
+      ],
+      "ports": [
+        53
+      ],
+      "purpose": "DNS for downstream nodes on the same VLAN",
+      "interface_id": "bastion1:vlan565",
+      "ownership": "RINSTALL_CONFIGURED",
+      "provenance": "RINSTALL_ARCHITECTURE",
+      "resolution": "RESOLVED",
+      "verification": "DESIRED_ONLY"
+    },
+    {
+      "id": "dhcp:vlan565",
+      "kind": "dhcp",
+      "host": "bastion1",
+      "network": "downstream:vlan565",
+      "address": "203.0.113.34",
+      "protocols": [
+        "UDP"
+      ],
+      "ports": [
+        67,
+        68
+      ],
+      "purpose": "DHCP for downstream nodes on the same VLAN",
+      "interface_id": "bastion1:vlan565",
+      "ownership": "RINSTALL_CONFIGURED",
+      "provenance": "RINSTALL_ARCHITECTURE",
+      "resolution": "RESOLVED",
+      "verification": "DESIRED_ONLY"
+    },
+    {
+      "id": "dns:vlan566",
+      "kind": "dns",
+      "host": "bastion1",
+      "network": "downstream:vlan566",
+      "address": "203.0.113.66",
+      "protocols": [
+        "TCP",
+        "UDP"
+      ],
+      "ports": [
+        53
+      ],
+      "purpose": "DNS for downstream nodes on the same VLAN",
+      "interface_id": "bastion1:vlan566",
+      "ownership": "RINSTALL_CONFIGURED",
+      "provenance": "RINSTALL_ARCHITECTURE",
+      "resolution": "RESOLVED",
+      "verification": "DESIRED_ONLY"
+    },
+    {
+      "id": "dhcp:vlan566",
+      "kind": "dhcp",
+      "host": "bastion1",
+      "network": "downstream:vlan566",
+      "address": "203.0.113.66",
+      "protocols": [
+        "UDP"
+      ],
+      "ports": [
+        67,
+        68
+      ],
+      "purpose": "DHCP for downstream nodes on the same VLAN",
+      "interface_id": "bastion1:vlan566",
+      "ownership": "RINSTALL_CONFIGURED",
+      "provenance": "RINSTALL_ARCHITECTURE",
+      "resolution": "RESOLVED",
+      "verification": "DESIRED_ONLY"
+    }
+  ],
+  "downstream_networks": [
+    {
+      "id": "downstream:vlan565",
+      "interface_name": "vlan565",
+      "vlan": 565,
+      "vmware_network": "EXAMPLE_DOWNSTREAM_NETWORK_565",
+      "cidr": "203.0.113.32/27",
+      "bastion_host": "bastion1",
+      "bastion_address": "203.0.113.34",
+      "gateway": "203.0.113.33",
+      "dhcp_start": "203.0.113.36",
+      "dhcp_end": "203.0.113.61",
+      "dhcp_lease": "12h",
+      "lifecycle": {
+        "collection": "append-only",
+        "identity": "immutable-after-create",
+        "mutable_fields": [
+          "dhcp.start",
+          "dhcp.end",
+          "dhcp.lease_time"
+        ],
+        "immutable_fields": [
+          "vlan",
+          "vmware_network",
+          "subnet",
+          "bastion_address",
+          "gateway",
+          "attachment_order"
+        ]
+      },
+      "interface_id": "bastion1:vlan565",
+      "gateway_endpoint_id": "endpoint:gateway:vlan565",
+      "network_ref": {
+        "kind": "network",
+        "id": "downstream:vlan565"
+      },
+      "bastion_is_router": false,
+      "ownership": "RINSTALL_CONFIGURED",
+      "lifecycle_ownership": "EXTERNALLY_MANAGED",
+      "provenance": "DERIVED",
+      "resolution": "RESOLVED",
+      "verification": "DESIRED_ONLY"
+    },
+    {
+      "id": "downstream:vlan566",
+      "interface_name": "vlan566",
+      "vlan": 566,
+      "vmware_network": "EXAMPLE_DOWNSTREAM_NETWORK_566",
+      "cidr": "203.0.113.64/27",
+      "bastion_host": "bastion1",
+      "bastion_address": "203.0.113.66",
+      "gateway": "203.0.113.65",
+      "dhcp_start": "203.0.113.68",
+      "dhcp_end": "203.0.113.93",
+      "dhcp_lease": "12h",
+      "lifecycle": {
+        "collection": "append-only",
+        "identity": "immutable-after-create",
+        "mutable_fields": [
+          "dhcp.start",
+          "dhcp.end",
+          "dhcp.lease_time"
+        ],
+        "immutable_fields": [
+          "vlan",
+          "vmware_network",
+          "subnet",
+          "bastion_address",
+          "gateway",
+          "attachment_order"
+        ]
+      },
+      "interface_id": "bastion1:vlan566",
+      "gateway_endpoint_id": "endpoint:gateway:vlan566",
+      "network_ref": {
+        "kind": "network",
+        "id": "downstream:vlan566"
+      },
+      "bastion_is_router": false,
+      "ownership": "RINSTALL_CONFIGURED",
+      "lifecycle_ownership": "EXTERNALLY_MANAGED",
+      "provenance": "DERIVED",
+      "resolution": "RESOLVED",
+      "verification": "DESIRED_ONLY"
+    }
+  ],
+  "connectivity_rules": [
+    {
+      "id": "admin-ssh:bastion:prom1",
+      "source": {
+        "symbolic": "host:bastion1",
+        "resolved": [
+          {
+            "id": "bastion1",
+            "address": "198.51.100.4",
+            "reference": {
+              "kind": "host",
+              "id": "bastion1"
+            },
+            "address_kind": "IP_ADDRESS",
+            "egress_interface": {
+              "kind": "interface",
+              "id": "bastion1:0"
+            }
+          }
+        ],
+        "resolution_scope": null
+      },
+      "destination": {
+        "symbolic": "host:prom1",
+        "resolved": [
+          {
+            "id": "prom1",
+            "address": "198.51.100.6",
+            "reference": {
+              "kind": "host",
+              "id": "prom1"
+            },
+            "address_kind": "IP_ADDRESS",
+            "egress_interface": null
+          }
+        ],
+        "resolution_scope": null
+      },
+      "protocols": [
+        "TCP"
+      ],
+      "source_ports": [],
+      "destination_ports": [
+        22
+      ],
+      "purpose": "Administrative SSH path segment",
+      "requirement_sources": [
+        "RINSTALL_ARCHITECTURE"
+      ],
+      "required": true,
+      "verification": "UNVERIFIED",
+      "provenance": "DERIVED",
+      "category": "ADMINISTRATIVE",
+      "semantics": "ROUTED",
+      "via": []
+    },
+    {
+      "id": "admin-ssh:bastion:rancher1",
+      "source": {
+        "symbolic": "host:bastion1",
+        "resolved": [
+          {
+            "id": "bastion1",
+            "address": "198.51.100.4",
+            "reference": {
+              "kind": "host",
+              "id": "bastion1"
+            },
+            "address_kind": "IP_ADDRESS",
+            "egress_interface": {
+              "kind": "interface",
+              "id": "bastion1:0"
+            }
+          }
+        ],
+        "resolution_scope": null
+      },
+      "destination": {
+        "symbolic": "host:rancher1",
+        "resolved": [
+          {
+            "id": "rancher1",
+            "address": "198.51.100.11",
+            "reference": {
+              "kind": "host",
+              "id": "rancher1"
+            },
+            "address_kind": "IP_ADDRESS",
+            "egress_interface": null
+          }
+        ],
+        "resolution_scope": null
+      },
+      "protocols": [
+        "TCP"
+      ],
+      "source_ports": [],
+      "destination_ports": [
+        22
+      ],
+      "purpose": "Administrative SSH path segment",
+      "requirement_sources": [
+        "RINSTALL_ARCHITECTURE"
+      ],
+      "required": true,
+      "verification": "UNVERIFIED",
+      "provenance": "DERIVED",
+      "category": "ADMINISTRATIVE",
+      "semantics": "ROUTED",
+      "via": []
+    },
+    {
+      "id": "admin-ssh:bastion:rancher2",
+      "source": {
+        "symbolic": "host:bastion1",
+        "resolved": [
+          {
+            "id": "bastion1",
+            "address": "198.51.100.4",
+            "reference": {
+              "kind": "host",
+              "id": "bastion1"
+            },
+            "address_kind": "IP_ADDRESS",
+            "egress_interface": {
+              "kind": "interface",
+              "id": "bastion1:0"
+            }
+          }
+        ],
+        "resolution_scope": null
+      },
+      "destination": {
+        "symbolic": "host:rancher2",
+        "resolved": [
+          {
+            "id": "rancher2",
+            "address": "198.51.100.12",
+            "reference": {
+              "kind": "host",
+              "id": "rancher2"
+            },
+            "address_kind": "IP_ADDRESS",
+            "egress_interface": null
+          }
+        ],
+        "resolution_scope": null
+      },
+      "protocols": [
+        "TCP"
+      ],
+      "source_ports": [],
+      "destination_ports": [
+        22
+      ],
+      "purpose": "Administrative SSH path segment",
+      "requirement_sources": [
+        "RINSTALL_ARCHITECTURE"
+      ],
+      "required": true,
+      "verification": "UNVERIFIED",
+      "provenance": "DERIVED",
+      "category": "ADMINISTRATIVE",
+      "semantics": "ROUTED",
+      "via": []
+    },
+    {
+      "id": "admin-ssh:bastion:rancher3",
+      "source": {
+        "symbolic": "host:bastion1",
+        "resolved": [
+          {
+            "id": "bastion1",
+            "address": "198.51.100.4",
+            "reference": {
+              "kind": "host",
+              "id": "bastion1"
+            },
+            "address_kind": "IP_ADDRESS",
+            "egress_interface": {
+              "kind": "interface",
+              "id": "bastion1:0"
+            }
+          }
+        ],
+        "resolution_scope": null
+      },
+      "destination": {
+        "symbolic": "host:rancher3",
+        "resolved": [
+          {
+            "id": "rancher3",
+            "address": "198.51.100.13",
+            "reference": {
+              "kind": "host",
+              "id": "rancher3"
+            },
+            "address_kind": "IP_ADDRESS",
+            "egress_interface": null
+          }
+        ],
+        "resolution_scope": null
+      },
+      "protocols": [
+        "TCP"
+      ],
+      "source_ports": [],
+      "destination_ports": [
+        22
+      ],
+      "purpose": "Administrative SSH path segment",
+      "requirement_sources": [
+        "RINSTALL_ARCHITECTURE"
+      ],
+      "required": true,
+      "verification": "UNVERIFIED",
+      "provenance": "DERIVED",
+      "category": "ADMINISTRATIVE",
+      "semantics": "ROUTED",
+      "via": []
+    },
+    {
+      "id": "admin-ssh:jump:bastion1",
+      "source": {
+        "symbolic": "endpoint:ssh-jump",
+        "resolved": [
+          {
+            "id": "example-operator-jump",
+            "address": null,
+            "reference": {
+              "kind": "endpoint",
+              "id": "endpoint:ssh-jump"
+            },
+            "address_kind": "SSH_ALIAS",
+            "egress_interface": null
+          }
+        ],
+        "resolution_scope": null
+      },
+      "destination": {
+        "symbolic": "host:bastion1",
+        "resolved": [
+          {
+            "id": "bastion1",
+            "address": "192.0.2.10",
+            "reference": {
+              "kind": "host",
+              "id": "bastion1"
+            },
+            "address_kind": "IP_ADDRESS",
+            "egress_interface": null
+          }
+        ],
+        "resolution_scope": null
+      },
+      "protocols": [
+        "TCP"
+      ],
+      "source_ports": [],
+      "destination_ports": [
+        22
+      ],
+      "purpose": "Administrative SSH path segment",
+      "requirement_sources": [
+        "RINSTALL_ARCHITECTURE"
+      ],
+      "required": true,
+      "verification": "UNVERIFIED",
+      "provenance": "DERIVED",
+      "category": "ADMINISTRATIVE",
+      "semantics": "ROUTED",
+      "via": []
+    },
+    {
+      "id": "admin-ssh:operator-jump",
+      "source": {
+        "symbolic": "actor:operator-workstation",
+        "resolved": [
+          {
+            "id": "operator-workstation",
+            "address": null,
+            "reference": {
+              "kind": "actor",
+              "id": "actor:operator-workstation"
+            },
+            "address_kind": "SYMBOLIC",
+            "egress_interface": null
+          }
+        ],
+        "resolution_scope": null
+      },
+      "destination": {
+        "symbolic": "endpoint:ssh-jump",
+        "resolved": [
+          {
+            "id": "example-operator-jump",
+            "address": null,
+            "reference": {
+              "kind": "endpoint",
+              "id": "endpoint:ssh-jump"
+            },
+            "address_kind": "SSH_ALIAS",
+            "egress_interface": null
+          }
+        ],
+        "resolution_scope": null
+      },
+      "protocols": [
+        "TCP"
+      ],
+      "source_ports": [],
+      "destination_ports": [],
+      "purpose": "Administrative SSH path segment",
+      "requirement_sources": [
+        "RINSTALL_ARCHITECTURE"
+      ],
+      "required": true,
+      "verification": "UNVERIFIED",
+      "provenance": "DERIVED",
+      "category": "ADMINISTRATIVE",
+      "semantics": "ROUTED",
+      "via": []
+    },
+    {
+      "id": "deployment:terraform-backend",
+      "source": {
+        "symbolic": "actor:operator-workstation",
+        "resolved": [
+          {
+            "id": "operator-workstation",
+            "address": null,
+            "reference": {
+              "kind": "actor",
+              "id": "actor:operator-workstation"
+            },
+            "address_kind": "SYMBOLIC",
+            "egress_interface": null
+          }
+        ],
+        "resolution_scope": null
+      },
+      "destination": {
+        "symbolic": "endpoint:terraform-backend",
+        "resolved": [
+          {
+            "id": "https://gitlab.example.invalid",
+            "address": "https://gitlab.example.invalid",
+            "reference": {
+              "kind": "endpoint",
+              "id": "endpoint:terraform-backend"
+            },
+            "address_kind": "URL",
+            "egress_interface": null
+          }
+        ],
+        "resolution_scope": "external"
+      },
+      "protocols": [
+        "TCP"
+      ],
+      "source_ports": [],
+      "destination_ports": [
+        443
+      ],
+      "purpose": "Operator Terraform uses the configured GitLab HTTP backend",
+      "requirement_sources": [
+        "RINSTALL_ARCHITECTURE"
+      ],
+      "required": true,
+      "verification": "UNVERIFIED",
+      "provenance": "RINSTALL_ARCHITECTURE",
+      "category": "DEPLOYMENT",
+      "semantics": "ROUTED",
+      "via": []
+    },
+    {
+      "id": "deployment:vcenter-api",
+      "source": {
+        "symbolic": "actor:operator-workstation",
+        "resolved": [
+          {
+            "id": "operator-workstation",
+            "address": null,
+            "reference": {
+              "kind": "actor",
+              "id": "actor:operator-workstation"
+            },
+            "address_kind": "SYMBOLIC",
+            "egress_interface": null
+          }
+        ],
+        "resolution_scope": null
+      },
+      "destination": {
+        "symbolic": "endpoint:vcenter",
+        "resolved": [
+          {
+            "id": "vcenter.example.invalid",
+            "address": "vcenter.example.invalid",
+            "reference": {
+              "kind": "endpoint",
+              "id": "endpoint:vcenter"
+            },
+            "address_kind": "SYMBOLIC",
+            "egress_interface": null
+          }
+        ],
+        "resolution_scope": "external"
+      },
+      "protocols": [
+        "TCP"
+      ],
+      "source_ports": [],
+      "destination_ports": [
+        443
+      ],
+      "purpose": "Operator Terraform uses the vCenter provider API",
+      "requirement_sources": [
+        "RINSTALL_ARCHITECTURE"
+      ],
+      "required": true,
+      "verification": "UNVERIFIED",
+      "provenance": "RINSTALL_ARCHITECTURE",
+      "category": "DEPLOYMENT",
+      "semantics": "ROUTED",
+      "via": []
+    },
+    {
+      "id": "core-dns:bastion-os",
+      "source": {
+        "symbolic": "host:bastion1",
+        "resolved": [
+          {
+            "id": "bastion1",
+            "address": "192.0.2.10",
+            "reference": {
+              "kind": "host",
+              "id": "bastion1"
+            },
+            "address_kind": "IP_ADDRESS",
+            "egress_interface": {
+              "kind": "interface",
+              "id": "bastion1:1"
+            }
+          }
+        ],
+        "resolution_scope": null
+      },
+      "destination": {
+        "symbolic": "endpoints:management-dns",
+        "resolved": [
+          {
+            "id": "192.0.2.53",
+            "address": "192.0.2.53",
+            "reference": {
+              "kind": "endpoint",
+              "id": "endpoint:dns-management:192.0.2.53"
+            },
+            "address_kind": "IP_ADDRESS",
+            "egress_interface": null
+          }
+        ],
+        "resolution_scope": "management"
+      },
+      "protocols": [
+        "TCP",
+        "UDP"
+      ],
+      "source_ports": [],
+      "destination_ports": [
+        53
+      ],
+      "purpose": "Bastion operating system uses configured management DNS resolvers",
+      "requirement_sources": [
+        "RINSTALL_ARCHITECTURE"
+      ],
+      "required": true,
+      "verification": "UNVERIFIED",
+      "provenance": "RINSTALL_ARCHITECTURE",
+      "category": "CORE_SERVICE",
+      "semantics": "ROUTED",
+      "via": []
+    },
+    {
+      "id": "core-dns:local-nodes",
+      "source": {
+        "symbolic": "hosts:local-core",
+        "resolved": [
+          {
+            "id": "prom1",
+            "address": "198.51.100.6",
+            "reference": {
+              "kind": "host",
+              "id": "prom1"
+            },
+            "address_kind": "IP_ADDRESS",
+            "egress_interface": null
+          },
+          {
+            "id": "rancher1",
+            "address": "198.51.100.11",
+            "reference": {
+              "kind": "host",
+              "id": "rancher1"
+            },
+            "address_kind": "IP_ADDRESS",
+            "egress_interface": null
+          },
+          {
+            "id": "rancher2",
+            "address": "198.51.100.12",
+            "reference": {
+              "kind": "host",
+              "id": "rancher2"
+            },
+            "address_kind": "IP_ADDRESS",
+            "egress_interface": null
+          },
+          {
+            "id": "rancher3",
+            "address": "198.51.100.13",
+            "reference": {
+              "kind": "host",
+              "id": "rancher3"
+            },
+            "address_kind": "IP_ADDRESS",
+            "egress_interface": null
+          }
+        ],
+        "resolution_scope": null
+      },
+      "destination": {
+        "symbolic": "service:dns:local:0",
+        "resolved": [
+          {
+            "id": "198.51.100.4",
+            "address": "198.51.100.4",
+            "reference": {
+              "kind": "endpoint",
+              "id": "endpoint:dns-local:198.51.100.4"
+            },
+            "address_kind": "IP_ADDRESS",
+            "egress_interface": null
+          }
+        ],
+        "resolution_scope": null
+      },
+      "protocols": [
+        "TCP",
+        "UDP"
+      ],
+      "source_ports": [],
+      "destination_ports": [
+        53
+      ],
+      "purpose": "Local nodes use their effective configured DNS servers",
+      "requirement_sources": [
+        "RINSTALL_ARCHITECTURE"
+      ],
+      "required": true,
+      "verification": "UNVERIFIED",
+      "provenance": "RINSTALL_ARCHITECTURE",
+      "category": "CORE_SERVICE",
+      "semantics": "ROUTED",
+      "via": []
+    },
+    {
+      "id": "core-dns:upstream",
+      "source": {
+        "symbolic": "service:dns:local",
+        "resolved": [
+          {
+            "id": "dns:local",
+            "address": "192.0.2.10",
+            "reference": {
+              "kind": "service",
+              "id": "dns:local"
+            },
+            "address_kind": "IP_ADDRESS",
+            "egress_interface": {
+              "kind": "interface",
+              "id": "bastion1:1"
+            }
+          }
+        ],
+        "resolution_scope": null
+      },
+      "destination": {
+        "symbolic": "endpoints:dns-upstream",
+        "resolved": [
+          {
+            "id": "192.0.2.54",
+            "address": "192.0.2.54",
+            "reference": {
+              "kind": "endpoint",
+              "id": "endpoint:dns-upstream:192.0.2.54"
+            },
+            "address_kind": "IP_ADDRESS",
+            "egress_interface": null
+          },
+          {
+            "id": "192.0.2.55",
+            "address": "192.0.2.55",
+            "reference": {
+              "kind": "endpoint",
+              "id": "endpoint:dns-upstream:192.0.2.55"
+            },
+            "address_kind": "IP_ADDRESS",
+            "egress_interface": null
+          }
+        ],
+        "resolution_scope": "external"
+      },
+      "protocols": [
+        "TCP",
+        "UDP"
+      ],
+      "source_ports": [],
+      "destination_ports": [
+        53
+      ],
+      "purpose": "Bastion DNS forwards to configured upstream resolvers",
+      "requirement_sources": [
+        "RINSTALL_ARCHITECTURE"
+      ],
+      "required": true,
+      "verification": "UNVERIFIED",
+      "provenance": "RINSTALL_ARCHITECTURE",
+      "category": "CORE_SERVICE",
+      "semantics": "ROUTED",
+      "via": []
+    },
+    {
+      "id": "core-proxy:rancher-nodes",
+      "source": {
+        "symbolic": "cluster:rke2-rancher",
+        "resolved": [
+          {
+            "id": "rancher1",
+            "address": "198.51.100.11",
+            "reference": {
+              "kind": "host",
+              "id": "rancher1"
+            },
+            "address_kind": "IP_ADDRESS",
+            "egress_interface": null
+          },
+          {
+            "id": "rancher2",
+            "address": "198.51.100.12",
+            "reference": {
+              "kind": "host",
+              "id": "rancher2"
+            },
+            "address_kind": "IP_ADDRESS",
+            "egress_interface": null
+          },
+          {
+            "id": "rancher3",
+            "address": "198.51.100.13",
+            "reference": {
+              "kind": "host",
+              "id": "rancher3"
+            },
+            "address_kind": "IP_ADDRESS",
+            "egress_interface": null
+          }
+        ],
+        "resolution_scope": null
+      },
+      "destination": {
+        "symbolic": "service:proxy:squid",
+        "resolved": [
+          {
+            "id": "proxy:squid",
+            "address": "198.51.100.4",
+            "reference": {
+              "kind": "service",
+              "id": "proxy:squid"
+            },
+            "address_kind": "IP_ADDRESS",
+            "egress_interface": null
+          }
+        ],
+        "resolution_scope": null
+      },
+      "protocols": [
+        "TCP"
+      ],
+      "source_ports": [],
+      "destination_ports": [
+        3128
+      ],
+      "purpose": "RKE2 and Rancher nodes use configured bastion Squid proxy",
+      "requirement_sources": [
+        "RINSTALL_ARCHITECTURE"
+      ],
+      "required": true,
+      "verification": "UNVERIFIED",
+      "provenance": "RINSTALL_ARCHITECTURE",
+      "category": "CORE_SERVICE",
+      "semantics": "ROUTED",
+      "via": []
+    },
+    {
+      "id": "core-proxy:upstream",
+      "source": {
+        "symbolic": "service:proxy:squid",
+        "resolved": [
+          {
+            "id": "proxy:squid",
+            "address": null,
+            "reference": {
+              "kind": "service",
+              "id": "proxy:squid"
+            },
+            "address_kind": "SYMBOLIC",
+            "egress_interface": null
+          }
+        ],
+        "resolution_scope": null
+      },
+      "destination": {
+        "symbolic": "endpoint:proxy-upstream",
+        "resolved": [
+          {
+            "id": "external repositories and service endpoints",
+            "address": null,
+            "reference": {
+              "kind": "endpoint",
+              "id": "endpoint:proxy-upstream"
+            },
+            "address_kind": "SYMBOLIC",
+            "egress_interface": null
+          }
+        ],
+        "resolution_scope": null
+      },
+      "protocols": [
+        "TCP"
+      ],
+      "source_ports": [],
+      "destination_ports": [
+        80,
+        443
+      ],
+      "purpose": "Squid reaches required external repositories and service endpoints",
+      "requirement_sources": [
+        "RINSTALL_ARCHITECTURE"
+      ],
+      "required": true,
+      "verification": "UNVERIFIED",
+      "provenance": "RINSTALL_ARCHITECTURE",
+      "category": "CORE_SERVICE",
+      "semantics": "ROUTED",
+      "via": []
+    },
+    {
+      "id": "rke2:bastion-kubernetes-api",
+      "source": {
+        "symbolic": "host:bastion1",
+        "resolved": [
+          {
+            "id": "bastion1",
+            "address": "198.51.100.4",
+            "reference": {
+              "kind": "host",
+              "id": "bastion1"
+            },
+            "address_kind": "IP_ADDRESS",
+            "egress_interface": null
+          }
+        ],
+        "resolution_scope": null
+      },
+      "destination": {
+        "symbolic": "cluster:rke2-rancher:primary-api",
+        "resolved": [
+          {
+            "id": "rancher1",
+            "address": "198.51.100.11",
+            "reference": {
+              "kind": "host",
+              "id": "rancher1"
+            },
+            "address_kind": "IP_ADDRESS",
+            "egress_interface": null
+          }
+        ],
+        "resolution_scope": null
+      },
+      "protocols": [
+        "TCP"
+      ],
+      "source_ports": [],
+      "destination_ports": [
+        6443
+      ],
+      "purpose": "Bastion administrative tooling uses the primary Kubernetes API",
+      "requirement_sources": [
+        "RINSTALL_ARCHITECTURE"
+      ],
+      "required": true,
+      "verification": "UNVERIFIED",
+      "provenance": "RINSTALL_ARCHITECTURE",
+      "category": "RKE2_RANCHER",
+      "semantics": "ROUTED",
+      "via": []
+    },
+    {
+      "id": "rke2:join-primary",
+      "source": {
+        "symbolic": "cluster:rke2-rancher:join-members",
+        "resolved": [
+          {
+            "id": "rancher2",
+            "address": "198.51.100.12",
+            "reference": {
+              "kind": "host",
+              "id": "rancher2"
+            },
+            "address_kind": "IP_ADDRESS",
+            "egress_interface": null
+          },
+          {
+            "id": "rancher3",
+            "address": "198.51.100.13",
+            "reference": {
+              "kind": "host",
+              "id": "rancher3"
+            },
+            "address_kind": "IP_ADDRESS",
+            "egress_interface": null
+          }
+        ],
+        "resolution_scope": null
+      },
+      "destination": {
+        "symbolic": "cluster:rke2-rancher:primary",
+        "resolved": [
+          {
+            "id": "rancher1",
+            "address": "198.51.100.11",
+            "reference": {
+              "kind": "host",
+              "id": "rancher1"
+            },
+            "address_kind": "IP_ADDRESS",
+            "egress_interface": null
+          }
+        ],
+        "resolution_scope": null
+      },
+      "protocols": [
+        "TCP"
+      ],
+      "source_ports": [],
+      "destination_ports": [
+        9345
+      ],
+      "purpose": "RKE2 server join connection to primary",
+      "requirement_sources": [
+        "RINSTALL_ARCHITECTURE"
+      ],
+      "required": true,
+      "verification": "UNVERIFIED",
+      "provenance": "RINSTALL_ARCHITECTURE",
+      "category": "RKE2_RANCHER",
+      "semantics": "ROUTED",
+      "via": []
+    },
+    {
+      "id": "downstream-dhcp-request:vlan565",
+      "source": {
+        "symbolic": "l2:dhcp-client@vlan:565",
+        "resolved": [
+          {
+            "id": "vlan565",
+            "address": null,
+            "reference": {
+              "kind": "downstream-consumer",
+              "id": "consumer:downstream:vlan565"
+            },
+            "address_kind": "SYMBOLIC",
+            "egress_interface": null
+          }
+        ],
+        "resolution_scope": "same-l2-segment"
+      },
+      "destination": {
+        "symbolic": "service:authoritative-dhcp@bastion:vlan:565",
+        "resolved": [
+          {
+            "id": "dhcp:vlan565",
+            "address": null,
+            "reference": {
+              "kind": "service",
+              "id": "dhcp:vlan565"
+            },
+            "address_kind": "SYMBOLIC",
+            "egress_interface": null
+          }
+        ],
+        "resolution_scope": "same-l2-segment"
+      },
+      "protocols": [
+        "UDP"
+      ],
+      "source_ports": [
+        68
+      ],
+      "destination_ports": [
+        67
+      ],
+      "purpose": "Authoritative same-VLAN dnsmasq DHCP request; initial requests may broadcast",
+      "requirement_sources": [
+        "RINSTALL_CODE",
+        "UPSTREAM_PROTOCOL"
+      ],
+      "required": true,
+      "verification": "UNVERIFIED",
+      "provenance": "RINSTALL_ARCHITECTURE",
+      "category": "DOWNSTREAM",
+      "semantics": "L2_SERVICE_INTENT",
+      "via": []
+    },
+    {
+      "id": "downstream-dhcp-request:vlan566",
+      "source": {
+        "symbolic": "l2:dhcp-client@vlan:566",
+        "resolved": [
+          {
+            "id": "vlan566",
+            "address": null,
+            "reference": {
+              "kind": "downstream-consumer",
+              "id": "consumer:downstream:vlan566"
+            },
+            "address_kind": "SYMBOLIC",
+            "egress_interface": null
+          }
+        ],
+        "resolution_scope": "same-l2-segment"
+      },
+      "destination": {
+        "symbolic": "service:authoritative-dhcp@bastion:vlan:566",
+        "resolved": [
+          {
+            "id": "dhcp:vlan566",
+            "address": null,
+            "reference": {
+              "kind": "service",
+              "id": "dhcp:vlan566"
+            },
+            "address_kind": "SYMBOLIC",
+            "egress_interface": null
+          }
+        ],
+        "resolution_scope": "same-l2-segment"
+      },
+      "protocols": [
+        "UDP"
+      ],
+      "source_ports": [
+        68
+      ],
+      "destination_ports": [
+        67
+      ],
+      "purpose": "Authoritative same-VLAN dnsmasq DHCP request; initial requests may broadcast",
+      "requirement_sources": [
+        "RINSTALL_CODE",
+        "UPSTREAM_PROTOCOL"
+      ],
+      "required": true,
+      "verification": "UNVERIFIED",
+      "provenance": "RINSTALL_ARCHITECTURE",
+      "category": "DOWNSTREAM",
+      "semantics": "L2_SERVICE_INTENT",
+      "via": []
+    },
+    {
+      "id": "downstream-dhcp-response:vlan565",
+      "source": {
+        "symbolic": "service:authoritative-dhcp@bastion:vlan:565",
+        "resolved": [
+          {
+            "id": "dhcp:vlan565",
+            "address": null,
+            "reference": {
+              "kind": "service",
+              "id": "dhcp:vlan565"
+            },
+            "address_kind": "SYMBOLIC",
+            "egress_interface": null
+          }
+        ],
+        "resolution_scope": "same-l2-segment"
+      },
+      "destination": {
+        "symbolic": "l2:dhcp-client@vlan:565",
+        "resolved": [
+          {
+            "id": "vlan565",
+            "address": null,
+            "reference": {
+              "kind": "downstream-consumer",
+              "id": "consumer:downstream:vlan565"
+            },
+            "address_kind": "SYMBOLIC",
+            "egress_interface": null
+          }
+        ],
+        "resolution_scope": "same-l2-segment"
+      },
+      "protocols": [
+        "UDP"
+      ],
+      "source_ports": [
+        67
+      ],
+      "destination_ports": [
+        68
+      ],
+      "purpose": "Authoritative same-VLAN dnsmasq DHCP response",
+      "requirement_sources": [
+        "RINSTALL_CODE",
+        "UPSTREAM_PROTOCOL"
+      ],
+      "required": true,
+      "verification": "UNVERIFIED",
+      "provenance": "RINSTALL_ARCHITECTURE",
+      "category": "DOWNSTREAM",
+      "semantics": "L2_SERVICE_INTENT",
+      "via": []
+    },
+    {
+      "id": "downstream-dhcp-response:vlan566",
+      "source": {
+        "symbolic": "service:authoritative-dhcp@bastion:vlan:566",
+        "resolved": [
+          {
+            "id": "dhcp:vlan566",
+            "address": null,
+            "reference": {
+              "kind": "service",
+              "id": "dhcp:vlan566"
+            },
+            "address_kind": "SYMBOLIC",
+            "egress_interface": null
+          }
+        ],
+        "resolution_scope": "same-l2-segment"
+      },
+      "destination": {
+        "symbolic": "l2:dhcp-client@vlan:566",
+        "resolved": [
+          {
+            "id": "vlan566",
+            "address": null,
+            "reference": {
+              "kind": "downstream-consumer",
+              "id": "consumer:downstream:vlan566"
+            },
+            "address_kind": "SYMBOLIC",
+            "egress_interface": null
+          }
+        ],
+        "resolution_scope": "same-l2-segment"
+      },
+      "protocols": [
+        "UDP"
+      ],
+      "source_ports": [
+        67
+      ],
+      "destination_ports": [
+        68
+      ],
+      "purpose": "Authoritative same-VLAN dnsmasq DHCP response",
+      "requirement_sources": [
+        "RINSTALL_CODE",
+        "UPSTREAM_PROTOCOL"
+      ],
+      "required": true,
+      "verification": "UNVERIFIED",
+      "provenance": "RINSTALL_ARCHITECTURE",
+      "category": "DOWNSTREAM",
+      "semantics": "L2_SERVICE_INTENT",
+      "via": []
+    },
+    {
+      "id": "downstream-dns:vlan565",
+      "source": {
+        "symbolic": "network:downstream:565",
+        "resolved": [
+          {
+            "id": "vlan565",
+            "address": "203.0.113.32/27",
+            "reference": {
+              "kind": "downstream-consumer",
+              "id": "consumer:downstream:vlan565"
+            },
+            "address_kind": "NETWORK_CIDR",
+            "egress_interface": null
+          }
+        ],
+        "resolution_scope": null
+      },
+      "destination": {
+        "symbolic": "service:dns@bastion:same-vlan:565",
+        "resolved": [
+          {
+            "id": "bastion1:vlan565",
+            "address": "203.0.113.34",
+            "reference": {
+              "kind": "service",
+              "id": "dns:vlan565"
+            },
+            "address_kind": "IP_ADDRESS",
+            "egress_interface": null
+          }
+        ],
+        "resolution_scope": null
+      },
+      "protocols": [
+        "TCP",
+        "UDP"
+      ],
+      "source_ports": [],
+      "destination_ports": [
+        53
+      ],
+      "purpose": "DNS for downstream nodes",
+      "requirement_sources": [
+        "RINSTALL_ARCHITECTURE"
+      ],
+      "required": true,
+      "verification": "UNVERIFIED",
+      "provenance": "RINSTALL_ARCHITECTURE",
+      "category": "DOWNSTREAM",
+      "semantics": "ROUTED",
+      "via": []
+    },
+    {
+      "id": "downstream-dns:vlan566",
+      "source": {
+        "symbolic": "network:downstream:566",
+        "resolved": [
+          {
+            "id": "vlan566",
+            "address": "203.0.113.64/27",
+            "reference": {
+              "kind": "downstream-consumer",
+              "id": "consumer:downstream:vlan566"
+            },
+            "address_kind": "NETWORK_CIDR",
+            "egress_interface": null
+          }
+        ],
+        "resolution_scope": null
+      },
+      "destination": {
+        "symbolic": "service:dns@bastion:same-vlan:566",
+        "resolved": [
+          {
+            "id": "bastion1:vlan566",
+            "address": "203.0.113.66",
+            "reference": {
+              "kind": "service",
+              "id": "dns:vlan566"
+            },
+            "address_kind": "IP_ADDRESS",
+            "egress_interface": null
+          }
+        ],
+        "resolution_scope": null
+      },
+      "protocols": [
+        "TCP",
+        "UDP"
+      ],
+      "source_ports": [],
+      "destination_ports": [
+        53
+      ],
+      "purpose": "DNS for downstream nodes",
+      "requirement_sources": [
+        "RINSTALL_ARCHITECTURE"
+      ],
+      "required": true,
+      "verification": "UNVERIFIED",
+      "provenance": "RINSTALL_ARCHITECTURE",
+      "category": "DOWNSTREAM",
+      "semantics": "ROUTED",
+      "via": []
+    },
+    {
+      "id": "downstream-rancher-agent:vlan565",
+      "source": {
+        "symbolic": "consumer:vlan565:rancher-agents",
+        "resolved": [
+          {
+            "id": "vlan565",
+            "address": "203.0.113.32/27",
+            "reference": {
+              "kind": "downstream-consumer",
+              "id": "consumer:downstream:vlan565"
+            },
+            "address_kind": "NETWORK_CIDR",
+            "egress_interface": null
+          }
+        ],
+        "resolution_scope": null
+      },
+      "destination": {
+        "symbolic": "endpoint:rancher:https",
+        "resolved": [
+          {
+            "id": "198.51.100.11",
+            "address": "198.51.100.11",
+            "reference": {
+              "kind": "endpoint",
+              "id": "endpoint:rancher"
+            },
+            "address_kind": "IP_ADDRESS",
+            "egress_interface": null
+          },
+          {
+            "id": "198.51.100.12",
+            "address": "198.51.100.12",
+            "reference": {
+              "kind": "endpoint",
+              "id": "endpoint:rancher"
+            },
+            "address_kind": "IP_ADDRESS",
+            "egress_interface": null
+          },
+          {
+            "id": "198.51.100.13",
+            "address": "198.51.100.13",
+            "reference": {
+              "kind": "endpoint",
+              "id": "endpoint:rancher"
+            },
+            "address_kind": "IP_ADDRESS",
+            "egress_interface": null
+          }
+        ],
+        "resolution_scope": "local"
+      },
+      "protocols": [
+        "TCP"
+      ],
+      "source_ports": [],
+      "destination_ports": [
+        443
+      ],
+      "purpose": "Downstream Rancher agents connect to the locally resolved Rancher endpoint",
+      "requirement_sources": [
+        "UPSTREAM_PROTOCOL"
+      ],
+      "required": true,
+      "verification": "UNVERIFIED",
+      "provenance": "UPSTREAM_REQUIREMENT",
+      "category": "DOWNSTREAM",
+      "semantics": "ROUTED",
+      "via": []
+    },
+    {
+      "id": "downstream-rancher-agent:vlan566",
+      "source": {
+        "symbolic": "consumer:vlan566:rancher-agents",
+        "resolved": [
+          {
+            "id": "vlan566",
+            "address": "203.0.113.64/27",
+            "reference": {
+              "kind": "downstream-consumer",
+              "id": "consumer:downstream:vlan566"
+            },
+            "address_kind": "NETWORK_CIDR",
+            "egress_interface": null
+          }
+        ],
+        "resolution_scope": null
+      },
+      "destination": {
+        "symbolic": "endpoint:rancher:https",
+        "resolved": [
+          {
+            "id": "198.51.100.11",
+            "address": "198.51.100.11",
+            "reference": {
+              "kind": "endpoint",
+              "id": "endpoint:rancher"
+            },
+            "address_kind": "IP_ADDRESS",
+            "egress_interface": null
+          },
+          {
+            "id": "198.51.100.12",
+            "address": "198.51.100.12",
+            "reference": {
+              "kind": "endpoint",
+              "id": "endpoint:rancher"
+            },
+            "address_kind": "IP_ADDRESS",
+            "egress_interface": null
+          },
+          {
+            "id": "198.51.100.13",
+            "address": "198.51.100.13",
+            "reference": {
+              "kind": "endpoint",
+              "id": "endpoint:rancher"
+            },
+            "address_kind": "IP_ADDRESS",
+            "egress_interface": null
+          }
+        ],
+        "resolution_scope": "local"
+      },
+      "protocols": [
+        "TCP"
+      ],
+      "source_ports": [],
+      "destination_ports": [
+        443
+      ],
+      "purpose": "Downstream Rancher agents connect to the locally resolved Rancher endpoint",
+      "requirement_sources": [
+        "UPSTREAM_PROTOCOL"
+      ],
+      "required": true,
+      "verification": "UNVERIFIED",
+      "provenance": "UPSTREAM_REQUIREMENT",
+      "category": "DOWNSTREAM",
+      "semantics": "ROUTED",
+      "via": []
+    },
+    {
+      "id": "external-routing:customer:vlan565",
+      "source": {
+        "symbolic": "network:customer",
+        "resolved": [
+          {
+            "id": "customer",
+            "address": "198.51.100.0/28",
+            "reference": {
+              "kind": "network",
+              "id": "customer"
+            },
+            "address_kind": "NETWORK_CIDR",
+            "egress_interface": null
+          }
+        ],
+        "resolution_scope": null
+      },
+      "destination": {
+        "symbolic": "network:downstream:vlan565",
+        "resolved": [
+          {
+            "id": "vlan565",
+            "address": "203.0.113.32/27",
+            "reference": {
+              "kind": "network",
+              "id": "downstream:vlan565"
+            },
+            "address_kind": "NETWORK_CIDR",
+            "egress_interface": null
+          }
+        ],
+        "resolution_scope": null
+      },
+      "protocols": [],
+      "source_ports": [],
+      "destination_ports": [],
+      "purpose": "Customer/downstream traffic depends on external routing and firewalling; bastion is not the router",
+      "requirement_sources": [
+        "RINSTALL_ARCHITECTURE"
+      ],
+      "required": true,
+      "verification": "UNVERIFIED",
+      "provenance": "RINSTALL_ARCHITECTURE",
+      "category": "DOWNSTREAM",
+      "semantics": "EXTERNAL_ROUTING_DEPENDENCY",
+      "via": [
+        {
+          "kind": "endpoint",
+          "id": "endpoint:external-routed-fabric"
+        }
+      ]
+    },
+    {
+      "id": "external-routing:customer:vlan566",
+      "source": {
+        "symbolic": "network:customer",
+        "resolved": [
+          {
+            "id": "customer",
+            "address": "198.51.100.0/28",
+            "reference": {
+              "kind": "network",
+              "id": "customer"
+            },
+            "address_kind": "NETWORK_CIDR",
+            "egress_interface": null
+          }
+        ],
+        "resolution_scope": null
+      },
+      "destination": {
+        "symbolic": "network:downstream:vlan566",
+        "resolved": [
+          {
+            "id": "vlan566",
+            "address": "203.0.113.64/27",
+            "reference": {
+              "kind": "network",
+              "id": "downstream:vlan566"
+            },
+            "address_kind": "NETWORK_CIDR",
+            "egress_interface": null
+          }
+        ],
+        "resolution_scope": null
+      },
+      "protocols": [],
+      "source_ports": [],
+      "destination_ports": [],
+      "purpose": "Customer/downstream traffic depends on external routing and firewalling; bastion is not the router",
+      "requirement_sources": [
+        "RINSTALL_ARCHITECTURE"
+      ],
+      "required": true,
+      "verification": "UNVERIFIED",
+      "provenance": "RINSTALL_ARCHITECTURE",
+      "category": "DOWNSTREAM",
+      "semantics": "EXTERNAL_ROUTING_DEPENDENCY",
+      "via": [
+        {
+          "kind": "endpoint",
+          "id": "endpoint:external-routed-fabric"
+        }
+      ]
+    },
+    {
+      "id": "rancher-downstream-ssh:vlan565",
+      "source": {
+        "symbolic": "role:rancher",
+        "resolved": [
+          {
+            "id": "rancher1",
+            "address": "198.51.100.11",
+            "reference": {
+              "kind": "host",
+              "id": "rancher1"
+            },
+            "address_kind": "IP_ADDRESS",
+            "egress_interface": null
+          },
+          {
+            "id": "rancher2",
+            "address": "198.51.100.12",
+            "reference": {
+              "kind": "host",
+              "id": "rancher2"
+            },
+            "address_kind": "IP_ADDRESS",
+            "egress_interface": null
+          },
+          {
+            "id": "rancher3",
+            "address": "198.51.100.13",
+            "reference": {
+              "kind": "host",
+              "id": "rancher3"
+            },
+            "address_kind": "IP_ADDRESS",
+            "egress_interface": null
+          }
+        ],
+        "resolution_scope": null
+      },
+      "destination": {
+        "symbolic": "network:downstream:565",
+        "resolved": [
+          {
+            "id": "vlan565",
+            "address": "203.0.113.32/27",
+            "reference": {
+              "kind": "downstream-consumer",
+              "id": "consumer:downstream:vlan565"
+            },
+            "address_kind": "NETWORK_CIDR",
+            "egress_interface": null
+          }
+        ],
+        "resolution_scope": null
+      },
+      "protocols": [
+        "TCP"
+      ],
+      "source_ports": [],
+      "destination_ports": [
+        22
+      ],
+      "purpose": "Administrator SSH from Rancher nodes to downstream nodes",
+      "requirement_sources": [
+        "RINSTALL_ARCHITECTURE"
+      ],
+      "required": true,
+      "verification": "UNVERIFIED",
+      "provenance": "RINSTALL_ARCHITECTURE",
+      "category": "DOWNSTREAM",
+      "semantics": "ROUTED",
+      "via": []
+    },
+    {
+      "id": "rancher-downstream-ssh:vlan566",
+      "source": {
+        "symbolic": "role:rancher",
+        "resolved": [
+          {
+            "id": "rancher1",
+            "address": "198.51.100.11",
+            "reference": {
+              "kind": "host",
+              "id": "rancher1"
+            },
+            "address_kind": "IP_ADDRESS",
+            "egress_interface": null
+          },
+          {
+            "id": "rancher2",
+            "address": "198.51.100.12",
+            "reference": {
+              "kind": "host",
+              "id": "rancher2"
+            },
+            "address_kind": "IP_ADDRESS",
+            "egress_interface": null
+          },
+          {
+            "id": "rancher3",
+            "address": "198.51.100.13",
+            "reference": {
+              "kind": "host",
+              "id": "rancher3"
+            },
+            "address_kind": "IP_ADDRESS",
+            "egress_interface": null
+          }
+        ],
+        "resolution_scope": null
+      },
+      "destination": {
+        "symbolic": "network:downstream:566",
+        "resolved": [
+          {
+            "id": "vlan566",
+            "address": "203.0.113.64/27",
+            "reference": {
+              "kind": "downstream-consumer",
+              "id": "consumer:downstream:vlan566"
+            },
+            "address_kind": "NETWORK_CIDR",
+            "egress_interface": null
+          }
+        ],
+        "resolution_scope": null
+      },
+      "protocols": [
+        "TCP"
+      ],
+      "source_ports": [],
+      "destination_ports": [
+        22
+      ],
+      "purpose": "Administrator SSH from Rancher nodes to downstream nodes",
+      "requirement_sources": [
+        "RINSTALL_ARCHITECTURE"
+      ],
+      "required": true,
+      "verification": "UNVERIFIED",
+      "provenance": "RINSTALL_ARCHITECTURE",
+      "category": "DOWNSTREAM",
+      "semantics": "ROUTED",
+      "via": []
+    }
+  ],
+  "notes": [
+    "Desired topology only; provider state, guest runtime state, and network reachability are not verified."
+  ],
+  "clusters": [
+    {
+      "id": "cluster:rke2-rancher",
+      "kind": "rke2-rancher-control-cluster",
+      "member_host_ids": [
+        "rancher1",
+        "rancher2",
+        "rancher3"
+      ],
+      "primary_host_id": "rancher1",
+      "join_host_ids": [
+        "rancher2",
+        "rancher3"
+      ],
+      "endpoint_ids": [
+        "endpoint:rancher"
+      ],
+      "versions": {
+        "rke2": "v1.35.7+rke2r1",
+        "rancher": "2.14.4"
+      },
+      "ownership": "RINSTALL_CONFIGURED",
+      "provenance": "DERIVED",
+      "resolution": "RESOLVED",
+      "verification": "DESIRED_ONLY"
+    }
+  ],
+  "endpoints": [
+    {
+      "id": "endpoint:rancher",
+      "kind": "rancher-https",
+      "name": "rancher.full-example.example.invalid",
+      "protocols": [
+        "HTTPS"
+      ],
+      "ports": [
+        443
+      ],
+      "cluster_id": "cluster:rke2-rancher",
+      "resolutions": [
+        {
+          "scope": "local",
+          "addresses": [
+            "198.51.100.11",
+            "198.51.100.12",
+            "198.51.100.13"
+          ],
+          "ownership": "RINSTALL_CONFIGURED",
+          "provenance": "DERIVED",
+          "resolution": "RESOLVED",
+          "address_kind": "IP_ADDRESS",
+          "verification": "DESIRED_ONLY",
+          "reason": null
+        },
+        {
+          "scope": "external",
+          "addresses": [],
+          "ownership": "EXTERNALLY_MANAGED",
+          "provenance": "EXTERNAL",
+          "resolution": "EXTERNAL_UNRESOLVED",
+          "address_kind": "SYMBOLIC",
+          "verification": "UNVERIFIED",
+          "reason": "External Rancher VIP/load balancer is not represented in config.yaml."
+        }
+      ],
+      "ownership": "RINSTALL_CONFIGURED",
+      "provenance": "CONFIGURED",
+      "resolution": "PARTIAL",
+      "verification": "DESIRED_ONLY"
+    },
+    {
+      "id": "endpoint:vcenter",
+      "kind": "vcenter",
+      "name": "vcenter.example.invalid",
+      "protocols": [
+        "HTTPS"
+      ],
+      "ports": [
+        443
+      ],
+      "cluster_id": null,
+      "resolutions": [
+        {
+          "scope": "external",
+          "addresses": [
+            "vcenter.example.invalid"
+          ],
+          "ownership": "REFERENCED_EXTERNAL",
+          "provenance": "CONFIGURED",
+          "resolution": "RESOLVED",
+          "address_kind": "SYMBOLIC",
+          "verification": "UNVERIFIED",
+          "reason": null
+        }
+      ],
+      "ownership": "REFERENCED_EXTERNAL",
+      "provenance": "CONFIGURED",
+      "resolution": "RESOLVED",
+      "verification": "UNVERIFIED"
+    },
+    {
+      "id": "endpoint:terraform-backend",
+      "kind": "terraform-backend",
+      "name": "https://gitlab.example.invalid",
+      "protocols": [
+        "HTTPS"
+      ],
+      "ports": [
+        443
+      ],
+      "cluster_id": null,
+      "resolutions": [
+        {
+          "scope": "external",
+          "addresses": [
+            "https://gitlab.example.invalid"
+          ],
+          "ownership": "REFERENCED_EXTERNAL",
+          "provenance": "CONFIGURED",
+          "resolution": "RESOLVED",
+          "address_kind": "URL",
+          "verification": "UNVERIFIED",
+          "reason": null
+        }
+      ],
+      "ownership": "REFERENCED_EXTERNAL",
+      "provenance": "CONFIGURED",
+      "resolution": "RESOLVED",
+      "verification": "UNVERIFIED"
+    },
+    {
+      "id": "endpoint:dns-local:192.0.2.53",
+      "kind": "local-dns",
+      "name": "192.0.2.53",
+      "protocols": [
+        "DNS"
+      ],
+      "ports": [
+        53
+      ],
+      "cluster_id": null,
+      "resolutions": [
+        {
+          "scope": "local",
+          "addresses": [
+            "192.0.2.53"
+          ],
+          "ownership": "REFERENCED_EXTERNAL",
+          "provenance": "CONFIGURED",
+          "resolution": "RESOLVED",
+          "address_kind": "IP_ADDRESS",
+          "verification": "UNVERIFIED",
+          "reason": null
+        }
+      ],
+      "ownership": "REFERENCED_EXTERNAL",
+      "provenance": "CONFIGURED",
+      "resolution": "RESOLVED",
+      "verification": "UNVERIFIED"
+    },
+    {
+      "id": "endpoint:dns-local:198.51.100.4",
+      "kind": "local-dns",
+      "name": "198.51.100.4",
+      "protocols": [
+        "DNS"
+      ],
+      "ports": [
+        53
+      ],
+      "cluster_id": null,
+      "resolutions": [
+        {
+          "scope": "local",
+          "addresses": [
+            "198.51.100.4"
+          ],
+          "ownership": "REFERENCED_EXTERNAL",
+          "provenance": "CONFIGURED",
+          "resolution": "RESOLVED",
+          "address_kind": "IP_ADDRESS",
+          "verification": "UNVERIFIED",
+          "reason": null
+        }
+      ],
+      "ownership": "REFERENCED_EXTERNAL",
+      "provenance": "CONFIGURED",
+      "resolution": "RESOLVED",
+      "verification": "UNVERIFIED"
+    },
+    {
+      "id": "endpoint:ssh-jump",
+      "kind": "ssh-jump-alias",
+      "name": "example-operator-jump",
+      "protocols": [
+        "SSH"
+      ],
+      "ports": [],
+      "cluster_id": null,
+      "resolutions": [
+        {
+          "scope": "operator-ssh-config",
+          "addresses": [],
+          "ownership": "REFERENCED_EXTERNAL",
+          "provenance": "CONFIGURED",
+          "resolution": "EXTERNAL_UNRESOLVED",
+          "address_kind": "SSH_ALIAS",
+          "verification": "UNVERIFIED",
+          "reason": "SSH alias network identity is defined outside config.yaml."
+        }
+      ],
+      "ownership": "REFERENCED_EXTERNAL",
+      "provenance": "CONFIGURED",
+      "resolution": "EXTERNAL_UNRESOLVED",
+      "verification": "UNVERIFIED"
+    },
+    {
+      "id": "endpoint:gateway:vlan565",
+      "kind": "downstream-gateway",
+      "name": "gateway for VLAN 565",
+      "protocols": [],
+      "ports": [],
+      "cluster_id": null,
+      "resolutions": [
+        {
+          "scope": "downstream-vlan-565",
+          "addresses": [
+            "203.0.113.33"
+          ],
+          "ownership": "REFERENCED_EXTERNAL",
+          "provenance": "CONFIGURED",
+          "resolution": "RESOLVED",
+          "address_kind": "IP_ADDRESS",
+          "verification": "UNVERIFIED",
+          "reason": null
+        }
+      ],
+      "ownership": "REFERENCED_EXTERNAL",
+      "provenance": "CONFIGURED",
+      "resolution": "RESOLVED",
+      "verification": "UNVERIFIED"
+    },
+    {
+      "id": "endpoint:gateway:vlan566",
+      "kind": "downstream-gateway",
+      "name": "gateway for VLAN 566",
+      "protocols": [],
+      "ports": [],
+      "cluster_id": null,
+      "resolutions": [
+        {
+          "scope": "downstream-vlan-566",
+          "addresses": [
+            "203.0.113.65"
+          ],
+          "ownership": "REFERENCED_EXTERNAL",
+          "provenance": "CONFIGURED",
+          "resolution": "RESOLVED",
+          "address_kind": "IP_ADDRESS",
+          "verification": "UNVERIFIED",
+          "reason": null
+        }
+      ],
+      "ownership": "REFERENCED_EXTERNAL",
+      "provenance": "CONFIGURED",
+      "resolution": "RESOLVED",
+      "verification": "UNVERIFIED"
+    },
+    {
+      "id": "endpoint:dns-upstream:192.0.2.54",
+      "kind": "dns-upstream",
+      "name": "192.0.2.54",
+      "protocols": [
+        "DNS"
+      ],
+      "ports": [
+        53
+      ],
+      "cluster_id": null,
+      "resolutions": [
+        {
+          "scope": "external",
+          "addresses": [
+            "192.0.2.54"
+          ],
+          "ownership": "REFERENCED_EXTERNAL",
+          "provenance": "CONFIGURED",
+          "resolution": "RESOLVED",
+          "address_kind": "IP_ADDRESS",
+          "verification": "UNVERIFIED",
+          "reason": null
+        }
+      ],
+      "ownership": "REFERENCED_EXTERNAL",
+      "provenance": "CONFIGURED",
+      "resolution": "RESOLVED",
+      "verification": "UNVERIFIED"
+    },
+    {
+      "id": "endpoint:dns-upstream:192.0.2.55",
+      "kind": "dns-upstream",
+      "name": "192.0.2.55",
+      "protocols": [
+        "DNS"
+      ],
+      "ports": [
+        53
+      ],
+      "cluster_id": null,
+      "resolutions": [
+        {
+          "scope": "external",
+          "addresses": [
+            "192.0.2.55"
+          ],
+          "ownership": "REFERENCED_EXTERNAL",
+          "provenance": "CONFIGURED",
+          "resolution": "RESOLVED",
+          "address_kind": "IP_ADDRESS",
+          "verification": "UNVERIFIED",
+          "reason": null
+        }
+      ],
+      "ownership": "REFERENCED_EXTERNAL",
+      "provenance": "CONFIGURED",
+      "resolution": "RESOLVED",
+      "verification": "UNVERIFIED"
+    },
+    {
+      "id": "endpoint:dns-management:192.0.2.53",
+      "kind": "management-dns",
+      "name": "192.0.2.53",
+      "protocols": [
+        "DNS"
+      ],
+      "ports": [
+        53
+      ],
+      "cluster_id": null,
+      "resolutions": [
+        {
+          "scope": "management",
+          "addresses": [
+            "192.0.2.53"
+          ],
+          "ownership": "REFERENCED_EXTERNAL",
+          "provenance": "CONFIGURED",
+          "resolution": "RESOLVED",
+          "address_kind": "IP_ADDRESS",
+          "verification": "UNVERIFIED",
+          "reason": null
+        }
+      ],
+      "ownership": "REFERENCED_EXTERNAL",
+      "provenance": "CONFIGURED",
+      "resolution": "RESOLVED",
+      "verification": "UNVERIFIED"
+    },
+    {
+      "id": "endpoint:proxy-upstream",
+      "kind": "proxy-upstream-destinations",
+      "name": "external repositories and service endpoints",
+      "protocols": [
+        "HTTP",
+        "HTTPS"
+      ],
+      "ports": [
+        80,
+        443
+      ],
+      "cluster_id": null,
+      "resolutions": [
+        {
+          "scope": "external",
+          "addresses": [],
+          "ownership": "REFERENCED_EXTERNAL",
+          "provenance": "RINSTALL_ARCHITECTURE",
+          "resolution": "EXTERNAL_UNRESOLVED",
+          "address_kind": "SYMBOLIC",
+          "verification": "UNVERIFIED",
+          "reason": "Proxy upstream destinations are not enumerated in config.yaml."
+        }
+      ],
+      "ownership": "REFERENCED_EXTERNAL",
+      "provenance": "RINSTALL_ARCHITECTURE",
+      "resolution": "EXTERNAL_UNRESOLVED",
+      "verification": "UNVERIFIED"
+    },
+    {
+      "id": "endpoint:external-routed-fabric",
+      "kind": "external-routed-fabric",
+      "name": "external routing and firewalling",
+      "protocols": [],
+      "ports": [],
+      "cluster_id": null,
+      "resolutions": [
+        {
+          "scope": "external",
+          "addresses": [],
+          "ownership": "EXTERNALLY_MANAGED",
+          "provenance": "RINSTALL_ARCHITECTURE",
+          "resolution": "EXTERNAL_UNRESOLVED",
+          "address_kind": "SYMBOLIC",
+          "verification": "UNVERIFIED",
+          "reason": "The bastion is not the router between customer and downstream networks."
+        }
+      ],
+      "ownership": "EXTERNALLY_MANAGED",
+      "provenance": "RINSTALL_ARCHITECTURE",
+      "resolution": "EXTERNAL_UNRESOLVED",
+      "verification": "UNVERIFIED"
+    }
+  ],
+  "actors": [
+    {
+      "id": "actor:operator-workstation",
+      "kind": "operator-workstation",
+      "ownership": "REFERENCED_EXTERNAL",
+      "provenance": "RINSTALL_ARCHITECTURE",
+      "resolution": "SYMBOLIC",
+      "verification": "DESIRED_ONLY"
+    }
+  ],
+  "access_paths": [
+    {
+      "id": "access:ssh:bastion1",
+      "source_actor_id": "actor:operator-workstation",
+      "destination": {
+        "kind": "host",
+        "id": "bastion1"
+      },
+      "hops": [
+        {
+          "kind": "endpoint",
+          "id": "endpoint:ssh-jump"
+        }
+      ],
+      "protocol": "SSH",
+      "destination_port": 22,
+      "target": "192.0.2.10",
+      "ownership": "RINSTALL_CONFIGURED",
+      "provenance": "DERIVED",
+      "resolution": "PARTIAL",
+      "verification": "UNVERIFIED"
+    },
+    {
+      "id": "access:ssh:prom1",
+      "source_actor_id": "actor:operator-workstation",
+      "destination": {
+        "kind": "host",
+        "id": "prom1"
+      },
+      "hops": [
+        {
+          "kind": "endpoint",
+          "id": "endpoint:ssh-jump"
+        },
+        {
+          "kind": "host",
+          "id": "bastion1"
+        }
+      ],
+      "protocol": "SSH",
+      "destination_port": 22,
+      "target": "198.51.100.6",
+      "ownership": "RINSTALL_CONFIGURED",
+      "provenance": "DERIVED",
+      "resolution": "PARTIAL",
+      "verification": "UNVERIFIED"
+    },
+    {
+      "id": "access:ssh:rancher1",
+      "source_actor_id": "actor:operator-workstation",
+      "destination": {
+        "kind": "host",
+        "id": "rancher1"
+      },
+      "hops": [
+        {
+          "kind": "endpoint",
+          "id": "endpoint:ssh-jump"
+        },
+        {
+          "kind": "host",
+          "id": "bastion1"
+        }
+      ],
+      "protocol": "SSH",
+      "destination_port": 22,
+      "target": "198.51.100.11",
+      "ownership": "RINSTALL_CONFIGURED",
+      "provenance": "DERIVED",
+      "resolution": "PARTIAL",
+      "verification": "UNVERIFIED"
+    },
+    {
+      "id": "access:ssh:rancher2",
+      "source_actor_id": "actor:operator-workstation",
+      "destination": {
+        "kind": "host",
+        "id": "rancher2"
+      },
+      "hops": [
+        {
+          "kind": "endpoint",
+          "id": "endpoint:ssh-jump"
+        },
+        {
+          "kind": "host",
+          "id": "bastion1"
+        }
+      ],
+      "protocol": "SSH",
+      "destination_port": 22,
+      "target": "198.51.100.12",
+      "ownership": "RINSTALL_CONFIGURED",
+      "provenance": "DERIVED",
+      "resolution": "PARTIAL",
+      "verification": "UNVERIFIED"
+    },
+    {
+      "id": "access:ssh:rancher3",
+      "source_actor_id": "actor:operator-workstation",
+      "destination": {
+        "kind": "host",
+        "id": "rancher3"
+      },
+      "hops": [
+        {
+          "kind": "endpoint",
+          "id": "endpoint:ssh-jump"
+        },
+        {
+          "kind": "host",
+          "id": "bastion1"
+        }
+      ],
+      "protocol": "SSH",
+      "destination_port": 22,
+      "target": "198.51.100.13",
+      "ownership": "RINSTALL_CONFIGURED",
+      "provenance": "DERIVED",
+      "resolution": "PARTIAL",
+      "verification": "UNVERIFIED"
+    }
+  ],
+  "downstream_consumers": [
+    {
+      "id": "consumer:downstream:vlan565",
+      "kind": "downstream-nodes-or-cluster",
+      "network_id": "downstream:vlan565",
+      "address_start": "203.0.113.36",
+      "address_end": "203.0.113.61",
+      "identities_known": false,
+      "lifecycle": "external/downstream",
+      "gateway_endpoint_id": "endpoint:gateway:vlan565",
+      "downstream_network_ref": {
+        "kind": "downstream-network",
+        "id": "downstream:vlan565"
+      },
+      "ownership": "EXTERNALLY_MANAGED",
+      "provenance": "RINSTALL_ARCHITECTURE",
+      "resolution": "SYMBOLIC",
+      "verification": "UNVERIFIED"
+    },
+    {
+      "id": "consumer:downstream:vlan566",
+      "kind": "downstream-nodes-or-cluster",
+      "network_id": "downstream:vlan566",
+      "address_start": "203.0.113.68",
+      "address_end": "203.0.113.93",
+      "identities_known": false,
+      "lifecycle": "external/downstream",
+      "gateway_endpoint_id": "endpoint:gateway:vlan566",
+      "downstream_network_ref": {
+        "kind": "downstream-network",
+        "id": "downstream:vlan566"
+      },
+      "ownership": "EXTERNALLY_MANAGED",
+      "provenance": "RINSTALL_ARCHITECTURE",
+      "resolution": "SYMBOLIC",
+      "verification": "UNVERIFIED"
+    }
+  ],
+  "deployment_context": {
+    "execution_actor_id": "actor:operator-workstation",
+    "terraform_root": "rinstall/terraform/infra",
+    "vsphere": {
+      "endpoint_id": "endpoint:vcenter",
+      "datacenter": "EXAMPLE_DATACENTER",
+      "datastore": "EXAMPLE_DATASTORE",
+      "resource_pool": "EXAMPLE_CLUSTER/Resources",
+      "folder": "Rancher/full-example",
+      "templates": [
+        {
+          "id": "infra",
+          "value": "EXAMPLE_TEMPLATE_INFRA",
+          "reference": null,
+          "ownership": "REFERENCED_EXTERNAL",
+          "provenance": "CONFIGURED",
+          "resolution": "RESOLVED"
+        },
+        {
+          "id": "rke2",
+          "value": "EXAMPLE_TEMPLATE_RKE2",
+          "reference": null,
+          "ownership": "REFERENCED_EXTERNAL",
+          "provenance": "CONFIGURED",
+          "resolution": "RESOLVED"
+        }
+      ],
+      "networks": [
+        {
+          "id": "customer",
+          "value": null,
+          "reference": {
+            "kind": "network",
+            "id": "customer"
+          },
+          "ownership": "REFERENCED_EXTERNAL",
+          "provenance": "CONFIGURED",
+          "resolution": "RESOLVED"
+        },
+        {
+          "id": "management",
+          "value": null,
+          "reference": {
+            "kind": "network",
+            "id": "management"
+          },
+          "ownership": "REFERENCED_EXTERNAL",
+          "provenance": "CONFIGURED",
+          "resolution": "RESOLVED"
+        },
+        {
+          "id": "downstream:vlan565",
+          "value": null,
+          "reference": {
+            "kind": "network",
+            "id": "downstream:vlan565"
+          },
+          "ownership": "REFERENCED_EXTERNAL",
+          "provenance": "CONFIGURED",
+          "resolution": "RESOLVED"
+        },
+        {
+          "id": "downstream:vlan566",
+          "value": null,
+          "reference": {
+            "kind": "network",
+            "id": "downstream:vlan566"
+          },
+          "ownership": "REFERENCED_EXTERNAL",
+          "provenance": "CONFIGURED",
+          "resolution": "RESOLVED"
+        }
+      ],
+      "route": {
+        "destination": "192.0.2.128/26",
+        "gateway": "192.0.2.1",
+        "connection": "mgmt",
+        "interface_ref": {
+          "kind": "interface",
+          "id": "bastion1:1"
+        },
+        "network_ref": {
+          "kind": "network",
+          "id": "management"
+        },
+        "ownership": "RINSTALL_CONFIGURED",
+        "provenance": "CONFIGURED",
+        "resolution": "RESOLVED",
+        "verification": "UNVERIFIED"
+      },
+      "clone_timeout_minutes": 60,
+      "allow_unverified_ssl": false,
+      "ownership": "REFERENCED_EXTERNAL",
+      "provenance": "CONFIGURED",
+      "resolution": "RESOLVED",
+      "verification": "UNVERIFIED"
+    },
+    "terraform_backend": {
+      "endpoint_id": "endpoint:terraform-backend",
+      "type": "gitlab",
+      "url": "https://gitlab.example.invalid",
+      "project_id": 123456,
+      "state_name": "full-example-infra",
+      "state_address": "https://gitlab.example.invalid/api/v4/projects/123456/terraform/state/full-example-infra",
+      "ownership": "REFERENCED_EXTERNAL",
+      "provenance": "DERIVED",
+      "resolution": "RESOLVED",
+      "verification": "UNVERIFIED"
+    },
+    "ownership": "RINSTALL_CONFIGURED",
+    "provenance": "DERIVED",
+    "resolution": "PARTIAL",
+    "verification": "DESIRED_ONLY"
+  }
+}

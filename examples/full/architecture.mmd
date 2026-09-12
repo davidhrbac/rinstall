@@ -1,0 +1,26 @@
+flowchart LR
+  actor_operator_workstation_974971eaa5["Operator / rinstall"]
+  endpoint_endpoint_ssh_jump_f7b7c2ca2d["SSH jump<br/>example-operator-jump<br/>external unresolved"]
+  host_bastion1_fd65cf69ce["Bastion<br/>bastion1<br/>DNS · DHCP · proxy · SSH transit"]
+  subgraph managed_hosts["Managed hosts"]
+    direction TB
+    host_prom1_abf2e7bd7a["Monitoring host<br/>prom1"]
+  end
+  cluster_cluster_rke2_rancher_de77c71a50["RKE2 / Rancher cluster<br/>rancher1 primary<br/>rancher2<br/>rancher3"]
+  endpoint_endpoint_rancher_0637b61772["Rancher endpoint<br/>rancher.full-example.example.invalid<br/>HTTPS / 443<br/>split-horizon DNS"]
+  subgraph downstream["Downstream environments"]
+    direction TB
+    consumer_consumer_downstream_vlan565_dfc74929d4["Downstream nodes<br/>VLAN 565<br/>external lifecycle"]
+    consumer_consumer_downstream_vlan566_30b7d29b35["Downstream nodes<br/>VLAN 566<br/>external lifecycle"]
+  end
+  endpoint_endpoint_vcenter_bba77268c7["vSphere<br/>vcenter.example.invalid"]
+  endpoint_endpoint_terraform_backend_a27fbcb411["Terraform state backend<br/>GitLab"]
+  actor_operator_workstation_974971eaa5 --> endpoint_endpoint_ssh_jump_f7b7c2ca2d
+  endpoint_endpoint_ssh_jump_f7b7c2ca2d --> host_bastion1_fd65cf69ce
+  host_bastion1_fd65cf69ce --> cluster_cluster_rke2_rancher_de77c71a50
+  host_bastion1_fd65cf69ce --> host_prom1_abf2e7bd7a
+  cluster_cluster_rke2_rancher_de77c71a50 --> endpoint_endpoint_rancher_0637b61772
+  consumer_consumer_downstream_vlan565_dfc74929d4 --> endpoint_endpoint_rancher_0637b61772
+  consumer_consumer_downstream_vlan566_30b7d29b35 --> endpoint_endpoint_rancher_0637b61772
+  actor_operator_workstation_974971eaa5 --> endpoint_endpoint_vcenter_bba77268c7
+  actor_operator_workstation_974971eaa5 --> endpoint_endpoint_terraform_backend_a27fbcb411

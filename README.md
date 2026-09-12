@@ -25,8 +25,9 @@ Fleet, imported downstream clusters, downstream lifecycle, and Kubernetes upgrad
 ## Production Instance Flow
 
 Production use is a separate instance repository containing `config.yaml`, a
-`.gitmodules` file, a `.gitignore` entry for `.rinstall/`, and the pinned
-`rinstall` submodule. The sanitized layout fixture is in
+`.gitmodules` file, a `.gitignore` entry for `.rinstall/`, the pinned `rinstall`
+submodule, and optionally committed support documentation under
+`docs/topology/`. The sanitized layout fixture is in
 `examples/instance-repository/`. No wrapper Makefile or `.envrc` is required:
 
 ```bash
@@ -37,6 +38,21 @@ make -f rinstall/Makefile provision-all
 
 Generated runtime files are kept under the ignored `.rinstall/` directory,
 including Terraform metadata in `.rinstall/terraform-data/`.
+Topology documentation under `docs/topology/` is a separate, version-controlled
+support projection. It is generated from `config.yaml`, is not provisioning
+input, and is suitable only for the private instance repository because it may
+contain internal addresses and hostnames.
+
+The instance documentation workflow is:
+
+```bash
+make -f rinstall/Makefile topology-docs
+git diff -- config.yaml docs/topology/
+make -f rinstall/Makefile topology-docs-check
+```
+
+Commit the config and its resulting documentation together. The drift check is
+read-only and fails if the committed file set or contents differ.
 
 Production `config.yaml` declares the GitLab backend identity:
 
@@ -432,6 +448,45 @@ mode. Do not edit generated files.
 Use `envs/example` only for sanitized engine development fixtures. Real customer
 configuration belongs in the separate instance repository, keeping hostnames,
 IPs, and SSH topology out of this engine repository.
+
+## Desired Topology
+
+The topology command renders a deterministic, desired-only view from the
+expanded configuration:
+
+```bash
+make -f rinstall/Makefile topology
+```
+
+Instance repositories write private artifacts to `.rinstall/`; standalone use
+writes under `build/<environment.id>/`:
+
+- `topology.json`
+- `topology.md`
+- `topology.txt`
+- `architecture.mmd`
+- `network-topology.mmd`
+
+The command does not run Terraform, contact vCenter or Rancher, inspect guest
+state, or run pyinfra. It does not expose credentials, discover or invent
+runtime guest interface names or provider MACs, Terraform state, or runtime
+reachability. Configured metadata such as `vsphere_route_connection` may still
+be included. Direct SSH paths are shown directly; a bastion hop is shown only
+when the configured SSH proxy path includes it.
+
+Configured vCenter endpoints are marked `CONFIGURED`/`RESOLVED`. When the
+provider endpoint is supplied only through runtime environment variables, the
+topology uses a symbolic `RUNTIME_SUPPLIED` endpoint instead. Values accepted by
+the v0.3.0 configuration loader that cannot be associated with a desired
+interface are retained with `PARTIAL`, `UNRESOLVED`, or `UNVERIFIED` status;
+topology generation never tightens provisioning validation.
+
+The topology documents the desired bastion architecture, including customer/
+local base NIC index 0, management base NIC index 1, VMware-owned downstream
+VLAN attachment, external routing dependencies, DHCP/DNS/proxy services, RKE2/
+Rancher membership, and downstream lifecycle identity. It does not claim that
+runtime NetworkManager profiles, devices, or provider-assigned MACs have been
+verified.
 
 ## Terraform State
 
