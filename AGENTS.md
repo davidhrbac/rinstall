@@ -47,6 +47,10 @@
 - Avoid `webfetch` when possible; prefer local/repo sources or CLI tools.
 - Use `~/go/bin/gh` for GitHub tasks and `~/go/bin/glab` for GitLab tasks instead of assuming they are on `PATH`.
 - For ChatGPT links, use the internal API rather than fetching them directly.
+- `make topology` is a read-only desired-architecture projection from config; it must not call Terraform, vCenter, Rancher, pyinfra, or inspect guest runtime state.
+- Topology artifacts are private under `.rinstall/` or `build/<environment.id>/`; committed `docs/topology/` is an optional instance-repository support projection and must never become provisioning input.
+- Keep topology tolerant of the v0.3.0 config contract. Use `PARTIAL`, `RUNTIME_SUPPLIED`, `UNRESOLVED`, or `UNVERIFIED` rather than tightening validation for documentation.
+- Topology must not expose secrets or invent provider MACs, guest interface names, Terraform state, or reachability. Direct SSH paths must not imply bastion transit unless the configured proxy path includes it.
 
 ## Rancher Environment Workflow
 

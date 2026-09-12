@@ -1,0 +1,22 @@
+Desired topology: full-example
+Bastion: bastion1 (multi-homed, not a router)
+Rancher endpoint (split-horizon DNS):
+  https://rancher.full-example.example.invalid:443
+  internal / rinstall DNS: local Rancher node addresses
+  external DNS: external VIP/LB - unresolved
+
+Networks:
+  customer                 198.51.100.0/28    EXAMPLE_CUSTOMER_NETWORK
+  management               192.0.2.0/24       EXAMPLE_MANAGEMENT_NETWORK
+  downstream:vlan565       203.0.113.32/27    EXAMPLE_DOWNSTREAM_NETWORK_565
+  downstream:vlan566       203.0.113.64/27    EXAMPLE_DOWNSTREAM_NETWORK_566
+
+Key connectivity:
+  Administrative     6 rules
+  Deployment         2 rules
+  Core services      5 rules
+  RKE2 / Rancher     2 rules
+  Downstream         12 rules
+
+Status: desired only; reachability unverified;
+bastion is not the downstream router.
