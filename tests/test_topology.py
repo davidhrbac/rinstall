@@ -46,6 +46,7 @@ from lib.topology import (
     render_topology_markdown,
     render_topology_ascii_overview,
     render_topology_network_mermaid,
+    sanitize_url_userinfo,
     validate_topology,
 )
 
@@ -149,6 +150,113 @@ def test_topology_tolerates_v03_accepted_hostname_ssh_target():
     assert host.ssh_target == "prometheus.example.invalid"
     assert path.target == "prometheus.example.invalid"
     assert rule.destination.resolved[0].address_kind == DNS_NAME
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("https://user:password@vcenter.example:8443/sdk", "https://vcenter.example:8443/sdk"),
+        ("https://user@vcenter.example/sdk", "https://vcenter.example/sdk"),
+        ("https://:password@vcenter.example/sdk", "https://vcenter.example/sdk"),
+        (
+            "https://topology-secret-user%40encoded:topology-secret-password%2Fencoded@vcenter.example/sdk",
+            "https://vcenter.example/sdk",
+        ),
+        ("https://user:password@[2001:db8::1]:8443/sdk", "https://[2001:db8::1]:8443/sdk"),
+        ("https://vcenter.example:8443/sdk?scope=admin#api", "https://vcenter.example:8443/sdk?scope=admin#api"),
+    ],
+)
+def test_topology_sanitizes_url_userinfo_without_changing_safe_values(value, expected):
+    assert sanitize_url_userinfo(value) == expected
+
+
+def test_topology_sanitizes_url_credentials_across_rendered_artifacts():
+    config = expand_env(raw_config())
+    config["terraform"]["backend"]["url"] = (
+        "https://topology-secret-user%40encoded:topology-secret-password%2Fencoded"
+        "@gitlab.example/state"
+    )
+    config["ssh"]["jump_host"] = "operator@jump.example:2222"
+
+    topology = build_desired_topology(config)
+    endpoints = by_id(topology.endpoints)
+    artifacts = "".join(
+        renderer(topology)
+        for renderer in (
+            render_topology_json,
+            render_topology_markdown,
+            render_topology_ascii_overview,
+            render_topology_architecture_mermaid,
+            render_topology_network_mermaid,
+        )
+    )
+
+    assert "topology-secret-user" not in artifacts
+    assert "topology-secret-password" not in artifacts
+    assert "topology-secret-user%40encoded" not in artifacts
+    assert "topology-secret-password%2Fencoded" not in artifacts
+    assert "https://gitlab.example/state" in artifacts
+    assert "operator@jump.example:2222" in artifacts
+    assert endpoints["endpoint:terraform-backend"].name == "https://gitlab.example/state"
+    assert topology.deployment_context.terraform_backend.state_address == (
+        "https://gitlab.example/state/api/v4/projects/1234/terraform/state/example-infra"
+    )
+    assert endpoints["endpoint:ssh-jump"].resolutions[0].addresses == ()
+    assert endpoints["endpoint:ssh-jump"].name == "operator@jump.example:2222"
+
+
+@pytest.mark.parametrize("server", ["10.1.2.3@eth1", "10.1.2.3@192.168.1.1#55"])
+def test_topology_preserves_dnsmasq_upstream_syntax(server):
+    config = raw_config()
+    config["bastion"]["dnsmasq_upstream_servers"] = [server]
+    topology = build_desired_topology(expand_env(config))
+    endpoint = by_id(topology.endpoints)[f"endpoint:dns-upstream:{server}"]
+
+    assert endpoint.name == server
+    assert endpoint.resolutions[0].addresses == (server,)
+    assert server in render_topology_json(topology)
+    assert server in render_topology_markdown(topology)
+
+
+def test_topology_preserves_ssh_user_at_host_syntax():
+    config = raw_config()
+    config["ssh"]["jump_host"] = "operator@jump.example"
+    topology = build_desired_topology(expand_env(config))
+    endpoint = by_id(topology.endpoints)["endpoint:ssh-jump"]
+    path = {item.destination.id: item for item in topology.access_paths}["bastion1"]
+
+    assert endpoint.name == "operator@jump.example"
+    assert endpoint.resolutions[0].addresses == ()
+    assert path.hops == (EntityReference("endpoint", endpoint.id),)
+
+
+def test_topology_tolerates_v03_accepted_node_without_ssh_address():
+    config = raw_config()
+    config["nodes"]["prom1"].pop("host")
+    expanded = expand_env(config)
+    assert expanded["nodes"]["prom1"].get("ip") is None
+
+    topology = build_desired_topology(expanded)
+    validate_topology(topology)
+
+    host = by_id(topology.hosts)["prom1"]
+    path = {item.destination.id: item for item in topology.access_paths}["prom1"]
+    rule = by_id(topology.connectivity_rules)["admin-ssh:operator:prom1"]
+    assert host.ssh_target is None
+    assert path.target is None
+    assert path.resolution == PARTIAL
+    assert path.verification == UNVERIFIED
+    assert rule.destination.resolved[0].address is None
+    assert rule.destination.resolved[0].address_kind == SYMBOLIC_ADDRESS
+    assert "prom1" in render_topology_markdown(topology)
+    for renderer in (
+        render_topology_json,
+        render_topology_markdown,
+        render_topology_ascii_overview,
+        render_topology_architecture_mermaid,
+        render_topology_network_mermaid,
+    ):
+        assert renderer(topology) == renderer(topology)
 
 
 def test_topology_has_only_one_definition_for_each_canonical_renderer():
@@ -1487,6 +1595,11 @@ def test_json_and_markdown_share_one_topology_and_are_deterministic():
     assert "rancher1 (primary), rancher2 (member), rancher3 (member)" in first_markdown
     assert "downstream:vlan565" in first_markdown
     assert "10.20.56.34" in first_markdown
+    assert "## Downstream Lifecycle" in first_markdown
+    assert "append-only; immutable-after-create" in first_markdown
+    assert "vlan, vmware_network, subnet, bastion_address, gateway, attachment_order" in first_markdown
+    assert "dhcp.start, dhcp.end, dhcp.lease_time" in first_markdown
+    assert "enforcement remains external to topology/docs" in first_markdown
     assert "TCP/UDP * -&gt; 53" in first_markdown
     assert "TCP * -&gt; 22" in first_markdown
 

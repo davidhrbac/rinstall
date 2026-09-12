@@ -125,6 +125,15 @@ flowchart TB
 | downstream:vlan565 | downstream | 203.0.113.32/27 | EXAMPLE_DOWNSTREAM_NETWORK_565 | 565 | 203.0.113.34 | 203.0.113.33 | 203.0.113.36-203.0.113.61 |
 | downstream:vlan566 | downstream | 203.0.113.64/27 | EXAMPLE_DOWNSTREAM_NETWORK_566 | 566 | 203.0.113.66 | 203.0.113.65 | 203.0.113.68-203.0.113.93 |
 
+## Downstream Lifecycle
+
+> Desired policy only; enforcement remains external to topology/docs.
+
+| Network | Lifecycle mode | Immutable fields | Mutable fields |
+| --- | --- | --- | --- |
+| downstream:vlan565 | append-only; immutable-after-create | vlan, vmware_network, subnet, bastion_address, gateway, attachment_order | dhcp.start, dhcp.end, dhcp.lease_time |
+| downstream:vlan566 | append-only; immutable-after-create | vlan, vmware_network, subnet, bastion_address, gateway, attachment_order | dhcp.start, dhcp.end, dhcp.lease_time |
+
 ## Key Connectivity
 
 ### Administrative

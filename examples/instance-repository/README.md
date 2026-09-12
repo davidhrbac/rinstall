@@ -4,7 +4,7 @@ This layout-only fixture represents a private instance repository:
 
 - `config.yaml` is the desired configuration source of truth.
 - `rinstall` is the pinned engine submodule.
-- `docs/topology/` contains committed generated support documentation.
+- `docs/topology/` is created by `make -f rinstall/Makefile topology-docs` for committed support documentation.
 - `.rinstall/` contains ignored private runtime artifacts.
 - `.envrc` contains ignored runtime credentials and environment variables.
 

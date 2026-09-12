@@ -7,15 +7,37 @@ import re
 from urllib.parse import urlparse
 
 from lib.env_config import gitlab_backend_state_address
-from lib.ssh_config import node_ssh_target
 
 # Keep topology-only interpretation here so the provisioning config contract
 # remains exactly the v0.3.0 contract.
 BASTION_MANAGEMENT_NIC_INDEX = 1
 
 
+def sanitize_url_userinfo(value):
+    """Remove URL authority userinfo without changing safe URL components."""
+    if not isinstance(value, str) or "://" not in value or "@" not in value:
+        return value
+
+    authority_start = value.find("://")
+    authority_start += 3
+    delimiters = [value.find(marker, authority_start) for marker in "/?#"]
+    authority_end = min(
+        (position for position in delimiters if position >= 0),
+        default=len(value),
+    )
+    authority = value[authority_start:authority_end]
+    if "@" not in authority:
+        return value
+    return value[:authority_start] + authority.rsplit("@", 1)[-1] + value[authority_end:]
+
+
+def topology_ssh_target(node):
+    return node.get("ssh_ip") or node.get("management_ip") or node.get("ip")
+
+
 def effective_local_dns_servers(node, local_vlan):
-    return tuple(node["dns_servers"] if node.get("dns_servers") is not None else local_vlan.get("dns_servers", ()))
+    servers = node["dns_servers"] if node.get("dns_servers") is not None else local_vlan.get("dns_servers", ())
+    return tuple(servers)
 
 
 @dataclass(frozen=True)
@@ -329,7 +351,7 @@ class AccessPathTopology:
     hops: tuple[EntityReference, ...]
     protocol: str
     destination_port: int
-    target: str
+    target: str | None
     ownership: str = RINSTALL_CONFIGURED
     provenance: str = DERIVED
     resolution: str = RESOLVED
@@ -1529,6 +1551,8 @@ def validate_topology(topology):
 def build_desired_topology(config):
     environment_id = config["environment"]["id"]
     bastion_host = config["bastion"]["service_node"]
+    rancher_url = config["rancher_url"]
+    domain = config["domain"]
     vsphere = config["infra"]["vsphere"]
     vsphere_server = vsphere.get("server")
     interfaces = []
@@ -1571,13 +1595,13 @@ def build_desired_topology(config):
             HostTopology(
                 id=host_id,
                 hostname=host_id,
-                fqdn=f"{host_id}.{config['rancher_url']}",
+                fqdn=f"{host_id}.{rancher_url}",
                 roles=(node["role"],),
                 capabilities=capabilities,
                 primary_ip=node.get("ip"),
                 local_ip=local_ip,
                 management_ip=management_ip,
-                ssh_target=node_ssh_target(node),
+                ssh_target=topology_ssh_target(node),
                 service_status=(
                     "host-only/not-modeled"
                     if node["role"] in {"prometheus", "monitoring"}
@@ -1772,7 +1796,7 @@ def build_desired_topology(config):
         EndpointTopology(
             id=rancher_endpoint_id,
             kind="rancher-https",
-            name=config["rancher_url"],
+            name=rancher_url,
             protocols=("HTTPS",),
             ports=(443,),
             cluster_id=cluster_id,
@@ -1825,7 +1849,8 @@ def build_desired_topology(config):
     ]
 
     backend = config["terraform"]["backend"]
-    backend_url = backend["url"]
+    backend_url = sanitize_url_userinfo(backend["url"])
+    backend_for_state_address = {**backend, "url": backend_url}
     backend_scheme = urlparse(backend_url).scheme.lower()
     backend_protocols = (backend_scheme.upper(),) if backend_scheme else ()
     parsed_backend_url = urlparse(backend_url)
@@ -1897,32 +1922,34 @@ def build_desired_topology(config):
             if index == len(jump_hops) - 1
             else f"endpoint:ssh-jump-hop:{index + 1}"
         )
-        jump_resolution = RESOLVED if jump_hop.hostname else EXTERNAL_UNRESOLVED
+        jump_alias = jump_hop.alias
+        jump_hostname = jump_hop.hostname
+        jump_resolution = RESOLVED if jump_hostname else EXTERNAL_UNRESOLVED
         jump_endpoint_refs.append(EntityReference("endpoint", jump_endpoint_id))
         endpoints.append(
             EndpointTopology(
                 id=jump_endpoint_id,
                 kind="ssh-jump-alias",
-                name=jump_hop.alias,
+                name=jump_alias,
                 protocols=("SSH",),
-                ports=((jump_hop.port or 22,) if jump_hop.hostname else ()),
+                ports=((jump_hop.port or 22,) if jump_hostname else ()),
                 cluster_id=None,
                 resolutions=(
                     EndpointResolutionTopology(
                         scope="operator-ssh-config",
-                        addresses=((jump_hop.hostname,) if jump_hop.hostname else ()),
+                        addresses=((jump_hostname,) if jump_hostname else ()),
                         ownership=REFERENCED_EXTERNAL,
                         provenance=CONFIGURED,
                         resolution=jump_resolution,
                         address_kind=(
-                            _address_kind(jump_hop.hostname)
-                            if jump_hop.hostname
+                            _address_kind(jump_hostname)
+                            if jump_hostname
                             else SSH_ALIAS
                         ),
                         verification=UNVERIFIED,
                         reason=(
                             None
-                            if jump_hop.hostname
+                            if jump_hostname
                             else "SSH alias network identity is defined outside config.yaml."
                         ),
                     ),
@@ -2092,11 +2119,12 @@ def build_desired_topology(config):
         hops = list(jump_endpoint_refs) if runtime_hops else []
         if len(runtime_hops) > 1:
             hops.append(EntityReference("host", bastion_host))
+        ssh_target = topology_ssh_target(node)
         path_resolution = RESOLVED
         if any(
             hop.kind == "endpoint" and endpoint_by_id[hop.id].resolution != RESOLVED
             for hop in hops
-        ) or node_ssh_target(node) is None:
+        ) or ssh_target is None:
             path_resolution = PARTIAL
         access_paths.append(
             AccessPathTopology(
@@ -2106,7 +2134,7 @@ def build_desired_topology(config):
                 hops=tuple(hops),
                 protocol="SSH",
                 destination_port=22,
-                target=node_ssh_target(node),
+                target=ssh_target,
                 resolution=path_resolution,
             )
         )
@@ -2195,7 +2223,7 @@ def build_desired_topology(config):
             url=backend_url,
             project_id=backend["project_id"],
             state_name=state_name,
-            state_address=gitlab_backend_state_address(backend, environment_id),
+            state_address=gitlab_backend_state_address(backend_for_state_address, environment_id),
         ),
         resolution=PARTIAL,
     )
@@ -2796,8 +2824,8 @@ def build_desired_topology(config):
         config_schema_version=config["schema_version"],
         topology_kind="desired",
         environment_id=environment_id,
-        rancher_url=config["rancher_url"],
-        domain=config["domain"],
+        rancher_url=rancher_url,
+        domain=domain,
         bastion_host=bastion_host,
         versions={
             "rke2": config["rke2"]["version"],
@@ -3413,6 +3441,22 @@ def _render_support_topology_markdown(topology):
         bastion_ip = next((interface.address for interface in topology.interfaces if interface.host == bastion.id and interface.network == network.id), "-")
         dhcp = f"{downstream.dhcp_start}-{downstream.dhcp_end}" if downstream else "-"
         lines.append(f"| {_markdown(network.id)} | {_markdown(network.kind)} | {_markdown(network.cidr or 'unknown')} | {_markdown(network.vmware_network)} | {_markdown(network.vlan if network.vlan is not None else '-')} | {_markdown(bastion_ip or '-')} | {_markdown(network.gateway or '-')} | {_markdown(dhcp)} |")
+    if topology.downstream_networks:
+        lines.extend([
+            "", "## Downstream Lifecycle", "",
+            "> Desired policy only; enforcement remains external to topology/docs.",
+            "",
+            "| Network | Lifecycle mode | Immutable fields | Mutable fields |",
+            "| --- | --- | --- | --- |",
+        ])
+        for downstream in topology.downstream_networks:
+            lifecycle = downstream.lifecycle
+            lines.append(
+                f"| {_markdown(downstream.id)} | "
+                f"{_markdown(f'{lifecycle.collection}; {lifecycle.identity}')} | "
+                f"{_markdown(', '.join(lifecycle.immutable_fields))} | "
+                f"{_markdown(', '.join(lifecycle.mutable_fields))} |"
+            )
     lines.extend(["", "## Key Connectivity", ""])
     _support_connectivity_tables(lines, topology)
     lines.extend(["## Resolved Connectivity", ""])
