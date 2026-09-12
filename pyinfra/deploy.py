@@ -17,7 +17,10 @@ from lib.bastion_network import (
     route_device_is_active,
     route_needs_replacement,
     dnsmasq_recovery_command,
+    device_for_mac_command,
+    management_route_association_command,
 )
+from lib.env_config import BASTION_MANAGEMENT_NIC_INDEX
 from lib.ssh_config import build_dir_for_env
 
 
@@ -96,24 +99,7 @@ def connection_profiles():
 
 
 def device_for_mac(mac_address):
-    command = (
-        f"wanted=$(printf '%s' {shlex.quote(mac_address)} | tr '[:upper:]' '[:lower:]'); "
-        "udevadm settle >/dev/null 2>&1 || true; "
-        "for attempt in $(seq 1 60); do found=''; duplicate=''; "
-        "for path in /sys/class/net/*; do [ -e \"$path/address\" ] || continue; "
-        "actual=$(tr '[:upper:]' '[:lower:]' < \"$path/address\"); "
-        "if [ \"$actual\" = \"$wanted\" ]; then "
-        "[ -z \"$found\" ] || duplicate=${path##*/}; found=${path##*/}; fi; done; "
-        "if [ -n \"$duplicate\" ]; then printf 'MAC %s matched multiple devices\\n' \"$wanted\" >&2; exit 1; fi; "
-        "if [ -n \"$found\" ]; then printf '%s' \"$found\"; exit 0; fi; "
-        "[ \"$attempt\" -eq 60 ] || sleep 1; done; "
-        "printf 'Timed out after 60s waiting for provider MAC %s; visible interfaces: ' \"$wanted\" >&2; "
-        "first=1; for path in /sys/class/net/*; do [ -e \"$path/address\" ] || continue; "
-        "[ \"$first\" -eq 1 ] || printf ', ' >&2; first=0; "
-        "printf '%s (%s)' \"${path##*/}\" \"$(tr '[:upper:]' '[:lower:]' < \"$path/address\")\" >&2; done; "
-        "printf '\\n' >&2; exit 1"
-    )
-    return command_output(command).strip()
+    return command_output(device_for_mac_command(mac_address)).strip()
 
 
 def disable_rke2_repos():
@@ -200,6 +186,17 @@ if phase == "bastion-packages" and role == "bastion":
 
 
 if phase == "bastion" and role == "bastion":
+    bastion_mac_addresses = host.data.bastion_mac_addresses
+    if (
+        not isinstance(bastion_mac_addresses, list)
+        or len(bastion_mac_addresses) <= BASTION_MANAGEMENT_NIC_INDEX
+        or not bastion_mac_addresses[BASTION_MANAGEMENT_NIC_INDEX]
+    ):
+        raise SystemExit(
+            "Terraform output has an incomplete bastion MAC list; provider-reported "
+            "management MAC is required at base NIC index 1 before configuring the vSphere route"
+        )
+    management_mac = bastion_mac_addresses[BASTION_MANAGEMENT_NIC_INDEX]
     dnsmasq_dhcp_configs = []
     obsolete_dhcp_configs = []
     dnsmasq_effective_changes = []
@@ -341,6 +338,15 @@ if phase == "bastion" and role == "bastion":
         route_connection_uuid = connection_uuid(route_source_names[0])
     if not route_connection_uuid:
         raise SystemExit(f"cannot resolve NetworkManager route connection {route_connection_name!r}")
+    server.shell(
+        name="Verify vSphere route connection is bound to management NIC",
+        commands=[
+            management_route_association_command(
+                management_mac,
+                route_connection_name,
+            )
+        ],
+    )
     route_device = command_output(
         f"nmcli -g GENERAL.DEVICES connection show uuid {shlex.quote(route_connection_uuid)} 2>/dev/null || true"
     ).strip()

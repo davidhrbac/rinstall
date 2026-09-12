@@ -1,4 +1,6 @@
 from pathlib import Path
+import json
+import os
 import re
 import subprocess
 
@@ -13,6 +15,8 @@ from lib.bastion_network import (
     dnsmasq_effective_config_changed,
     dnsmasq_recovery_command,
     load_downstream_network_output,
+    load_bastion_mac_addresses,
+    management_route_association_command,
     normalize_ipv4_route,
     profile_rename_needed,
     route_device_is_active,
@@ -50,6 +54,70 @@ def render_template(name, **data):
         keep_trailing_newline=True,
     )
     return environment.get_template(name).render(**data)
+
+
+def run_management_route_check(
+    tmp_path,
+    route_connection="mgmt",
+    device_uuids=None,
+    active_profiles=None,
+    route_exists=True,
+    management_mac="00:50:56:aa:bb:11",
+):
+    device_uuids = device_uuids or {"ens192": "customer-uuid", "ens224": "route-uuid"}
+    active_profiles = active_profiles or {device: device for device in device_uuids}
+    net_root = tmp_path / "sys" / "class" / "net"
+    for device, mac in {
+        "ens192": "00:50:56:aa:bb:10",
+        "ens224": "00:50:56:aa:bb:11",
+    }.items():
+        device_path = net_root / device
+        device_path.mkdir(parents=True)
+        (device_path / "address").write_text(mac)
+
+    device_uuid_cases = "\n".join(
+        f"    {device}) printf '%s\\n' '{uuid}';;" for device, uuid in device_uuids.items()
+    )
+    profile_cases = "\n".join(
+        f"    {device}) printf '%s\\n' '{profile}';;"
+        for device, profile in active_profiles.items()
+    )
+    route_lookup = f"    {route_connection}) printf '%s\\n' 'route-uuid';;" if route_exists else ""
+    nmcli = tmp_path / "nmcli"
+    nmcli.write_text(
+        f"""#!/bin/sh
+if [ "$2" = UUID ] && [ "$3" = connection ]; then
+  case "$5" in
+{route_lookup}
+  esac
+  exit 0
+fi
+if [ "$2" = GENERAL.CON-UUID ] && [ "$3" = device ]; then
+  case "$5" in
+{device_uuid_cases}
+  esac
+  exit 0
+fi
+if [ "$2" = GENERAL.CONNECTION ] && [ "$3" = device ]; then
+  case "$5" in
+{profile_cases}
+  esac
+  exit 0
+fi
+exit 0
+"""
+    )
+    nmcli.chmod(0o700)
+    command = management_route_association_command(
+        management_mac,
+        route_connection,
+        sysfs_root=str(net_root),
+        nmcli_command=str(nmcli),
+        attempts=1,
+        retry_delay=0,
+    )
+    environment = os.environ.copy()
+    return subprocess.run(["bash", "-c", command], capture_output=True, text=True, env=environment)
 
 
 def terraform_output(config, mac="00:50:56:aa:bb:cc"):
@@ -95,6 +163,130 @@ def test_rejects_missing_or_removed_network_output(tmp_path):
     output_path.write_text(json.dumps(terraform_output(config)))
     with pytest.raises(SystemExit, match="removal is not supported"):
         load_downstream_network_output(output_path, [])
+
+
+def test_loads_ordered_bastion_base_mac_addresses(tmp_path):
+    output_path = tmp_path / "infra-output.json"
+    output_path.write_text(
+        json.dumps(
+            {
+                "nodes": {
+                    "value": {
+                        "bastion1": {
+                            "mac_addresses": [
+                                "00:50:56:aa:bb:10",
+                                "00:50:56:aa:bb:11",
+                            ]
+                        }
+                    }
+                }
+            }
+        )
+    )
+
+    assert load_bastion_mac_addresses(output_path, "bastion1") == [
+        "00:50:56:aa:bb:10",
+        "00:50:56:aa:bb:11",
+    ]
+
+
+def test_rejects_missing_management_bastion_mac(tmp_path):
+    output_path = tmp_path / "infra-output.json"
+    output_path.write_text(
+        json.dumps(
+            {
+                "nodes": {
+                    "value": {"bastion1": {"mac_addresses": ["00:50:56:aa:bb:10"]}}
+                }
+            }
+        )
+    )
+
+    with pytest.raises(SystemExit, match="management MAC.*base NIC index 1"):
+        load_bastion_mac_addresses(output_path, "bastion1")
+
+
+def test_management_route_association_accepts_ordered_provider_mac_mapping(tmp_path):
+    result = run_management_route_check(
+        tmp_path,
+        active_profiles={"ens192": "local", "ens224": "mgmt"},
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_management_route_association_rejects_swapped_rename_targets(tmp_path):
+    result = run_management_route_check(
+        tmp_path,
+        device_uuids={"ens192": "route-uuid", "ens224": "local-uuid"},
+        active_profiles={"ens192": "mgmt", "ens224": "local"},
+    )
+
+    assert result.returncode != 0
+    assert "active on device ens192" in result.stderr
+    assert "expected management MAC 00:50:56:aa:bb:11 on device ens224" in result.stderr
+
+
+def test_management_route_association_rejects_unresolvable_management_mac(tmp_path):
+    result = run_management_route_check(
+        tmp_path,
+        device_uuids={"ens192": "customer-uuid"},
+        active_profiles={"ens192": "local"},
+        management_mac="00:50:56:aa:bb:ff",
+    )
+
+    assert result.returncode != 0
+    assert "cannot resolve provider management MAC 00:50:56:aa:bb:ff" in result.stderr
+
+
+def test_management_route_association_rejects_missing_route_connection(tmp_path):
+    result = run_management_route_check(tmp_path, route_exists=False)
+
+    assert result.returncode != 0
+    assert "configured route connection mgmt does not exist after reconciliation" in result.stderr
+
+
+def test_management_route_association_rejects_connection_on_wrong_device(tmp_path):
+    result = run_management_route_check(
+        tmp_path,
+        device_uuids={"ens192": "route-uuid", "ens224": "local-uuid"},
+        active_profiles={"ens192": "mgmt", "ens224": "local"},
+    )
+
+    assert result.returncode != 0
+    assert "configured route connection mgmt is active on device ens192" in result.stderr
+
+
+def test_management_route_association_rejects_multiple_active_route_profiles(tmp_path):
+    result = run_management_route_check(
+        tmp_path,
+        device_uuids={"ens192": "route-uuid", "ens224": "route-uuid"},
+        active_profiles={"ens192": "mgmt", "ens224": "mgmt"},
+    )
+
+    assert result.returncode != 0
+    assert "configured route connection mgmt is active on multiple devices" in result.stderr
+
+
+def test_management_route_association_accepts_no_rename_device_connection(tmp_path):
+    result = run_management_route_check(
+        tmp_path,
+        route_connection="ens224",
+        active_profiles={"ens192": "local", "ens224": "ens224"},
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_route_association_check_precedes_route_application():
+    deploy = (ROOT / "pyinfra/deploy.py").read_text()
+
+    association = deploy.index("Verify vSphere route connection is bound to management NIC")
+    route = deploy.index("Configure vSphere route")
+
+    assert association < route
+    assert "management_route_association_command(" in deploy
+    assert "device_for_mac_command(mac_address)" in deploy
 
 
 def test_renders_complete_networkmanager_profile_without_gateway():

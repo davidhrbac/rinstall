@@ -46,3 +46,17 @@ def test_target_inventory_uses_instance_known_hosts(tmp_path):
 
     assert data["ssh_known_hosts_file"] == str(known_hosts)
     assert data["ssh_strict_host_key_checking"] == "accept-new"
+
+
+def test_host_entry_carries_ordered_bastion_provider_macs(tmp_path):
+    config = configured_bastion2()
+    _, data = _host_entry(
+        "bastion2",
+        config["nodes"]["bastion2"],
+        config,
+        tmp_path / "ssh_config",
+        tmp_path / "known_hosts",
+        bastion_mac_addresses=["00:50:56:aa:bb:10", "00:50:56:aa:bb:11"],
+    )
+
+    assert data["bastion_mac_addresses"][1] == "00:50:56:aa:bb:11"
