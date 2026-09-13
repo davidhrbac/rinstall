@@ -188,7 +188,7 @@ def configure_asdf():
 if phase == "bastion-packages" and role == "bastion":
     dnf.packages(
         name="Install bastion services",
-        packages=["dnsmasq", "squid", "NetworkManager"],
+        packages=["dnsmasq", "squid", "NetworkManager", "clustershell"],
         present=True,
     )
     systemd.service(
@@ -200,6 +200,14 @@ if phase == "bastion-packages" and role == "bastion":
 
 
 if phase == "bastion" and role == "bastion":
+    files.template(
+        name="Render ClusterShell local groups",
+        src=str(ENGINE_ROOT / "pyinfra/templates/clustershell-local.cfg.j2"),
+        dest="/etc/clustershell/groups.d/local.cfg",
+        mode="0644",
+        config=config,
+    )
+
     dnsmasq_dhcp_configs = []
     obsolete_dhcp_configs = []
     dnsmasq_effective_changes = []

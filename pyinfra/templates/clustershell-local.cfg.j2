@@ -1,0 +1,5 @@
+# Managed by rinstall. Do not edit manually.
+
+rancher:{% for name, node in config.nodes.items() if node.role == "rancher" %} {{ name }}{% endfor %}
+prometheus:{% for name, node in config.nodes.items() if node.role == "prometheus" %} {{ name }}{% endfor %}
+all:{% for name, node in config.nodes.items() if node.role == "rancher" %} {{ name }}{% endfor %}{% for name, node in config.nodes.items() if node.role == "prometheus" %} {{ name }}{% endfor %}

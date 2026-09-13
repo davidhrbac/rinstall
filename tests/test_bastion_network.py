@@ -78,6 +78,42 @@ def test_hosts_render_fqdns_before_short_aliases_and_preserve_single_name_record
         assert sum(line == alias for line in lines) == 1
 
 
+def test_bastion_installs_clustershell_and_renders_static_local_groups():
+    deploy = (ROOT / "pyinfra/deploy.py").read_text()
+    config = config_with()
+    first = render_template("clustershell-local.cfg.j2", config=config)
+    second = render_template("clustershell-local.cfg.j2", config=config)
+
+    assert 'packages=["dnsmasq", "squid", "NetworkManager", "clustershell"]' in deploy
+    assert 'dest="/etc/clustershell/groups.d/local.cfg"' in deploy
+    assert first == second
+    assert first == (
+        "# Managed by rinstall. Do not edit manually.\n"
+        "\n"
+        "rancher: rancher1 rancher2 rancher3\n"
+        "prometheus: prom1\n"
+        "all: rancher1 rancher2 rancher3 prom1\n"
+    )
+    assert "example0" not in first
+    assert "example4" not in first
+    assert "compute" not in first
+    assert "gpu" not in first
+
+    dynamic_config = dict(config)
+    dynamic_config["nodes"] = {
+        "control-a": {"role": "rancher"},
+        "control-b": {"role": "rancher"},
+        "metrics-a": {"role": "prometheus"},
+    }
+    dynamic = render_template("clustershell-local.cfg.j2", config=dynamic_config)
+
+    assert "rancher: control-a control-b\n" in dynamic
+    assert "prometheus: metrics-a\n" in dynamic
+    assert "all: control-a control-b metrics-a\n" in dynamic
+    assert "rancher1" not in dynamic
+    assert "prom1" not in dynamic
+
+
 def terraform_output(config, mac="00:50:56:aa:bb:cc"):
     network = config["bastion"]["downstream_networks"][0]
     return {
