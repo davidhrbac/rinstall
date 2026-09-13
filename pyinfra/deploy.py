@@ -18,7 +18,17 @@ from lib.bastion_network import (
     route_needs_replacement,
     dnsmasq_recovery_command,
 )
+from lib.env_config import require_effective_vsphere_server
 from lib.ssh_config import build_dir_for_env
+from lib.squid import (
+    SQUID_CANDIDATE_CONFIG,
+    SQUID_SYSCONFIG,
+    SQUID_VENDOR_CONFIG,
+    SQUID_WRAPPER_CONFIG,
+    effective_squid_config_command,
+    render_upstream_wrapper,
+    squid_transition_command,
+)
 
 
 ENGINE_ROOT = Path(__file__).resolve().parents[1]
@@ -200,6 +210,41 @@ if phase == "bastion-packages" and role == "bastion":
 
 
 if phase == "bastion" and role == "bastion":
+    upstream = config["proxy"].get("upstream")
+    if upstream is not None:
+        vcenter_server = require_effective_vsphere_server(config, os.environ)
+        wrapper_content = render_upstream_wrapper(
+            upstream,
+            vcenter_server,
+        )
+        files.put(
+            name="Render candidate Squid upstream wrapper",
+            src=StringIO(wrapper_content),
+            dest=SQUID_CANDIDATE_CONFIG,
+            mode="0644",
+        )
+        server.shell(
+            name="Validate and activate Squid upstream wrapper",
+            commands=[squid_transition_command(True)],
+        )
+    else:
+        current_squid_conf = command_output(
+            effective_squid_config_command(shlex.quote(SQUID_SYSCONFIG))
+        ).strip()
+        wrapper_present = command_output(
+            f"if [ -e {shlex.quote(SQUID_WRAPPER_CONFIG)} ]; then printf present; fi"
+        ).strip()
+        if current_squid_conf == SQUID_WRAPPER_CONFIG:
+            server.shell(
+                name="Restore vendor Squid configuration",
+                commands=[squid_transition_command(False)],
+            )
+        elif wrapper_present:
+            server.shell(
+                name="Remove stale rinstall Squid wrapper",
+                commands=[f"rm -f {shlex.quote(SQUID_WRAPPER_CONFIG)}"],
+            )
+
     files.template(
         name="Render ClusterShell local groups",
         src=str(ENGINE_ROOT / "pyinfra/templates/clustershell-local.cfg.j2"),

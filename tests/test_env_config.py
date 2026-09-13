@@ -7,7 +7,12 @@ import sys
 import pytest
 import yaml
 
-from lib.env_config import expand_env, load_env
+from lib.env_config import (
+    effective_vsphere_server,
+    expand_env,
+    load_env,
+    require_effective_vsphere_server,
+)
 
 
 EXAMPLE_ENV = Path(__file__).parents[1] / "envs/example/env.yaml"
@@ -287,6 +292,77 @@ def test_generates_compact_no_proxy_list_with_kubernetes_suffixes():
         "10.14.17.0/28",
         "rancher.example.internal",
     ]
+
+
+def test_proxy_upstream_is_optional_and_validates_endpoint():
+    config = raw_example()
+    assert "upstream" not in expand_env(config)["proxy"]
+
+    config["proxy"] = {"upstream": {"host": "proxy.example.internal", "port": 9090}}
+    assert expand_env(config)["proxy"]["upstream"] == {
+        "host": "proxy.example.internal",
+        "port": 9090,
+    }
+
+
+@pytest.mark.parametrize(
+    "upstream",
+    [
+        None,
+        [],
+        {"port": 9090},
+        {"host": "proxy.example.internal"},
+        {"host": "https://proxy.example.internal", "port": 9090},
+        {"host": "proxy.example.internal:9090", "port": 9090},
+        {"host": "proxy.example.internal", "port": 0},
+        {"host": "proxy.example.internal", "port": 65536},
+        {"host": "proxy.example.internal", "port": "9090"},
+        {"host": "proxy.example.internal", "port": True},
+    ],
+)
+def test_rejects_invalid_proxy_upstream(upstream):
+    config = raw_example()
+    config["proxy"] = {"upstream": upstream}
+
+    with pytest.raises(SystemExit):
+        expand_env(config)
+
+
+def test_effective_vsphere_server_prefers_configured_value():
+    config = raw_example()
+    config["infra"]["vsphere"]["server"] = "configured-vcenter.example.internal"
+
+    assert effective_vsphere_server(
+        config,
+        {"TF_VAR_vsphere_server": "runtime-vcenter.example.internal"},
+    ) == "configured-vcenter.example.internal"
+
+
+def test_effective_vsphere_server_uses_runtime_when_configured_value_is_absent():
+    config = raw_example()
+
+    assert require_effective_vsphere_server(
+        config,
+        {"TF_VAR_vsphere_server": "runtime-vcenter.example.internal"},
+    ) == "runtime-vcenter.example.internal"
+
+
+def test_upstream_requires_effective_vsphere_server():
+    config = raw_example()
+    config["proxy"] = {"upstream": {"host": "proxy.example.internal", "port": 9090}}
+
+    with pytest.raises(SystemExit, match="proxy.upstream requires"):
+        require_effective_vsphere_server(config, {})
+
+
+@pytest.mark.parametrize("server", ["", "https://vcenter.example.internal", "vcenter.example.internal:443"])
+def test_upstream_rejects_invalid_configured_vsphere_server(server):
+    config = raw_example()
+    config["infra"]["vsphere"]["server"] = server
+    config["proxy"] = {"upstream": {"host": "proxy.example.internal", "port": 9090}}
+
+    with pytest.raises(SystemExit):
+        expand_env(config)
 
 
 def test_validates_gitlab_backend_without_credentials():
