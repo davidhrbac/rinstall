@@ -114,6 +114,15 @@ def test_bastion_installs_clustershell_and_renders_static_local_groups():
     assert "prom1" not in dynamic
 
 
+def test_upstream_bootstrap_uses_only_the_existing_bastion_proxy_endpoint():
+    deploy = (ROOT / "pyinfra/deploy.py").read_text()
+
+    assert "bastion_proxy_exports(config)" in deploy
+    assert "bastion_proxy_environment(config)" in deploy
+    assert '"RANCHER_PROXY": f"http://{config[\'bastion\'][\'service_ip\']}:{config[\'bastion\'][\'squid_http_port\']}"' in deploy
+    assert '"RKE2_VERSION": config["rke2"]["version"]' in deploy
+
+
 def terraform_output(config, mac="00:50:56:aa:bb:cc"):
     network = config["bastion"]["downstream_networks"][0]
     return {

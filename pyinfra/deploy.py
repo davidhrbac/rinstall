@@ -19,6 +19,7 @@ from lib.bastion_network import (
     dnsmasq_recovery_command,
 )
 from lib.ssh_config import build_dir_for_env
+from lib.proxy import bastion_proxy_environment, bastion_proxy_exports
 from lib.squid import (
     SQUID_CANDIDATE_CONFIG,
     SQUID_SYSCONFIG,
@@ -146,7 +147,8 @@ def configure_asdf():
     server.shell(
         name="Install asdf binary",
         commands=[
-            "version='v0.20.0'; "
+            bastion_proxy_exports(config)
+            + "version='v0.20.0'; "
             "case \"$(uname -m)\" in x86_64) arch=amd64 ;; aarch64|arm64) arch=arm64 ;; *) exit 1 ;; esac; "
             "if ! command -v asdf >/dev/null 2>&1; then "
             "tmpdir=$(mktemp -d); "
@@ -162,7 +164,8 @@ def configure_asdf():
     server.shell(
         name="Install asdf diagnostic tools",
         commands=[
-            "export ASDF_DATA_DIR=/root/.asdf; export PATH=\"${ASDF_DATA_DIR}/shims:${PATH}\"; "
+            bastion_proxy_exports(config)
+            + "export ASDF_DATA_DIR=/root/.asdf; export PATH=\"${ASDF_DATA_DIR}/shims:${PATH}\"; "
             "asdf plugin list | grep -Fx helm >/dev/null || asdf plugin add helm https://github.com/Antiarchitect/asdf-helm.git; "
             "asdf plugin list | grep -Fx kubectl >/dev/null || asdf plugin add kubectl https://github.com/asdf-community/asdf-kubectl.git; "
             "helm_version=$(asdf latest helm); kubectl_version=$(asdf latest kubectl); "
@@ -708,7 +711,19 @@ if phase == "rke2-install-primary" and role == "rancher" and name == config["rke
 
     server.shell(
         name="Install or start RKE2 primary server",
-        commands=[shell_env({"RKE2_VERSION": config["rke2"]["version"]}) + " /tmp/install-rke2.sh"],
+        commands=[
+            shell_env(
+                {
+                    "RKE2_VERSION": config["rke2"]["version"],
+                    **(
+                        bastion_proxy_environment(config)
+                        if "upstream" in config["proxy"]
+                        else {}
+                    ),
+                }
+            )
+            + " /tmp/install-rke2.sh"
+        ],
     )
 
     disable_rke2_repos()
@@ -732,7 +747,19 @@ if phase == "rke2-install-join" and role == "rancher" and name != config["rke2"]
 
     server.shell(
         name="Install or start RKE2 join servers",
-        commands=[shell_env({"RKE2_VERSION": config["rke2"]["version"]}) + " /tmp/install-rke2.sh"],
+        commands=[
+            shell_env(
+                {
+                    "RKE2_VERSION": config["rke2"]["version"],
+                    **(
+                        bastion_proxy_environment(config)
+                        if "upstream" in config["proxy"]
+                        else {}
+                    ),
+                }
+            )
+            + " /tmp/install-rke2.sh"
+        ],
     )
 
     disable_rke2_repos()
@@ -774,6 +801,11 @@ if phase == "rancher-install" and role == "bastion":
                     "RANCHER_BOOTSTRAP_PASSWORD": config["rancher"].get("bootstrap_password", ""),
                     "RANCHER_PROXY": f"http://{config['bastion']['service_ip']}:{config['bastion']['squid_http_port']}",
                     "RANCHER_NO_PROXY": ",".join(config["proxy"]["no_proxy"]),
+                    **(
+                        bastion_proxy_environment(config)
+                        if "upstream" in config["proxy"]
+                        else {}
+                    ),
                 }
             )
             + " /tmp/install-rancher.sh"
