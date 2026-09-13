@@ -30,6 +30,7 @@ RANCHER_HOSTNAME_PATTERN = re.compile(
     r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$"
 )
 DNSMASQ_LEASE_TIME_PATTERN = re.compile(r"^[1-9][0-9]*[smhdw]$")
+SUPPORTED_SQUID_HTTP_PORT = 3128
 
 
 def require(mapping, key, context):
@@ -286,6 +287,16 @@ def validate_env_references(env):
             )
 
     bastion = require(env, "bastion", "env")
+    squid_http_port = bastion.get("squid_http_port", SUPPORTED_SQUID_HTTP_PORT)
+    if (
+        isinstance(squid_http_port, bool)
+        or not isinstance(squid_http_port, int)
+        or squid_http_port != SUPPORTED_SQUID_HTTP_PORT
+    ):
+        raise SystemExit(
+            f"bastion.squid_http_port must be {SUPPORTED_SQUID_HTTP_PORT}; "
+            "custom Squid listener ports are not supported"
+        )
     service_node = require(bastion, "service_node", "env.bastion")
 
     for dns_node in local_vlan.get("dns_nodes", [service_node]):
@@ -428,7 +439,7 @@ def expand_env(raw_env):
             raise SystemExit(f"env.nodes.{name}.ip {ip} conflicts with env.nodes.{previous_name}.ip")
         primary_ips[ip] = name
 
-    bastion.setdefault("squid_http_port", 3128)
+    bastion.setdefault("squid_http_port", SUPPORTED_SQUID_HTTP_PORT)
     bastion["vsphere_route"] = normalize_ipv4_route(
         require(bastion, "vsphere_route", "env.bastion"),
         "env.bastion.vsphere_route",
