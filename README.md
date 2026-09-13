@@ -403,8 +403,9 @@ and any explicit `proxy.extra_no_proxy` values. Use the generated
 `proxy.no_proxy` value as the canonical result. Override `proxy.no_proxy_cidrs`
 only if the private-CIDR default is wrong for the environment.
 
-The v0.4 Squid listener is fixed at port `3128`; if `bastion.squid_http_port`
-is configured, it must be `3128`. Custom listener ports are not supported.
+The Squid listener is currently fixed at port `3128`; if
+`bastion.squid_http_port` is configured, it must be `3128`. Custom listener
+ports are not supported.
 
 ## Hostnames
 
