@@ -234,7 +234,7 @@ def test_standalone_bastion_configure_refreshes_output_before_pyinfra(tmp_path):
         {
             "vlan": 565,
             "vmware_network": "DOWNSTREAM_VLAN_565",
-            "subnet": "10.124.101.32/27",
+            "subnet": "198.51.100.32/27",
             "bastion_address": 2,
             "gateway": 1,
             "dhcp": {"start": 4, "end": -2, "lease_time": "12h"},
@@ -289,7 +289,7 @@ def test_provision_bastion_configure_uses_already_refreshed_output(tmp_path):
         {
             "vlan": 565,
             "vmware_network": "DOWNSTREAM_VLAN_565",
-            "subnet": "10.124.101.32/27",
+            "subnet": "198.51.100.32/27",
             "bastion_address": 2,
             "gateway": 1,
             "dhcp": {"start": 4, "end": -2, "lease_time": "12h"},
