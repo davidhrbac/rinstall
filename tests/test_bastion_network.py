@@ -52,6 +52,32 @@ def render_template(name, **data):
     return environment.get_template(name).render(**data)
 
 
+def test_hosts_render_fqdns_before_short_aliases_and_preserve_single_name_records():
+    config = config_with()
+    rancher_nodes = {
+        name: node for name, node in config["nodes"].items() if node["role"] == "rancher"
+    }
+
+    first = render_template("hosts.j2", config=config, rancher_nodes=rancher_nodes)
+    second = render_template("hosts.j2", config=config, rancher_nodes=rancher_nodes)
+
+    assert first == second
+    lines = first.splitlines()
+
+    for name, node in config["nodes"].items():
+        canonical = f"{node['ip']} {name}.{config['rancher_url']} {name}"
+        reversed_order = f"{node['ip']} {name} {name}.{config['rancher_url']}"
+
+        assert canonical in lines
+        assert reversed_order not in lines
+
+    for node in rancher_nodes.values():
+        alias = f"{node['ip']} {config['rancher_url']}"
+
+        assert alias in lines
+        assert sum(line == alias for line in lines) == 1
+
+
 def terraform_output(config, mac="00:50:56:aa:bb:cc"):
     network = config["bastion"]["downstream_networks"][0]
     return {
