@@ -1499,7 +1499,11 @@ def validate_topology(topology):
             ("TCP",),
             services["proxy:squid"].ports,
         ),
-        "core-proxy:upstream": (CORE_SERVICE, ("TCP",), (80, 443)),
+        "core-proxy:upstream": (
+            CORE_SERVICE,
+            ("TCP",),
+            endpoints["endpoint:proxy-upstream"].ports,
+        ),
         "deployment:terraform-backend": (DEPLOYMENT, ("TCP",), endpoints[context.terraform_backend.endpoint_id].ports),
         "deployment:vcenter-api": (DEPLOYMENT, ("TCP",), (443,)),
         "rke2:bastion-kubernetes-api": (RKE2_RANCHER, ("TCP",), (6443,)),
@@ -2048,32 +2052,60 @@ def build_desired_topology(config):
             )
         )
 
-    endpoints.append(
-        EndpointTopology(
-            id="endpoint:proxy-upstream",
-            kind="proxy-upstream-destinations",
-            name="external repositories and service endpoints",
-            protocols=("HTTP", "HTTPS"),
-            ports=(80, 443),
-            cluster_id=None,
-            resolutions=(
-                EndpointResolutionTopology(
-                    scope="external",
-                    addresses=(),
-                    ownership=REFERENCED_EXTERNAL,
-                    provenance=RINSTALL_ARCHITECTURE,
-                    resolution=EXTERNAL_UNRESOLVED,
-                    address_kind=SYMBOLIC_ADDRESS,
-                    verification=UNVERIFIED,
-                    reason="Proxy upstream destinations are not enumerated in config.yaml.",
+    proxy_upstream = config["proxy"].get("upstream")
+    if proxy_upstream is None:
+        endpoints.append(
+            EndpointTopology(
+                id="endpoint:proxy-upstream",
+                kind="proxy-upstream-destinations",
+                name="external repositories and service endpoints",
+                protocols=("HTTP", "HTTPS"),
+                ports=(80, 443),
+                cluster_id=None,
+                resolutions=(
+                    EndpointResolutionTopology(
+                        scope="external",
+                        addresses=(),
+                        ownership=REFERENCED_EXTERNAL,
+                        provenance=RINSTALL_ARCHITECTURE,
+                        resolution=EXTERNAL_UNRESOLVED,
+                        address_kind=SYMBOLIC_ADDRESS,
+                        verification=UNVERIFIED,
+                        reason="Proxy upstream destinations are not enumerated in config.yaml.",
+                    ),
                 ),
-            ),
-            ownership=REFERENCED_EXTERNAL,
-            provenance=RINSTALL_ARCHITECTURE,
-            resolution=EXTERNAL_UNRESOLVED,
-            verification=UNVERIFIED,
+                ownership=REFERENCED_EXTERNAL,
+                provenance=RINSTALL_ARCHITECTURE,
+                resolution=EXTERNAL_UNRESOLVED,
+                verification=UNVERIFIED,
+            )
         )
-    )
+    else:
+        endpoints.append(
+            EndpointTopology(
+                id="endpoint:proxy-upstream",
+                kind="proxy-parent",
+                name=proxy_upstream["host"],
+                protocols=("HTTP",),
+                ports=(proxy_upstream["port"],),
+                cluster_id=None,
+                resolutions=(
+                    EndpointResolutionTopology(
+                        scope="external",
+                        addresses=(proxy_upstream["host"],),
+                        ownership=REFERENCED_EXTERNAL,
+                        provenance=CONFIGURED,
+                        resolution=RESOLVED,
+                        address_kind=_address_kind(proxy_upstream["host"]),
+                        verification=UNVERIFIED,
+                    ),
+                ),
+                ownership=REFERENCED_EXTERNAL,
+                provenance=CONFIGURED,
+                resolution=RESOLVED,
+                verification=UNVERIFIED,
+            )
+        )
     if downstream_networks:
         endpoints.append(
             EndpointTopology(
@@ -2606,17 +2638,31 @@ def build_desired_topology(config):
             "endpoint:proxy-upstream",
             (
                 ResolvedEndpoint(
-                    "external repositories and service endpoints",
-                    None,
+                    (
+                        proxy_upstream["host"]
+                        if proxy_upstream is not None
+                        else "external repositories and service endpoints"
+                    ),
+                    proxy_upstream["host"] if proxy_upstream is not None else None,
                     EntityReference("endpoint", "endpoint:proxy-upstream"),
-                    SYMBOLIC_ADDRESS,
+                    (
+                        _address_kind(proxy_upstream["host"])
+                        if proxy_upstream is not None
+                        else SYMBOLIC_ADDRESS
+                    ),
                 ),
             ),
         ),
         ("TCP",),
         (),
-        (80, 443),
-        "Squid reaches required external repositories and service endpoints",
+        (config["proxy"]["upstream"]["port"],)
+        if config["proxy"].get("upstream") is not None
+        else (80, 443),
+        (
+            "Squid forwards normal egress to the configured upstream proxy"
+            if config["proxy"].get("upstream") is not None
+            else "Squid reaches required external repositories and service endpoints"
+        ),
         CORE_SERVICE,
     )
 
@@ -3207,6 +3253,8 @@ def _support_entity_label(reference, topology):
             return "Rancher endpoint"
         if endpoint.kind == "proxy-upstream":
             return "External/upstream destinations"
+        if endpoint.kind == "proxy-parent":
+            return "Configured upstream proxy"
         if endpoint.kind in {"dns-management", "dns-upstream"}:
             return "Management DNS" if endpoint.kind == "dns-management" else "Upstream DNS"
         return endpoint.name

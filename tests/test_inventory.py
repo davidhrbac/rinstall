@@ -12,6 +12,7 @@ _MODULE = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(_MODULE)
 _host_entry = _MODULE._host_entry
 _phase_hosts = _MODULE._phase_hosts
+_phase_effective_vsphere_server = _MODULE._phase_effective_vsphere_server
 
 
 EXAMPLE_ENV = Path(__file__).parents[1] / "envs/example/env.yaml"
@@ -46,3 +47,26 @@ def test_target_inventory_uses_instance_known_hosts(tmp_path):
 
     assert data["ssh_known_hosts_file"] == str(known_hosts)
     assert data["ssh_strict_host_key_checking"] == "accept-new"
+
+
+def test_bastion_upstream_preflight_resolves_runtime_vcenter():
+    config = configured_bastion2()
+    config["proxy"] = {"upstream": {"host": "proxy.example.internal", "port": 9090}}
+
+    assert _phase_effective_vsphere_server(
+        "bastion-packages",
+        config,
+        {"TF_VAR_vsphere_server": "vcenter.example.internal"},
+    ) == "vcenter.example.internal"
+
+
+def test_bastion_upstream_preflight_fails_without_runtime_vcenter():
+    config = configured_bastion2()
+    config["proxy"] = {"upstream": {"host": "proxy.example.internal", "port": 9090}}
+
+    try:
+        _phase_effective_vsphere_server("bastion", config, {})
+    except SystemExit as error:
+        assert "proxy.upstream requires" in str(error)
+    else:
+        raise AssertionError("missing vCenter endpoint was accepted")

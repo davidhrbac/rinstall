@@ -1498,6 +1498,25 @@ def test_v2_support_dependencies_are_typed_and_external_routing_is_symbolic():
     assert topology.downstream_networks[0].bastion_is_router is False
 
 
+def test_upstream_proxy_topology_represents_configured_parent_as_next_hop():
+    config = yaml.safe_load(FULL_CONFIG.read_text())
+    config["proxy"]["upstream"] = {
+        "host": "proxy.example.internal",
+        "port": 9090,
+    }
+    topology = build_desired_topology(expand_env(config))
+    validate_topology(topology)
+
+    endpoint = by_id(topology.endpoints)["endpoint:proxy-upstream"]
+    rule = by_id(topology.connectivity_rules)["core-proxy:upstream"]
+    assert endpoint.kind == "proxy-parent"
+    assert endpoint.name == "proxy.example.internal"
+    assert endpoint.ports == (9090,)
+    assert endpoint.resolutions[0].addresses == ("proxy.example.internal",)
+    assert rule.destination_ports == (9090,)
+    assert rule.destination.resolved[0].address == "proxy.example.internal"
+
+
 def test_downstream_dns_uses_same_vlan_bastion_address():
     topology = topology_with(
         downstream_network(565, "10.20.56.32/27"),

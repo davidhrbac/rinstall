@@ -29,6 +29,10 @@ RANCHER_HOSTNAME_PATTERN = re.compile(
     r"^(?=.{1,253}$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+"
     r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$"
 )
+HOST_OR_IP_PATTERN = re.compile(
+    r"^(?=.{1,253}$)[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\."
+    r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$"
+)
 DNSMASQ_LEASE_TIME_PATTERN = re.compile(r"^[1-9][0-9]*[smhdw]$")
 
 
@@ -40,6 +44,36 @@ def require(mapping, key, context):
 
 def gitlab_backend_state_address(backend, environment_id):
     return f"{backend['url'].rstrip('/')}/api/v4/projects/{backend['project_id']}/terraform/state/{environment_id}-infra"
+
+
+def validate_host_or_ip(value, context):
+    if not isinstance(value, str) or not value or value != value.strip():
+        raise SystemExit(f"{context} must be a non-empty hostname or IP address")
+    try:
+        ip_address(value)
+        return
+    except ValueError:
+        pass
+    if not HOST_OR_IP_PATTERN.fullmatch(value):
+        raise SystemExit(f"{context} must be a bare hostname or IP address")
+
+
+def effective_vsphere_server(env, runtime_env):
+    vsphere = env["infra"]["vsphere"]
+    configured = vsphere.get("server")
+    if configured is not None:
+        return configured
+    return runtime_env.get("TF_VAR_vsphere_server") or None
+
+
+def require_effective_vsphere_server(env, runtime_env):
+    server = effective_vsphere_server(env, runtime_env)
+    if server is None:
+        raise SystemExit(
+            "proxy.upstream requires infra.vsphere.server or TF_VAR_vsphere_server"
+        )
+    validate_host_or_ip(server, "effective vSphere server")
+    return server
 
 
 def validate_environment_identity(env):
@@ -264,6 +298,21 @@ def validate_env_references(env):
         clone_timeout = vsphere["clone_timeout"]
         if isinstance(clone_timeout, bool) or not isinstance(clone_timeout, int) or clone_timeout <= 0:
             raise SystemExit("env.infra.vsphere.clone_timeout must be a positive integer")
+    proxy = env.get("proxy")
+    if proxy is not None:
+        if not isinstance(proxy, dict):
+            raise SystemExit("env.proxy must be a mapping")
+        if "upstream" in proxy:
+            upstream = proxy["upstream"]
+            if not isinstance(upstream, dict):
+                raise SystemExit("env.proxy.upstream must be a mapping")
+            upstream_host = require(upstream, "host", "env.proxy.upstream")
+            validate_host_or_ip(upstream_host, "env.proxy.upstream.host")
+            upstream_port = require(upstream, "port", "env.proxy.upstream")
+            if isinstance(upstream_port, bool) or not isinstance(upstream_port, int) or not 1 <= upstream_port <= 65535:
+                raise SystemExit("env.proxy.upstream.port must be an integer from 1 through 65535")
+            if vsphere.get("server") is not None:
+                validate_host_or_ip(vsphere["server"], "env.infra.vsphere.server")
     networks = require(infra, "networks", "env.infra")
     templates = require(infra, "templates", "env.infra")
     local_vlan = require(require(env, "local", "env"), "vlan", "env.local")

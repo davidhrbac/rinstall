@@ -19,6 +19,15 @@ from lib.bastion_network import (
     dnsmasq_recovery_command,
 )
 from lib.ssh_config import build_dir_for_env
+from lib.squid import (
+    SQUID_CANDIDATE_CONFIG,
+    SQUID_SYSCONFIG,
+    SQUID_VENDOR_CONFIG,
+    SQUID_WRAPPER_CONFIG,
+    content_hash,
+    render_upstream_wrapper,
+    squid_transition_command,
+)
 
 
 ENGINE_ROOT = Path(__file__).resolve().parents[1]
@@ -200,6 +209,42 @@ if phase == "bastion-packages" and role == "bastion":
 
 
 if phase == "bastion" and role == "bastion":
+    if "upstream" in config["proxy"]:
+        wrapper_content = render_upstream_wrapper(
+            config["proxy"]["upstream"],
+            host.data["effective_vsphere_server"],
+        )
+        wrapper_hash = content_hash(wrapper_content)
+        current_wrapper_hash = command_output(
+            f"sha256sum {shlex.quote(SQUID_WRAPPER_CONFIG)} 2>/dev/null | awk '{{print $1}}' || true"
+        ).strip()
+        current_squid_conf = command_output(
+            f"grep -Fx {shlex.quote(f'SQUID_CONF=\"{SQUID_WRAPPER_CONFIG}\"')} {shlex.quote(SQUID_SYSCONFIG)} 2>/dev/null || true"
+        ).strip()
+        if current_wrapper_hash != wrapper_hash or current_squid_conf != f'SQUID_CONF="{SQUID_WRAPPER_CONFIG}"':
+            files.put(
+                name="Render candidate Squid upstream wrapper",
+                src=StringIO(wrapper_content),
+                dest=SQUID_CANDIDATE_CONFIG,
+                mode="0644",
+            )
+            server.shell(
+                name="Validate and activate Squid upstream wrapper",
+                commands=[squid_transition_command(True)],
+            )
+    else:
+        current_squid_conf = command_output(
+            f"grep -Fx {shlex.quote(f'SQUID_CONF=\"{SQUID_VENDOR_CONFIG}\"')} {shlex.quote(SQUID_SYSCONFIG)} 2>/dev/null || true"
+        ).strip()
+        wrapper_present = command_output(
+            f"if [ -e {shlex.quote(SQUID_WRAPPER_CONFIG)} ]; then printf present; fi"
+        ).strip()
+        if current_squid_conf != f'SQUID_CONF="{SQUID_VENDOR_CONFIG}"' or wrapper_present:
+            server.shell(
+                name="Restore vendor Squid configuration",
+                commands=[squid_transition_command(False)],
+            )
+
     files.template(
         name="Render ClusterShell local groups",
         src=str(ENGINE_ROOT / "pyinfra/templates/clustershell-local.cfg.j2"),

@@ -6,12 +6,21 @@ _sys.path.insert(0, str(_Path(__file__).resolve().parents[1]))
 
 from lib.bastion_network import load_downstream_network_output as _load_downstream_network_output
 from lib.env_config import load_env as _load_env
+from lib.env_config import require_effective_vsphere_server as _require_effective_vsphere_server
 from lib.ssh_config import build_dir_for_env as _build_dir_for_env
 from lib.ssh_config import node_ssh_target as _node_ssh_target
 from lib.ssh_config import write_ssh_config as _write_ssh_config
 
 
-def _host_entry(node_name, node, config, ssh_config_file, known_hosts_file, downstream_network_output=None):
+def _host_entry(
+    node_name,
+    node,
+    config,
+    ssh_config_file,
+    known_hosts_file,
+    downstream_network_output=None,
+    effective_vsphere_server=None,
+):
     ssh = config.get("ssh", {})
     ssh_target = _node_ssh_target(node)
     address = ssh_target
@@ -26,6 +35,7 @@ def _host_entry(node_name, node, config, ssh_config_file, known_hosts_file, down
         "env_config": config,
         "node_config": node,
         "downstream_network_output": downstream_network_output or {},
+        "effective_vsphere_server": effective_vsphere_server,
     }
     if ssh_config_file:
         data["ssh_config_file"] = str(ssh_config_file)
@@ -45,9 +55,16 @@ def _phase_hosts(phase, config):
     return nodes
 
 
+def _phase_effective_vsphere_server(phase, config, runtime_env):
+    if phase in {"bastion-packages", "bastion"} and "upstream" in config["proxy"]:
+        return _require_effective_vsphere_server(config, runtime_env)
+    return None
+
+
 _env_config = _Path(_os.environ.get("ENV_CONFIG", "envs/example/env.yaml"))
 _phase = _os.environ.get("PHASE", "bastion")
 _config = _load_env(_env_config)
+_effective_vsphere_server = _phase_effective_vsphere_server(_phase, _config, _os.environ)
 _runtime_dir = _build_dir_for_env(_env_config)
 _ssh_config_file = _write_ssh_config(_config, _runtime_dir / "ssh_config")
 _known_hosts_file = (_runtime_dir / "known_hosts").resolve()
@@ -59,6 +76,14 @@ if _phase == "bastion":
     )
 
 all = [
-    _host_entry(name, node, _config, _ssh_config_file, _known_hosts_file, _downstream_network_output)
+    _host_entry(
+        name,
+        node,
+        _config,
+        _ssh_config_file,
+        _known_hosts_file,
+        _downstream_network_output,
+        _effective_vsphere_server,
+    )
     for name, node in _phase_hosts(_phase, _config).items()
 ]
