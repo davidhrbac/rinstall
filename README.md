@@ -14,7 +14,7 @@ Rancher API resources, Fleet configuration, downstream cluster lifecycle, and Ra
 
 ```text
 Terraform infra  -> vSphere VMs, NICs, static IPs where required, VM inventory outputs
-pyinfra          -> bastion dnsmasq/squid/routes and rancher node file prep
+pyinfra          -> bastion dnsmasq/squid/routes/ClusterShell groups and rancher node file prep
 RKE2 scripts     -> local RKE2 cluster bootstrap
 Helm scripts     -> cert-manager and Rancher install from the configured bastion
 
@@ -228,6 +228,11 @@ For bastion access through the management NIC, prefer static NIC addressing with
 
 The pyinfra inventory is phase-aware. `PHASE=bastion`, `PHASE=rancher-install`, and `PHASE=rancher-bootstrap` connect only to the configured bastion; RKE2 install phases connect only to the relevant Rancher nodes. The inventory uses the resolved `ssh_ip`/node IP as the connection target and keeps the operational node name in pyinfra host data. This allows bastion DNS/hosts/proxy setup to run before the rest of the local cluster is reachable through the bastion. If the Prometheus and Rancher nodes live only on the local/customer VLAN, include both `prometheus` and `rancher` in `ssh.bastion_proxy_roles`.
 
+`make -f rinstall/Makefile bastion-configure` renders named node records in
+`/etc/hosts` as `IP FQDN shortname`. The FQDN is the canonical name while the
+short hostname remains an alias. Rancher URL round-robin records remain
+single-name entries and are not rewritten as node records.
+
 ## Local Infra Addressing
 
 The local cluster VLAN is normally a `/28`:
@@ -413,6 +418,29 @@ prompt:
   colors:
     host: 129
 ```
+
+## ClusterShell
+
+The `make -f rinstall/Makefile bastion-configure` workflow installs the
+`clustershell` package and replaces the package example groups with the managed
+file `/etc/clustershell/groups.d/local.cfg`.
+
+The static groups are derived from the expanded `config.nodes` roles:
+
+```text
+# Managed by rinstall. Do not edit manually.
+
+rancher: <all configured nodes with role rancher>
+prometheus: <all configured nodes with role prometheus>
+all: <the rancher and prometheus groups>
+```
+
+Use the groups with ClusterShell's `@rancher`, `@prometheus`, and `@all`
+selectors. The `all` group contains only rinstall-managed Rancher and
+Prometheus nodes; downstream nodes, leases, Rancher API, and Kubernetes API are
+not used for discovery. Re-running the bastion phase keeps the file
+deterministic and removes packaged example groups such as `compute`, `gpu`, and
+`example0`.
 
 ## RKE2 Prep
 

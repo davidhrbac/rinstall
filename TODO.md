@@ -81,3 +81,7 @@
 - Optional committed `docs/topology/` generation and drift detection.
 - Instance-local SSH known-hosts lifecycle and explicit refresh-free Terraform
   destroy recovery for missing external dependencies.
+- Canonical bastion `/etc/hosts` node records with FQDN before the short-name
+  alias, while Rancher URL round-robin records remain single-name entries.
+- Additive bastion ClusterShell support with a deterministic,
+  `config.nodes`-derived `/etc/clustershell/groups.d/local.cfg`.
