@@ -102,6 +102,23 @@ and `provision-all` targets documented above.
 
 Rancher Helm install receives `proxy` and `noProxy` values derived from the bastion Squid service IP/port and the generated `proxy.no_proxy` list. `noProxy` includes private CIDRs, Kubernetes service DNS suffixes, the local VLAN CIDR, the Rancher URL, and any explicit `proxy.extra_no_proxy` values. This is separate from the host-level proxy files rendered during node prep.
 
+For environments without direct Internet access, configure one unauthenticated
+HTTP parent for the bastion Squid:
+
+```yaml
+proxy:
+  upstream:
+    host: proxy.example.internal
+    port: 9090
+```
+
+The resulting path is `Rancher/RKE2 -> bastion Squid -> upstream proxy -> Internet`.
+The effective vCenter endpoint remains a DIRECT exception from the bastion. Set
+it in `infra.vsphere.server` or provide `TF_VAR_vsphere_server`; the configured
+value takes precedence. The upstream proxy is not passed to Rancher or RKE2.
+Upstream authentication, multiple parents, failover, PAC/WPAD, and additional
+DIRECT destinations are not supported.
+
 Prefer static addressing on the configured bastion management NIC. Set it as `cidr` on the management NIC and the env loader derives its `ssh_ip` from that address for generated SSH config.
 
 Terraform commands use local workstation credentials/environment and talk to vSphere/GitLab from there. pyinfra and Helm/Rancher installation steps can also run from the workstation; SSH routing is handled by generated OpenSSH config.
