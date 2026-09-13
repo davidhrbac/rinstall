@@ -8,6 +8,18 @@
 - Keep each commit to one logical change; do not mix production code, unrelated documentation, and cleanup.
 - Avoid vague commit messages such as `Fix stuff`, `Update SSH`, or `Changes`.
 
+## Branch and Release Lines
+
+- `release/0.4` is the supported maintenance line for deployed v0.4.x instances.
+- `master` targets v0.5.0 and future-generation development.
+- If a fix affects both v0.4.x and `master`, implement and validate it on
+  `release/0.4` first, then forward-port the fix to `master`.
+- Fixes that do not affect v0.4.x belong on `master` only.
+- New architectural features target `master` unless explicitly approved for
+  backport to a supported release line.
+- Do not merge `master` wholesale into a release branch; port individual
+  compatible fixes instead.
+
 - This repo is a scaffold for manually operated Rancher environment provisioning on vSphere.
 - This repo is a Day-0/DR bootstrap engine only: vSphere infrastructure, bastion, RKE2, and initial Rancher installation.
 - Do not add Rancher API resources, Fleet configuration, downstream cluster lifecycle, or Rancher/Kubernetes upgrades here; manage them outside rinstall in the separate per-environment Rancher Terraform project.
