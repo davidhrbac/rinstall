@@ -289,6 +289,29 @@ def test_generates_compact_no_proxy_list_with_kubernetes_suffixes():
     ]
 
 
+def test_squid_http_port_defaults_to_3128():
+    assert expand_env(raw_example())["bastion"]["squid_http_port"] == 3128
+
+
+def test_squid_http_port_accepts_explicit_3128():
+    config = raw_example()
+    config["bastion"]["squid_http_port"] = 3128
+
+    assert expand_env(config)["bastion"]["squid_http_port"] == 3128
+
+
+@pytest.mark.parametrize("port", [0, 8080, 65535, -1, "3128", 3128.0, True, None])
+def test_squid_http_port_rejects_unsupported_values(port):
+    config = raw_example()
+    config["bastion"]["squid_http_port"] = port
+
+    with pytest.raises(
+        SystemExit,
+        match=r"bastion\.squid_http_port must be 3128; custom Squid listener ports are not supported",
+    ):
+        expand_env(config)
+
+
 def test_validates_gitlab_backend_without_credentials():
     config = raw_example()
     config["terraform"] = {"backend": {"type": "gitlab", "url": "https://gitlab.example", "project_id": 1234}}
