@@ -4,7 +4,6 @@
 build/
 .rinstall/
 envs/private/
-envs/elo-prod/
 envs/*-local/
 __pycache__/
 *.py[cod]

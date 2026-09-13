@@ -412,7 +412,7 @@ It also renders `/etc/profile.d/prompt.sh`. The prompt suffix is always `environ
 ```yaml
 schema_version: 1
 environment:
-  id: test.elo
+  id: test.example
 
 prompt:
   colors:
