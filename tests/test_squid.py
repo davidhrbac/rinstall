@@ -49,7 +49,7 @@ def test_upstream_enable_validates_candidate_and_changes_only_squid_conf():
 def test_upstream_refuses_unmanaged_active_squid_config():
     command = squid_transition_command(True)
 
-    assert "case \"$current_squid_conf\" in /etc/squid/squid.conf|/etc/squid/rinstall.conf" in command
+    assert f"case \"$current_squid_conf\" in /etc/squid/squid.conf|{SQUID_WRAPPER_CONFIG}" in command
     assert "proxy.upstream cannot take ownership of Squid" in command
     assert "${current_squid_conf:-<unset>}" in command
 

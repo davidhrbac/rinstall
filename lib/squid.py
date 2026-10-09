@@ -3,7 +3,7 @@ import shlex
 
 
 SQUID_VENDOR_CONFIG = "/etc/squid/squid.conf"
-SQUID_WRAPPER_CONFIG = "/etc/squid/rinstall.conf"
+SQUID_WRAPPER_CONFIG = "/etc/squid/squid-rinstall.conf"
 SQUID_SYSCONFIG = "/etc/sysconfig/squid"
 SQUID_CANDIDATE_CONFIG = "/run/rinstall-squid.conf"
 SQUID_CONF_VALUE_PATTERN = r"^[[:space:]]*SQUID_CONF[[:space:]]*=[[:space:]]*\"?([^\"]*)\"?[[:space:]]*$"
@@ -66,7 +66,7 @@ def squid_transition_command(upstream_enabled):
                 f"wrapper={shlex.quote(SQUID_WRAPPER_CONFIG)};",
                 "trap 'rm -f \"$candidate\"' EXIT;",
                 f"current_squid_conf=$({effective_squid_config_command(sysconfig_path)});",
-                "case \"$current_squid_conf\" in /etc/squid/squid.conf|/etc/squid/rinstall.conf) ;; *) printf '%s\\n' \"proxy.upstream cannot take ownership of Squid because SQUID_CONF points to an unmanaged configuration: ${current_squid_conf:-<unset>}\" >&2; exit 1 ;; esac;",
+                f"case \"$current_squid_conf\" in /etc/squid/squid.conf|{SQUID_WRAPPER_CONFIG}) ;; *) printf '%s\\n' \"proxy.upstream cannot take ownership of Squid because SQUID_CONF points to an unmanaged configuration: ${{current_squid_conf:-<unset>}}\" >&2; exit 1 ;; esac;",
                 "restart_needed=0;",
                 f"if ! grep -Fx {quoted_desired_line} \"$sysconfig\" >/dev/null 2>&1; then restart_needed=1; fi;",
                 "if ! cmp -s \"$candidate\" \"$wrapper\"; then restart_needed=1; fi;",
