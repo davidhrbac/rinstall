@@ -767,6 +767,15 @@ if phase == "rancher-install" and role == "bastion":
         present=True,
     )
 
+    if upstream is not None:
+        files.template(
+            name="Ensure bastion proxy environment",
+            src=str(ENGINE_ROOT / "pyinfra/templates/proxy.sh.j2"),
+            dest="/etc/profile.d/proxy.sh",
+            mode="0644",
+            config=config,
+        )
+
     configure_asdf()
 
     files.put(
