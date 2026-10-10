@@ -32,6 +32,7 @@ from lib.squid import (
 
 
 ENGINE_ROOT = Path(__file__).resolve().parents[1]
+DNF_CONFIG = "/etc/dnf/dnf.conf"
 
 
 phase = os.environ.get("PHASE", "bastion")
@@ -59,22 +60,6 @@ def local_kubeconfig_path():
 
 def shell_env(values):
     return " ".join(f"{key}={shlex.quote(str(value))}" for key, value in values.items())
-
-
-def proxy_exports():
-    proxy_url = f"http://{config['bastion']['service_ip']}:{config['bastion']['squid_http_port']}"
-    no_proxy = ",".join(config["proxy"]["no_proxy"])
-    return "; ".join(
-        f"export {key}={shlex.quote(value)}"
-        for key, value in {
-            "HTTP_PROXY": proxy_url,
-            "HTTPS_PROXY": proxy_url,
-            "NO_PROXY": no_proxy,
-            "http_proxy": proxy_url,
-            "https_proxy": proxy_url,
-            "no_proxy": no_proxy,
-        }.items()
-    )
 
 
 def command_output(command):
@@ -163,7 +148,8 @@ def configure_asdf():
     server.shell(
         name="Install asdf binary",
         commands=[
-            (proxy_exports() + "; " if config["proxy"].get("upstream") is not None else "")
+            ("set -eu; . /etc/profile.d/proxy.sh; "
+             if config["proxy"].get("upstream") is not None else "")
             + "version='v0.20.0'; "
             "case \"$(uname -m)\" in x86_64) arch=amd64 ;; aarch64|arm64) arch=arm64 ;; *) exit 1 ;; esac; "
             "if ! command -v asdf >/dev/null 2>&1; then "
@@ -180,8 +166,9 @@ def configure_asdf():
     server.shell(
         name="Install asdf diagnostic tools",
         commands=[
-            (proxy_exports() + "; " if config["proxy"].get("upstream") is not None else "")
-            + "set -eu; export ASDF_DATA_DIR=/root/.asdf; export PATH=\"${ASDF_DATA_DIR}/shims:${PATH}\"; "
+            ("set -eu; . /etc/profile.d/proxy.sh; "
+             if config["proxy"].get("upstream") is not None else "set -eu; ")
+            + "export ASDF_DATA_DIR=/root/.asdf; export PATH=\"${ASDF_DATA_DIR}/shims:${PATH}\"; "
             "asdf plugin list | grep -Fx helm >/dev/null || asdf plugin add helm https://github.com/Antiarchitect/asdf-helm.git; "
             "asdf plugin list | grep -Fx kubectl >/dev/null || asdf plugin add kubectl https://github.com/asdf-community/asdf-kubectl.git; "
             + (f"helm_version={shlex.quote(config['rancher']['helm_version'])}; "
@@ -219,15 +206,19 @@ def configure_asdf():
 
 if phase == "bastion-packages" and role == "bastion":
     upstream = config["proxy"].get("upstream")
+    if upstream is not None:
+        files.line(
+            name="Configure DNF upstream proxy",
+            path=DNF_CONFIG,
+            line=r"^[[:space:]]*proxy[[:space:]]*=.*$",
+            replace=f"proxy=http://{upstream['host']}:{upstream['port']}",
+            extended_regex=True,
+            ensure_newline=True,
+        )
     dnf.packages(
         name="Install bastion services",
         packages=["dnsmasq", "squid", "NetworkManager", "clustershell"],
         present=True,
-        extra_install_args=(
-            f"--setopt=proxy=http://{upstream['host']}:{upstream['port']}"
-            if upstream is not None
-            else None
-        ),
     )
     systemd.service(
         name="Enable and start NetworkManager",
@@ -778,11 +769,6 @@ if phase == "rancher-install" and role == "bastion":
         name="Install Rancher install dependencies",
         packages=["git", "curl", "tar"],
         present=True,
-        extra_install_args=(
-            f"--setopt=proxy=http://{config['bastion']['service_ip']}:{config['bastion']['squid_http_port']}"
-            if upstream is not None
-            else None
-        ),
     )
 
     if upstream is not None:
@@ -814,7 +800,7 @@ if phase == "rancher-install" and role == "bastion":
     server.shell(
         name="Install or verify cert-manager and Rancher",
         commands=[
-            (proxy_exports() + "; " if upstream is not None else "")
+            ("set -eu; . /etc/profile.d/proxy.sh; " if upstream is not None else "")
             + shell_env(
                 {
                     "RANCHER_HOSTNAME": config["rancher_url"],
