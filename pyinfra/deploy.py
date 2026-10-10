@@ -148,9 +148,7 @@ def configure_asdf():
     server.shell(
         name="Install asdf binary",
         commands=[
-            ("set -eu; . /etc/profile.d/proxy.sh; "
-             if config["proxy"].get("upstream") is not None else "")
-            + "version='v0.20.0'; "
+            "version='v0.20.0'; "
             "case \"$(uname -m)\" in x86_64) arch=amd64 ;; aarch64|arm64) arch=arm64 ;; *) exit 1 ;; esac; "
             "if ! command -v asdf >/dev/null 2>&1; then "
             "tmpdir=$(mktemp -d); "
@@ -166,9 +164,7 @@ def configure_asdf():
     server.shell(
         name="Install asdf diagnostic tools",
         commands=[
-            ("set -eu; . /etc/profile.d/proxy.sh; "
-             if config["proxy"].get("upstream") is not None else "set -eu; ")
-            + "export ASDF_DATA_DIR=/root/.asdf; export PATH=\"${ASDF_DATA_DIR}/shims:${PATH}\"; "
+            "set -eu; export ASDF_DATA_DIR=/root/.asdf; export PATH=\"${ASDF_DATA_DIR}/shims:${PATH}\"; "
             "asdf plugin list | grep -Fx helm >/dev/null || asdf plugin add helm https://github.com/Antiarchitect/asdf-helm.git; "
             "asdf plugin list | grep -Fx kubectl >/dev/null || asdf plugin add kubectl https://github.com/asdf-community/asdf-kubectl.git; "
             + (f"helm_version={shlex.quote(config['rancher']['helm_version'])}; "
@@ -771,15 +767,6 @@ if phase == "rancher-install" and role == "bastion":
         present=True,
     )
 
-    if upstream is not None:
-        files.template(
-            name="Ensure bastion proxy environment",
-            src=str(ENGINE_ROOT / "pyinfra/templates/proxy.sh.j2"),
-            dest="/etc/profile.d/proxy.sh",
-            mode="0644",
-            config=config,
-        )
-
     configure_asdf()
 
     files.put(
@@ -800,8 +787,7 @@ if phase == "rancher-install" and role == "bastion":
     server.shell(
         name="Install or verify cert-manager and Rancher",
         commands=[
-            ("set -eu; . /etc/profile.d/proxy.sh; " if upstream is not None else "")
-            + shell_env(
+            shell_env(
                 {
                     "RANCHER_HOSTNAME": config["rancher_url"],
                     "CERT_MANAGER_VERSION": config["rancher"]["cert_manager_version"],

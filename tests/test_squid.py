@@ -39,11 +39,11 @@ def test_deploy_bootstrap_uses_pinned_or_latest_helm_and_upstream_bootstrap_prox
     assert 'line=r"^[[:space:]]*proxy[[:space:]]*=.*$"' in deploy
     assert "replace=f\"proxy=http://{upstream['host']}:{upstream['port']}\"" in deploy
     assert 'name="Render bastion proxy environment"' in deploy
-    assert 'name="Ensure bastion proxy environment"' in deploy
+    assert 'name="Ensure bastion proxy environment"' not in deploy
     assert "proxy_exports" not in deploy
-    assert ". /etc/profile.d/proxy.sh" in deploy
+    assert ". /etc/profile.d/proxy.sh" not in deploy
     assert "extra_install_args" not in deploy
-    assert deploy.count(". /etc/profile.d/proxy.sh") == 3
+    assert deploy.count('name="Render bastion proxy environment"') == 1
     assert deploy.index('name="Configure DNF upstream proxy"') < deploy.index('name="Install bastion services"')
     assert deploy.index("asdf plugin add helm") < deploy.index("helm_version=$(asdf latest helm)")
 
@@ -52,9 +52,9 @@ def test_bootstrap_dnf_and_bastion_proxy_changes_are_upstream_only():
     deploy = (Path(__file__).parents[1] / "pyinfra/deploy.py").read_text()
 
     assert "if upstream is not None:" in deploy
+    assert 'upstream = config["proxy"].get("upstream")' in deploy
     assert 'path=DNF_CONFIG' in deploy
     assert 'dest="/etc/profile.d/proxy.sh"' in deploy
-    assert 'config["proxy"].get("upstream") is not None' in deploy
 
 
 def test_upstream_wrapper_uses_exact_ip_vcenter_acl():
