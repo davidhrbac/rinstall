@@ -61,6 +61,22 @@ def shell_env(values):
     return " ".join(f"{key}={shlex.quote(str(value))}" for key, value in values.items())
 
 
+def proxy_exports():
+    proxy_url = f"http://{config['bastion']['service_ip']}:{config['bastion']['squid_http_port']}"
+    no_proxy = ",".join(config["proxy"]["no_proxy"])
+    return "; ".join(
+        f"export {key}={shlex.quote(value)}"
+        for key, value in {
+            "HTTP_PROXY": proxy_url,
+            "HTTPS_PROXY": proxy_url,
+            "NO_PROXY": no_proxy,
+            "http_proxy": proxy_url,
+            "https_proxy": proxy_url,
+            "no_proxy": no_proxy,
+        }.items()
+    )
+
+
 def command_output(command):
     return host.get_fact(Command, command=command) or ""
 
@@ -147,7 +163,8 @@ def configure_asdf():
     server.shell(
         name="Install asdf binary",
         commands=[
-            "version='v0.20.0'; "
+            (proxy_exports() + "; " if config["proxy"].get("upstream") is not None else "")
+            + "version='v0.20.0'; "
             "case \"$(uname -m)\" in x86_64) arch=amd64 ;; aarch64|arm64) arch=arm64 ;; *) exit 1 ;; esac; "
             "if ! command -v asdf >/dev/null 2>&1; then "
             "tmpdir=$(mktemp -d); "
@@ -163,13 +180,18 @@ def configure_asdf():
     server.shell(
         name="Install asdf diagnostic tools",
         commands=[
-            "export ASDF_DATA_DIR=/root/.asdf; export PATH=\"${ASDF_DATA_DIR}/shims:${PATH}\"; "
+            (proxy_exports() + "; " if config["proxy"].get("upstream") is not None else "")
+            + "set -eu; export ASDF_DATA_DIR=/root/.asdf; export PATH=\"${ASDF_DATA_DIR}/shims:${PATH}\"; "
             "asdf plugin list | grep -Fx helm >/dev/null || asdf plugin add helm https://github.com/Antiarchitect/asdf-helm.git; "
             "asdf plugin list | grep -Fx kubectl >/dev/null || asdf plugin add kubectl https://github.com/asdf-community/asdf-kubectl.git; "
-            "helm_version=$(asdf latest helm); kubectl_version=$(asdf latest kubectl); "
+            + (f"helm_version={shlex.quote(config['rancher']['helm_version'])}; "
+               if config["rancher"].get("helm_version") is not None
+               else "helm_version=$(asdf latest helm); ")
+            + "[ -n \"$helm_version\" ] || { printf '%s\\n' 'Unable to determine Helm version with asdf latest helm' >&2; exit 1; }; "
+            "kubectl_version=$(asdf latest kubectl); [ -n \"$kubectl_version\" ]; "
             "asdf install helm \"$helm_version\"; asdf set -u helm \"$helm_version\"; "
             "asdf install kubectl \"$kubectl_version\"; asdf set -u kubectl \"$kubectl_version\"; "
-            "asdf reshim helm; asdf reshim kubectl"
+            "asdf reshim helm; asdf reshim kubectl; asdf current helm; asdf which helm; helm version"
         ],
     )
 
@@ -196,10 +218,16 @@ def configure_asdf():
 
 
 if phase == "bastion-packages" and role == "bastion":
+    upstream = config["proxy"].get("upstream")
     dnf.packages(
         name="Install bastion services",
         packages=["dnsmasq", "squid", "NetworkManager", "clustershell"],
         present=True,
+        extra_install_args=(
+            f"--setopt=proxy=http://{upstream['host']}:{upstream['port']}"
+            if upstream is not None
+            else None
+        ),
     )
     systemd.service(
         name="Enable and start NetworkManager",
@@ -226,6 +254,13 @@ if phase == "bastion" and role == "bastion":
         server.shell(
             name="Validate and activate Squid upstream wrapper",
             commands=[squid_transition_command(True)],
+        )
+        files.template(
+            name="Render bastion proxy environment",
+            src=str(ENGINE_ROOT / "pyinfra/templates/proxy.sh.j2"),
+            dest="/etc/profile.d/proxy.sh",
+            mode="0644",
+            config=config,
         )
     else:
         current_squid_conf = command_output(
@@ -738,11 +773,26 @@ if phase == "rke2-install-join" and role == "rancher" and name != config["rke2"]
     disable_rke2_repos()
 
 if phase == "rancher-install" and role == "bastion":
+    upstream = config["proxy"].get("upstream")
     dnf.packages(
         name="Install Rancher install dependencies",
         packages=["git", "curl", "tar"],
         present=True,
+        extra_install_args=(
+            f"--setopt=proxy=http://{config['bastion']['service_ip']}:{config['bastion']['squid_http_port']}"
+            if upstream is not None
+            else None
+        ),
     )
+
+    if upstream is not None:
+        files.template(
+            name="Ensure bastion proxy environment",
+            src=str(ENGINE_ROOT / "pyinfra/templates/proxy.sh.j2"),
+            dest="/etc/profile.d/proxy.sh",
+            mode="0644",
+            config=config,
+        )
 
     configure_asdf()
 
@@ -764,7 +814,8 @@ if phase == "rancher-install" and role == "bastion":
     server.shell(
         name="Install or verify cert-manager and Rancher",
         commands=[
-            shell_env(
+            (proxy_exports() + "; " if upstream is not None else "")
+            + shell_env(
                 {
                     "RANCHER_HOSTNAME": config["rancher_url"],
                     "CERT_MANAGER_VERSION": config["rancher"]["cert_manager_version"],

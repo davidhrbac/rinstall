@@ -479,6 +479,8 @@ Rancher edition selection and Helm chart repositories are environment data. Defi
 ```yaml
 rancher:
   edition: community
+  # Optional. If omitted, asdf latest helm is used.
+  # helm_version: 4.3.0
   cert_manager_version: v1.21.1
   editions:
     community:
@@ -492,7 +494,7 @@ rancher:
 ```
 
 For Rancher Prime, set `edition: prime` in the instance config and fill the Prime chart repository/version approved for that customer. The env loader resolves the selected edition into the values expected by the install script.
-`agent_tls_mode` defaults to `system-store`. `rke2.version`, `rancher.cert_manager_version`, and the selected Rancher edition `version` are required; the environment config is the only version source of truth.
+`agent_tls_mode` defaults to `system-store`. `rke2.version`, `rancher.cert_manager_version`, and the selected Rancher edition `version` are required; the environment config is the only version source of truth. `rancher.helm_version` is optional; when set, rinstall installs that exact Helm version without calling `asdf latest helm`, otherwise it resolves the latest version through asdf.
 
 For production, omit `rancher.bootstrap_password` from committed `config.yaml`.
 Let Rancher generate the one-time bootstrap password, retrieve it using the

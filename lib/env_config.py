@@ -581,6 +581,10 @@ def expand_env(raw_env):
     rancher = require(env, "rancher", "env")
     rancher.setdefault("edition", "community")
     rancher.setdefault("agent_tls_mode", "system-store")
+    if "helm_version" in rancher:
+        helm_version = rancher["helm_version"]
+        if not isinstance(helm_version, str) or not helm_version.strip():
+            raise SystemExit("env.rancher.helm_version must be a non-empty string")
     require(rancher, "cert_manager_version", "env.rancher")
     selected_edition = rancher["editions"][rancher["edition"]]
     selected_edition_context = f"env.rancher.editions.{rancher['edition']}"

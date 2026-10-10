@@ -37,6 +37,15 @@ def test_example_resolves_component_versions_and_local_addresses():
     assert config["nodes"]["rancher3"]["ip"] == "10.14.17.13"
 
 
+@pytest.mark.parametrize("helm_version", ["", "   ", 4.3])
+def test_rejects_invalid_optional_helm_version(helm_version):
+    config = raw_example()
+    config["rancher"]["helm_version"] = helm_version
+
+    with pytest.raises(SystemExit, match="env.rancher.helm_version must be a non-empty string"):
+        expand_env(config)
+
+
 def test_environment_id_is_required_and_drives_prompt_suffix():
     missing_id = raw_example()
     del missing_id["environment"]["id"]

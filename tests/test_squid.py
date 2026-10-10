@@ -26,6 +26,20 @@ def test_upstream_wrapper_uses_exact_hostname_vcenter_acl():
     assert "never_direct allow all" in rendered
 
 
+def test_deploy_bootstrap_uses_pinned_or_latest_helm_and_upstream_bootstrap_proxy():
+    deploy = (Path(__file__).parents[1] / "pyinfra/deploy.py").read_text()
+
+    assert "helm_version=$(asdf latest helm)" in deploy
+    assert "config['rancher']['helm_version']" in deploy
+    assert 'asdf set -u helm \\\"$helm_version\\\"' in deploy
+    assert "asdf current helm; asdf which helm; helm version" in deploy
+    assert "--setopt=proxy=http://{upstream['host']}:{upstream['port']}" in deploy
+    assert 'name="Render bastion proxy environment"' in deploy
+    assert 'name="Ensure bastion proxy environment"' in deploy
+    assert "proxy_exports()" in deploy
+    assert deploy.index("asdf plugin add helm") < deploy.index("helm_version=$(asdf latest helm)")
+
+
 def test_upstream_wrapper_uses_exact_ip_vcenter_acl():
     rendered = render_upstream_wrapper(
         {"host": "proxy.example.internal", "port": 9090},
